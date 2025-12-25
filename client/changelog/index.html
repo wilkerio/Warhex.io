@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blobl.io Changelog</title>
+
+    <style>
+        @import url("https://fonts.googleapis.com/css?family=Ubuntu:400, 500,700,900");
+
+        body {
+            font-family: 'Ubuntu', sans-serif;
+            background-color: #f4f7fa;
+            margin: 0;
+            padding: 0;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            color: #444;
+            font-size: 2.8em;
+            margin-top: 30px;
+            letter-spacing: 1px;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .update-log {
+            background-color: #ffffff;
+            border-radius: 4px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.077);
+            margin-bottom: 20px;
+            padding: 30px;
+            transition: transform 0.2s ease;
+        }
+
+        .update-log:hover {
+            transform: scale(1.01);
+        }
+
+        .date-time {
+            font-size: 20px;
+            font-weight: bold;
+            color: #4087ec;
+        }
+
+        .section-title {
+            font-size: 20px;
+            margin-top: 20px;
+            color: #444;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            padding-bottom: 3px;
+            border-bottom: 2px solid#4088ec26;
+        }
+
+        .content-line {
+            margin-top: 10px;
+            font-size: 18px;
+            line-height: 22px;
+        }
+
+        .content-line>strong {
+            display: block;
+        }
+
+        .join-dev-button {
+            display: inline-block;
+            background-color: #007bff;
+            /* Button color */
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+            transition: transform 0.2s ease;
+
+        }
+
+        .join-dev-button:hover {
+            background-color: #0056b3; transform: scale(1.05);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Blobl.io Changelog</h1>
+        <h3>Note: <br /> This update log provides an overview of major changes, including new features, balancing
+            adjustments,
+            and key visual enhancements.
+            Please keep in mind that not all bug fixes, minor balancing updates, or visual tweaks are listed here.
+
+        </h3>
+
+        <div id="changelog-container">
+            <div class="update-log">
+                <div class="date-time">16.12.2024 22:03</div>
+                <div class="section-title">Important Notice:</div>
+                <div class="content-line">This month/year there will be no further updates due to my current commitments
+                    with
+                    university and other tasks. <br /> However, stay tuned for a <b>major update</b> afterward,
+                    featuring exciting
+                    new
+                    additions such as:
+                    <ul>
+                        <li>Weekly leaderboard</li>
+                        <li>Enhanced account systems (with stats like total playtime, highscore, total kills, highest
+                            kills)</li>
+                        <li> Achievement skins</li>
+                        <li>Turret range indicator</li>
+                        <li>Multi-select for buildings</li>
+                        <li>Performance optimizations</li>
+                        <li>New Drone Turret</li>
+                        <li>New armory research trees</li>
+                        <li>Possibly a new server in the US region</li>
+                    </ul>
+                </div>
+                <div class="section-title"></div>
+                <h4>If you're interested in contributing to the development, I'm still looking for an additional
+                    developer.</h4>
+                <a href="https://blobl.io/join-dev-team" class="join-dev-button">Check out more information!</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (async () => {
+            try {
+                const response = await fetch('../changelog/changelog.txt');
+                const text = await response.text();
+
+                const container = document.getElementById('changelog-container');
+
+                if (!container) {
+                    console.error('Error: changelog-container not found.');
+                    return;
+                }
+
+                const entries = text.split('\n\n').map(entry => entry.trim());
+                const contentData = [];
+
+                entries.forEach(entry => {
+                    const lines = entry.split('\n');
+                    let currentSection = null;
+                    let currentTag = null;
+
+                    lines.forEach(line => {
+                        if (line.startsWith('+')) { // New section detected by the '+' symbol
+                            // Push the current section to the contentData if it exists
+                            if (currentSection) {
+                                contentData.push(currentSection);
+                            }
+
+                            // Start a new section
+                            currentSection = {
+                                dateTime: line.slice(1).trim(),  // Remove the '+' and trim
+                                sections: [] // Initialize sections for this entry
+                            };
+                            currentTag = null; // Reset the current tag when a new date is encountered
+                        } else if (line.trim() !== '') { // Non-empty line
+                            const isSubsection = line.includes(':') && line.startsWith('    ') && line[4] != ' '; // Exactly 4 spaces and a colon
+                            if (isSubsection) {
+                                // Extract the tag (before the colon) and reset the content array for this subsection
+                                currentTag = line.split(':')[0].trim();
+                                currentSection.sections.push({
+                                    tag: currentTag,
+                                    content: []
+                                });
+                            } else if (currentTag) {
+                                // Add content to the most recent subsection
+                                const lastSection = currentSection.sections[currentSection.sections.length - 1];
+
+                                if (line.includes(':')) {
+                                    // Split the line into tag and content
+                                    const [tag, ...contentParts] = line.split(':');
+                                    const content = contentParts.join(':').trim(); // Join the remaining parts back together for the content
+
+                                    lastSection.content.push(`<strong>${tag.trim()}:</strong> ${content}`);
+                                } else {
+                                    lastSection.content.push(`${line}`);
+
+                                }
+                            }
+                        }
+                    });
+
+                    // Push the last section if there was one
+                    if (currentSection) {
+                        contentData.push(currentSection);
+                    }
+                });
+
+                // Now you can handle the `contentData` content (e.g., render it in the container)
+                contentData.forEach(entry => {
+                    const logSection = document.createElement('div');
+                    logSection.classList.add('update-log');
+
+                    // Create the date/time element
+                    const dateTimeElement = document.createElement('div');
+                    dateTimeElement.classList.add('date-time');
+                    dateTimeElement.textContent = entry.dateTime;
+                    logSection.appendChild(dateTimeElement);
+
+                    // Create the sections
+                    entry.sections.forEach(section => {
+                        const sectionTitle = document.createElement('div');
+                        sectionTitle.classList.add('section-title');
+                        sectionTitle.textContent = section.tag + ':';
+                        logSection.appendChild(sectionTitle);
+
+                        section.content.forEach(line => {
+                            const contentElement = document.createElement('div');
+                            contentElement.innerHTML = line;
+                            contentElement.classList.add('content-line');
+                            logSection.appendChild(contentElement);
+                        });
+                    });
+
+                    container.appendChild(logSection);
+                });
+
+            } catch (error) {
+                console.error('Error loading changelog:', error);
+            }
+        })();
+
+    </script>
+
+</body>
+
+</html>
