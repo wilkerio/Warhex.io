@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>INFINITY.io</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+:root{
+  --bg:#050010;
+  --glass:rgba(22,16,55,.55);
+  --accent:#8b6cff;
+  --shop:#2de2ff;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;font-family:Inter,system-ui}
+
+body{
+  background:var(--bg);
+  color:#fff;
+  height:100vh;
+  overflow:hidden;
+  display:grid;
+  place-items:center;
+}
+
+canvas{
+  position:fixed;
+  inset:0;
+  z-index:-1;
+}
+
+/* SETTINGS */
+#settings-btn{
+  position:fixed;
+  top:22px;
+  right:28px;
+  padding:12px 16px;
+  border-radius:14px;
+  background:rgba(255,255,255,.08);
+  backdrop-filter:blur(14px);
+  font-size:13px;
+  cursor:pointer;
+}
+
+/* SIDE PANELS */
+.side{
+  position:fixed;
+  top:50%;
+  transform:translateY(-50%);
+  width:440px;
+  height:520px;
+  background:var(--glass);
+  backdrop-filter:blur(18px);
+  border-radius:34px;
+  padding:40px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+}
+
+#left-ad{left:28px}
+#right-video{right:28px}
+
+.side h3{font-size:22px;margin-bottom:18px}
+.side p{font-size:16px;opacity:.65}
+
+/* MAIN CARD */
+#card{
+  width:430px;
+  background:var(--glass);
+  backdrop-filter:blur(22px);
+  border-radius:30px;
+  padding:34px;
+  box-shadow:0 0 80px rgba(120,100,255,.45);
+}
+
+/* LOGO */
+.logo h1{
+  font-size:46px;
+  text-align:center;
+  background:linear-gradient(90deg,#e2d9ff,#6a4cff);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+
+/* PLAYER */
+.player-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:18px;
+  margin-top:26px;
+}
+
+.player-name{
+  padding:15px;
+  border:none;
+  border-radius:16px;
+  background:rgba(255,255,255,.1);
+  color:white;
+  font-size:15px;
+  text-align:center;
+}
+
+/* SKIN */
+.skin-wrapper{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+}
+
+.skin-label{
+  font-size:11px;
+  letter-spacing:1.4px;
+  opacity:.6;
+}
+
+.skin-box{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.skin-arrow{cursor:pointer;opacity:.6;font-size:20px}
+.skin-arrow:hover{opacity:1}
+
+.skin-mini{
+  width:52px;
+  height:52px;
+  border-radius:50%;
+  background:radial-gradient(circle at top,#fff,var(--accent));
+  box-shadow:0 0 26px rgba(140,110,255,.95);
+}
+
+/* PLAY */
+.play-btn{
+  width:100%;
+  margin-top:26px;
+  padding:22px;
+  border:none;
+  border-radius:24px;
+  background:linear-gradient(90deg,var(--accent),#4a2cff);
+  color:white;
+  font-size:24px;
+  font-weight:900;
+  letter-spacing:3px;
+  cursor:pointer;
+  transition:transform .15s ease, box-shadow .15s ease;
+  animation:playPulse 3s infinite;
+}
+
+@keyframes playPulse{
+  0%,100%{box-shadow:0 0 22px rgba(160,130,255,.45)}
+  50%{box-shadow:0 0 40px rgba(180,150,255,.85)}
+}
+
+.play-btn:hover{transform:translateY(-2px) scale(1.01)}
+.play-btn:active{
+  transform:scale(.95);
+  box-shadow:inset 0 6px 18px rgba(0,0,0,.45);
+}
+
+/* ACTIONS */
+.actions{
+  display:flex;
+  gap:12px;
+  margin-top:16px;
+}
+
+.action-btn{
+  flex:1;
+  padding:15px;
+  border:none;
+  border-radius:16px;
+  background:rgba(255,255,255,.08);
+  color:white;
+  cursor:pointer;
+  font-size:14px;
+}
+
+/* SHOP — MAIS FORTE */
+.action-btn.shop{
+  background:linear-gradient(90deg,var(--shop),#00bcd4);
+  color:#00161a;
+  font-weight:900;
+  font-size:16px;          /* AUMENTADO */
+  letter-spacing:1.5px;    /* MAIS PRESENÇA */
+
+}
+
+@keyframes shopGlow{
+  0%,100%{box-shadow:0 0 20px rgba(45,226,255,.6)}
+  50%{box-shadow:0 0 50px rgba(45,226,255,1)}
+}
+
+/* RANK */
+.rank-box{
+  margin-top:22px;
+  padding-top:14px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+
+.rank-title{
+  font-size:11px;
+  letter-spacing:2px;
+  opacity:.6;
+  margin-bottom:10px;
+  text-align:center;
+}
+
+.rank{
+  display:grid;
+  grid-template-columns:26px 1fr auto;
+  gap:10px;
+  padding:8px 10px;
+  border-radius:12px;
+  background:rgba(255,255,255,.05);
+  font-size:12px;
+  margin-bottom:6px;
+}
+
+.rank.top{
+  background:linear-gradient(90deg,#ffe6a0,#c79bff);
+  color:#000;
+  font-weight:700;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="bg"></canvas>
+
+<div id="settings-btn">⚙ Settings</div>
+
+<div id="left-ad" class="side">
+  <div>
+    <h3>Advertise Here</h3>
+    <p>Promote your brand inside INFINITY.io</p>
+  </div>
+</div>
+
+<div id="right-video" class="side">
+  <div>
+    <h3>How to Play</h3>
+    <p>Watch the tutorial and master the game</p>
+  </div>
+</div>
+
+<div id="card">
+  <div class="logo"><h1>INFINITY.io</h1></div>
+
+  <div class="player-row">
+    <input class="player-name" placeholder="Player name">
+    <div class="skin-wrapper">
+      <div class="skin-label">CHOOSE SKIN</div>
+      <div class="skin-box">
+        <div class="skin-arrow">❮</div>
+        <div class="skin-mini"></div>
+        <div class="skin-arrow">❯</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="play-btn">PLAY</button>
+
+  <div class="actions">
+    <button class="action-btn">Join Discord</button>
+    <button class="action-btn shop">SHOP</button>
+  </div>
+
+  <div class="rank-box">
+    <div class="rank-title">GLOBAL TOP 5</div>
+    <div class="rank top"><strong>#1</strong><div>VoidKing<br><small>9.8M • 421h</small></div>🏆</div>
+    <div class="rank"><strong>#2</strong><div>NebulaX<br><small>7.2M • 312h</small></div></div>
+    <div class="rank"><strong>#3</strong><div>DarkFlux<br><small>6.9M • 289h</small></div></div>
+    <div class="rank"><strong>#4</strong><div>Cosmic<br><small>6.1M • 260h</small></div></div>
+    <div class="rank"><strong>#5</strong><div>Hyper<br><small>5.8M • 244h</small></div></div>
+  </div>
+</div>
+
+<script>
+const c=document.getElementById("bg"),x=c.getContext("2d");
+function resize(){c.width=innerWidth;c.height=innerHeight}
+resize();addEventListener("resize",resize);
+
+const p=Array.from({length:700},()=>({
+  a:Math.random()*6.28,
+  d:Math.random()*900,
+  s:Math.random()*.002+.001
+}));
+
+let t=0;
+(function loop(){
+  t+=.45;
+  x.clearRect(0,0,c.width,c.height);
+  p.forEach(e=>{
+    x.fillStyle="rgba(180,160,255,.75)";
+    x.fillRect(
+      c.width/2+Math.cos(e.a+t*e.s)*e.d,
+      c.height/2+Math.sin(e.a+t*e.s)*e.d*.55,
+      1.2,1.2
+    );
+  });
+  requestAnimationFrame(loop);
+})();
+</script>
+
+</body>
+</html>
