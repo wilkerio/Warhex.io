@@ -294,7 +294,7 @@ var unitTypes = map[UnitType]map[UnitVariant]UnitStats{
 		BASIC_UNIT: {
 			Variant:            BASIC_UNIT,
 			Health:             Health{Current: 4000, Max: 4000},
-			Speed:              60,
+			Speed:              200,
 			Size:               40,
 			RequiredPopulation: 0,
 		},

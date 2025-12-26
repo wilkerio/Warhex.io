@@ -1428,9 +1428,9 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 			WALL:          {0, 9999},
 			SIMPLE_TURRET: {0, 9999},
 			SNIPER_TURRET: {0, 9999},
-			BARRACKS:      {0, 9999},
+			BARRACKS:      {0, 4},
 			GENERATOR:     {0, 9999},
-			HOUSE:         {0, 64}},
+			HOUSE:         {0, 9999}},
 		AvailableBuildingIDs: InitAvailableIDs(256),
 		AvailableBulletIDs:   InitAvailableIDs(256),
 	}
