@@ -97,7 +97,7 @@ const (
 	PLAYER_INITIAL_POPULATION = 64
 	PLAYER_INITIAL_HEALTH     = 2000
 	PLAYER_INITIAL_POWER      = 6000
-	PLAYER_MAX_POWER          = 8000
+	PLAYER_MAX_POWER          = 6000
 
 	// Player timeout and protection settings
 	PLAYER_TIMEOUT                 = 10 // Minutes
