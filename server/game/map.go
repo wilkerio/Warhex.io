@@ -55,13 +55,9 @@ func generateBushes(centers []PositionInt, neutralBases []PositionInt, radius fl
 	}
 
 	for len(bushes) < numBushes {
-		// Generate random angle and radius
-		angle := rand.Float64() * 2 * math.Pi // Random angle
-		distance := rand.Float64() * radius   // Random distance from the center
-
-		// Calculate bush position based on angle and distance
-		bushX := int16(distance * math.Cos(angle))
-		bushY := int16(distance * math.Sin(angle))
+		// Generate random position within a rectangle
+		bushX := int16(rand.Float64()*2*radius - radius) // -radius to +radius
+		bushY := int16(rand.Float64()*2*radius - radius)
 		bushPos := PositionInt{X: bushX, Y: bushY}
 
 		// Check if the bush position is far enough from all centers, neutral bases, and existing bushes
@@ -94,13 +90,9 @@ func generateRocks(centers []PositionInt, neutralBases []PositionInt, radius flo
 
 	// Generate large rocks first
 	for len(rocks) < numRocks/2 { // Generate half as large rocks
-		// Generate random angle and radius for large rocks
-		angle := rand.Float64() * 2 * math.Pi
-		distance := rand.Float64() * radius
-
-		// Calculate position for the large rock
-		rockX := int16(distance * math.Cos(angle))
-		rockY := int16(distance * math.Sin(angle))
+		// Generate random position within a rectangle
+		rockX := int16(rand.Float64()*2*radius - radius)
+		rockY := int16(rand.Float64()*2*radius - radius)
 		rockPos := PositionInt{X: rockX, Y: rockY}
 
 		// Check if the large rock is far enough from neutral/player bases
@@ -153,13 +145,9 @@ func generateRocks(centers []PositionInt, neutralBases []PositionInt, radius flo
 
 	// Generate remaining small rocks
 	for len(rocks) < numRocks {
-		// Generate random angle and radius for smaller rocks
-		angle := rand.Float64() * 2 * math.Pi
-		distance := rand.Float64() * radius
-
-		// Calculate position for the small rock
-		rockX := int16(distance * math.Cos(angle))
-		rockY := int16(distance * math.Sin(angle))
+		// Generate random position within a rectangle
+		rockX := int16(rand.Float64()*2*radius - radius)
+		rockY := int16(rand.Float64()*2*radius - radius)
 		rockPos := PositionInt{X: rockX, Y: rockY}
 
 		// Check if the small rock is far enough from neutral/player bases
@@ -184,73 +172,28 @@ func generateRocks(centers []PositionInt, neutralBases []PositionInt, radius flo
 	return rocks
 }
 
-func generateHexagonGameMap() (playerPositions, neutralPositions []PositionInt) {
-	hexagonSize := 2500.0
-	center := PositionInt{X: 0, Y: 0}
+func generateRectangularGameMap() (playerPositions, neutralPositions []PositionInt) {
+	spacing := int16(2500)
+	radius := int16(8000) // Half the side length, so full map is -8000 to 8000
 
-	// Generate player positions for the center hexagon
-	playerPositions = append(playerPositions, generateHexagon(center, hexagonSize)...)
-
-	// Keep track of generated positions to avoid duplication
-	generatedPositions := make(map[PositionInt]bool)
-	generatedPositions[center] = true // Mark center as generated
-
-	// Generate positions for the surrounding hexagons
-	offsets := []struct{ x, y float64 }{
-		{0, hexagonSize * math.Sqrt(3)},
-		{hexagonSize * 1.5, hexagonSize * math.Sqrt(3) / 2},
-		{-hexagonSize * 1.5, hexagonSize * math.Sqrt(3) / 2},
-		{-hexagonSize * 1.5, -hexagonSize * math.Sqrt(3) / 2},
-		{hexagonSize * 1.5, -hexagonSize * math.Sqrt(3) / 2},
-		{0, -hexagonSize * math.Sqrt(3)},
-	}
-
-	for _, offset := range offsets {
-		hexagonCenter := PositionInt{X: int16(math.Round(offset.x)), Y: int16(math.Round(offset.y))}
-		hexagonPositions := generateHexagon(hexagonCenter, hexagonSize)
-
-		// Add player positions for the surrounded hexagon
-		playerPositions = append(playerPositions, hexagonPositions...)
-
-		// Add neutral position (center of hexagon) as neutral base
-		neutralPositions = append(neutralPositions, hexagonCenter)
-
-		// Mark the generated positions as used
-		for _, pos := range hexagonPositions {
-			generatedPositions[pos] = true
+	// Generate player positions in a grid
+	for x := -radius; x <= radius; x += spacing {
+		for y := -radius; y <= radius; y += spacing {
+			playerPositions = append(playerPositions, PositionInt{X: x, Y: y})
 		}
 	}
 
+	// Neutral bases at the corners or something, but for now, keep center and maybe edges
 	neutralPositions = append(neutralPositions, PositionInt{X: 0, Y: 0})
+	// Add neutrals at edges if needed, but for simplicity, just center
 
-	// Remove duplicates and positions too close to each other
-	uniquePlayerPositions := make([]PositionInt, 0, len(playerPositions))
-	seen := make(map[PositionInt]bool)
-
-	for _, pos := range playerPositions {
-		if !seen[pos] {
-			// Check if the position is too close to any existing position
-			isUnique := true
-			for _, uniquePos := range uniquePlayerPositions {
-				if isTooClose(pos, uniquePos, 1, 1) {
-					isUnique = false
-					break
-				}
-			}
-			if isUnique {
-				seen[pos] = true
-				uniquePlayerPositions = append(uniquePlayerPositions, pos)
-			}
-		}
-	}
-
-	return uniquePlayerPositions, neutralPositions
+	return playerPositions, neutralPositions
 }
 
 // Helper function to initialize the game state with predefined positions
 func InitializeGameMap() {
 
-	playerPositions, neutralPositions := generateHexagonGameMap()
+	playerPositions, neutralPositions := generateRectangularGameMap()
 	// Initialize the map with all positions as available
 	State.AvailablePositions = make(map[PositionInt]bool)
 	for _, pos := range playerPositions {

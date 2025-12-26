@@ -17,7 +17,6 @@ export default class UIManager {
     constructor (core) {
         this.core = core;
         this.loadingOverlay = null;
-        this.selectedRegion = "";
         this.timerInterval = null;
         this.lastSendMessage = "";
         this.isDraggingChat = false;
@@ -36,7 +35,6 @@ export default class UIManager {
         this.addSkinLibraryButtonListener();
         this.addSettingsPanelListener();
         this.addChatButtonElementListener();
-        this.makeChatBoxDraggable();
     }
 
     initializeUIElements () {
@@ -47,7 +45,6 @@ export default class UIManager {
                 playButton: "play-button",
                 menuButton: "menu-button",
                 playerNameInput: "player-name",
-                regionSelect: "region-select",
             },
 
             // Game UI elements
@@ -95,7 +92,6 @@ export default class UIManager {
 
             // Account 
             account: {
-                discordLoginButton: "discord-login-button",
                 guestButton: "guest-button",
                 accountButton: "account-button",
                 loginDialog: "login-dialog",
@@ -170,11 +166,6 @@ export default class UIManager {
 
         // Retrieve saved color, player name, and region from local storage
         const savedPlayerName = localStorage.getItem("playerName");
-        const savedRegion = localStorage.getItem("selectedRegion");
-
-        if (savedRegion) {
-            this.selectedRegion = savedRegion;
-        }
 
         if (savedPlayerName) {
             this.DOM.menu.playerNameInput.value = savedPlayerName;
@@ -186,8 +177,6 @@ export default class UIManager {
         this.populateThemeSelect();
 
         this.DOM.settings.themeSelect.value = ThemeManager.currentTheme;
-
-        this.setupRegionSelect();
     }
 
     async _populateSkinLibrary () {
@@ -549,41 +538,6 @@ export default class UIManager {
         }
     }
 
-    async setupRegionSelect () {
-        // Populate the region-select dropdown with the servers from the Servers object
-        Object.keys(Servers).forEach(regionKey => {
-            const option = document.createElement("option");
-            option.value = Servers[regionKey];
-            option.textContent = regionKey;
-            this.DOM.menu.regionSelect.appendChild(option);
-        });
-
-
-        // Determine the best server if no region is selected
-        if (!this.selectedRegion) {
-            const serverPings = await Promise.all(
-                Object.values(Servers).map(async (url) => {
-                    console.log(url)
-                    const ping = await Network.pingServer(url); // Ping each server
-                    return { url, ping };
-                })
-            );
-
-            // Find the server with the minimum ping
-            const bestServer = serverPings.reduce((min, server) => server.ping < min.ping ? server : min, { ping: Infinity });
-            this.selectedRegion = bestServer.url;
-            localStorage.setItem("selectedRegion", this.selectedRegion);
-        }
-
-        this.DOM.menu.regionSelect.value = this.selectedRegion;
-
-        // Set event listener for region selection
-        this.DOM.menu.regionSelect.addEventListener("change", (event) => {
-            this.selectedRegion = event.target.value;
-            localStorage.setItem("selectedRegion", this.selectedRegion);
-            window.location.reload(); // Reload the page to apply the new region
-        });
-    }
 
     populateThemeSelect () {
         if (!this.DOM.settings.themeSelect) return;
@@ -678,7 +632,7 @@ export default class UIManager {
                 {
                     name: "Commander",
                     description: "Powerful unit, you can only have 1",
-                    cost: 7000,
+                    cost: 1500,
                     unitType: UnitTypes.COMMANDER
                 },
                 {

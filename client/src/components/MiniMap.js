@@ -13,14 +13,14 @@ export default class MiniMap {
 
         // Create a new static canvas element
         this.staticCanvas = document.createElement("canvas");
-        this.staticCanvas.width = 235;
-        this.staticCanvas.height = 235;
+        this.staticCanvas.width = 150;
+        this.staticCanvas.height = 150;
         this.container.appendChild(this.staticCanvas);
 
         // Create a new dynamic canvas element
         this.dynamicCanvas = document.createElement("canvas");
-        this.dynamicCanvas.width = 235;
-        this.dynamicCanvas.height = 235;
+        this.dynamicCanvas.width = 150;
+        this.dynamicCanvas.height = 150;
         this.container.appendChild(this.dynamicCanvas);
 
         // Get the 2D rendering contexts
@@ -51,7 +51,7 @@ export default class MiniMap {
         const y = event.clientY - rect.top;  // Y coordinate
 
         // Convert the coordinates to the actual game map scale if needed
-        const scale = this.dynamicCanvas.width / 16500; // based on map
+        const scale = this.dynamicCanvas.width / 16000; // based on map
         const mapX = (x - this.dynamicCanvas.width / 2) / scale;
         const mapY = (y - this.dynamicCanvas.height / 2) / scale;
 
@@ -74,8 +74,8 @@ export default class MiniMap {
     maximize() {
         this.isFullScreen = true;
         // Set the new size for the canvases
-        this.staticCanvas.width = this.dynamicCanvas.width = 600; 
-        this.staticCanvas.height = this.dynamicCanvas.height = 600;
+        this.staticCanvas.width = this.dynamicCanvas.width = 150; 
+        this.staticCanvas.height = this.dynamicCanvas.height = 150;
 
         this.container.style.top = "50%";
         this.container.style.left = "50%";
@@ -89,10 +89,10 @@ export default class MiniMap {
         this.isFullScreen = false;
 
         // Set the original size for the canvases
-        this.staticCanvas.width = this.dynamicCanvas.width = 235; // Original width
-        this.staticCanvas.height = this.dynamicCanvas.height = 235; // Original height
+        this.staticCanvas.width = this.dynamicCanvas.width = 150; // Original width
+        this.staticCanvas.height = this.dynamicCanvas.height = 150; // Original height
 
-        this.container.style.top = "125px";
+        this.container.style.bottom = "170px";
         this.container.style.left = "8px";
         this.container.style.width = "auto";
         this.container.style.height = "auto";
@@ -125,7 +125,7 @@ export default class MiniMap {
         this.staticContext.save();
 
         // Scale down the context for rendering
-        const scale = this.staticCanvas.width / 16500; // Scale based on the radius of player positions
+        const scale = this.staticCanvas.width / 16000; // Scale based on the radius of player positions
         this.staticContext.translate(this.staticCanvas.width / 2, this.staticCanvas.height / 2);
         this.staticContext.scale(scale, scale); // Apply scaling
 
@@ -178,7 +178,7 @@ export default class MiniMap {
         this.dynamicContext.save();
 
         // Scale down the context for rendering
-        const scale = this.dynamicCanvas.width / 16500; // Scale based on the radius of player positions
+        const scale = this.dynamicCanvas.width / 16000; // Scale based on the radius of player positions
         this.dynamicContext.translate(this.dynamicCanvas.width / 2, this.dynamicCanvas.height / 2);
         this.dynamicContext.scale(scale, scale); // Apply scaling
 

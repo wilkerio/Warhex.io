@@ -106,15 +106,6 @@ img {
   color: #333;
 }
 
-#discord-login-button {
-  background-color: #7289da;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  font-size: 16px;
-  cursor: pointer;
-}
-
 #close-dialog-button {
   background: #f4f4f4;
   color: #333;
@@ -281,11 +272,10 @@ img {
 }
 
 #account-button{
-  position: absolute;
-  bottom: 0;
   width: 100%;
   font-size: 16px;
-  padding: 5px ;
+  padding: 5px;
+  margin-top: 10px;
 }
 
 #account-button.login{
@@ -365,43 +355,6 @@ img {
   margin-bottom: 5px;
   color: rgba(0, 0, 0, 0.663);
 }
-#featured {
-  position: fixed;
-  bottom: 15px;
-  left: 15px;
-  height: auto;
-  width: 250px;
-}
-
-#featured a {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-#featured img {
-  width: 100%;
-  height: auto;
-  border-radius: 8px;
-  transition: transform 0.2s;
-  animation: pulseRotate 2s ease-in-out infinite;
-}
-
-#featured img:hover {
-  transform: scale(1.05);
-}
-
-@keyframes pulseRotate {
-  0% {
-    transform: scale(1) rotate(0deg);
-  }
-  50% {
-    transform: scale(1.05) rotate(1deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-}
 
 #global-leaderboard {
   display: none;
@@ -421,9 +374,9 @@ img {
 #upgrade-container {
   display: none;
   flex-direction: column;
-  position: fixed;
-  bottom: 100px;
-  right: 8px;
+  position: absolute;
+  bottom: 330px;
+  left: 8px;
   width: 310px;
   z-index: 1;
   background-color: #66666675;
@@ -646,14 +599,16 @@ img {
 
 
 #game-metrics {
-  display: none;
-  position: fixed;
-  font-size: 20px;
-  color: rgba(0, 0, 0, 0.529);
-  z-index: 100;
-  bottom: 0;
-  right: 0;
-  margin: 8px;
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 1000;
+  font-size: 12px;
+  color: white;
+  text-shadow: 0px 0px 4px rgba(0, 0, 0, 0.4);
 }
 
 .loading-overlay {
@@ -694,11 +649,11 @@ img {
   display: none;
   flex-direction: column;
   gap: 5px;
-  left: 8px;
-  bottom: 100px;
+  right: 8px;
+  bottom: 8px;
   background-color: #66666685;
   width: 300px;
-  height: 300px;
+  height: 200px;
   border-radius: 3px;
   z-index: 1000;
 }
@@ -717,13 +672,7 @@ img {
 }
 
 .chat>.header>.chat-move-button {
-  background-color: transparent;
-  border-radius: 0 0 4px 0;
-  color: #ffffff;
-  font-family: 'Ubuntu', sans-serif;
-  width: 40px;
-  font-size: 20px;
-  cursor: grabbing;
+  display: none;
 }
 
 #chat-messages {
@@ -865,12 +814,13 @@ img {
 
 
 #resource-container {
-  display: none;
-  flex-direction: column;
-  gap: 8px;
-  position: fixed;
-  top: 8px;
+  position: absolute;
   left: 8px;
+  bottom: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 1001;
 }
 
 #resource-container>* {
@@ -892,13 +842,38 @@ img {
   font-size: 26px;
 }
 
-#minimap-container {
-  position: fixed;
-  display: none;
-  top: 125px;
+#shield {
+  position: absolute;
   left: 8px;
-  border-radius: 100%;
+  bottom: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 1000;
+  background-color: #66666675;
+  padding: 10px;
+  border-radius: 3px;
+  text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.2);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 24px;
+}
+
+#shield span {
+  color: #ffffffc7;
+  margin-left: 10px;
+  font-size: 26px;
+}
+
+#minimap-container {
+  position: absolute;
+  display: none;
+  bottom: 170px;
+  left: 8px;
+  border-radius: 0;
   border: 1px #66666628 solid;
+  width: 150px;
+  height: 150px;
 }
 
 #toolbar-container {
@@ -1138,29 +1113,6 @@ img {
   z-index: 1;
   font-weight: bold;
   text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.2);
-}
-
-#patreon-progress-bar > .progress-bar{
-  width: 0%; 
-  animation: patreon-progress-bar-load 2s forwards;
-}
-
-@keyframes patreon-progress-bar-load {
-  to {
-    width: 60%;
-  }
-}
-
-#menu-bottom-ad {
-  height: 60px;
-  display: flex;
-  flex-direction: column;
-}
-
-@media (max-height: 520px) {
-  #menu-bottom-ad {
-    display: none;
-  }
 }
 
 

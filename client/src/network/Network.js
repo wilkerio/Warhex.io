@@ -54,24 +54,8 @@ export default class Network {
             this.worker.postMessage({ type: 'connect', data: `ws://${this.serverAddress}` });
 
         } else {
-            // Production mode: Fetch server address and connect
-            const response = await fetch(`${this.loadBalancerAddress}/get-server`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch server address');
-            }
-
-            const data = await response.json();
-            if (!data.server_address) {
-                throw new Error('Server address not found in response');
-            }
-
-            this.serverAddress = data.server_address;
+            // Production mode: Connect directly to Frankfurt server
+            this.serverAddress = 'fra1.blobl.io';
             this.worker.postMessage({ type: 'connect', data: `wss://${this.serverAddress}` });
         }
     }
