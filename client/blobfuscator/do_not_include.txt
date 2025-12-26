@@ -1,0 +1,22 @@
+/*  
+List of words that must remain unobfuscated to prevent program errors  
+*/
+
+connect
+zoom 
+loggedIn
+requiredLevel
+name
+cannonAngleToTarget
+
+
+
+
+
+
+
+
+
+
+
+

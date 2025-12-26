@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Blobl.io</title>
+    <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport' />
+    <meta name="description"
+        content="Blobl.io: A strategic 2D multiplayer RTS game where you build and defend your base, capture resources, and outmaneuver opponents in tactical gameplay.">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
+    <link rel="manifest" href="assets/site.webmanifest">
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-LSJ1RTH753"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag () { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-LSJ1RTH753');
+    </script>
+    <script type="module" src="src/index.js"></script>
+</head>
+
+<body>
+    <!-- Menu-related containers -->
+    <div id="menu-container">
+        <div class="dialog" id="menu-dialog">
+            <div class="menu-card">
+                <h2>Connection Rejected</h2>
+                <p>We couldn't let you join the server.</p>
+                <p>The server might be <b>full</b> or <b>temporarily unavailable</b>.</p>
+                <p>If you were trying to play on multiple tabs, well, that's a big nope from us. <b>Multiboxing? Try
+                        that again, and we’ll send your IP straight to the blacklist!</b></p>
+                <img src="https://c.tenor.com/8yMqNs21uTQAAAAd/tenor.gif" alt="Connection Rejected"
+                    style="max-width: 100%; height: auto; margin-top: 20px;">
+                <p>Try again in a bit!</p>
+                <button id="menu-dialog-button">Okay</button>
+            </div>
+        </div>
+
+        <div class="dialog" id="login-dialog">
+            <div class="menu-card">
+                <h2>Access Exclusive Features</h2>
+                <p>
+                    This feature is reserved for registered players.<br>
+                    <strong>Login with Discord</strong> to unlock amazing perks, exclusive skins, and track your stats!
+                </p>
+                <hr />
+                <ul class="login-benefits">
+                    <li><strong>🎮 Leveling System:</strong> Gain experience (XP), level up, and unlock rewards like
+                        exclusive skins.</li>
+                    <li><strong>✨ Exclusive Skins:</strong> Access special skins tied to your level or achievements,
+                        including seasonal and event-based skins.</li>
+                    <li><strong>📊 Account Stats:</strong> Track statistics such as playtime, kills, and highscores.
+                    </li>
+                    <li><strong>🏆 Achievements:</strong> Unlock milestones for streaks, levels, or rare hidden
+                        challenges.</li>
+                    <li><strong>💎 Discord Server Roles:</strong> Get exclusive roles and access private channels based
+                        on your progress.</li>
+                    <li><strong>📅 Weekly Leaderboard:</strong> Compete on the weekly leaderboard and see how you rank
+                        against other players!</li>
+                </ul>
+                <hr />
+                <div class="actions">
+                    <button id="guest-button">👤 Continue as Guest</button>
+                    <button id="discord-login-button">Login with Discord</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="dialog" id="skin-library-dialog">
+            <div class="menu-card">
+                <button id="skin-library-exit" class="exit-button">x</button>
+                <h1>Skins</h1>
+                <div id="skin-tabs">
+                    <p style="display: none;">Owned</p>
+                    <p style="cursor:default; color: rgba(0, 0, 0, 0.179);">Premium</p>
+                    <p class="selected">Veteran</p>
+                </div>
+                <div id="skin-list">
+                    <button id="skin-carousel-prev" class="end">❮</button>
+                    <div id="skin-container">
+                    </div>
+                    <button id="skin-carousel-next">❯</button>
+                </div>
+            </div>
+        </div>
+        <div class="top-right">
+            <a href="https://bloblio.fandom.com/wiki/Blobl.io_Wiki" target="_blank">Wiki</a>
+            <a href="https://patreon.com/user?u=23638865" target="_blank">Patreon</a>
+            <a href="https://discord.gg/HZzTDggemw" target="_blank">Discord</a>
+        </div>
+        <div class="bottom-right">
+            <a href="./terms">Terms</a>
+            <a href="./privacy">Privacy</a>
+        </div>
+        <div id="featured">
+            <a href="https://oceanbound.io" target="_blank">
+                <img src="/assets/oceanbound.png" alt="oceanbound.io" />
+            </a>
+        </div>
+        <div id="global-leaderboard" class="leaderboard"></div>
+
+        <div id="game-title">
+            <h1 class="title">Blobl<span>.io</span></h1>
+            <p class="subtitle">Build, Battle, Dominate!</p>
+        </div>
+        </a>
+        <div class="menu-content-container">
+            <div class="menu-content">
+                <div class="player-settings">
+                    <div class="menu-card">
+                        <div class="player-input-container">
+                            <input type="text" class="player-name-input" id="player-name" placeholder="Player Name"
+                                maxlength="12">
+                            <button class="play-button" id="play-button">Play</button>
+                        </div>
+                    </div>
+                    <div class="menu-card settings-container">
+                        <div class="menu-header">Gamemode</div>
+                        <div id="gamemode-select">
+                            <div class="gamemode selected">FFA</div>
+                            <div class="gamemode disabled">Soon!</div>
+                            <div class="gamemode disabled">Soon!</div>
+                        </div>
+                        <div class="menu-header">Region</div>
+                        <select id="region-select">
+                        </select>
+                    </div>
+                    <div class="bottom-card menu-card" id="menu-bottom-ad">
+                        <p>Big thanks to our awesome <a href="https://patreon.com/user?u=23638865"
+                                target="_blank">Patreon</a>
+                            supporters!</p>
+                        <div class="progress-container" id="patreon-progress-bar">
+                            <div class="progress-bar"></div>
+                            <div class="progress-text">60% of our monthly costs covered!</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="menu-card">
+                    <div id="account-container">
+                        <div id="skin-preview">
+                            <div>+</div>
+                            Skins
+                        </div>
+                        <div class="progress-container" id="level-progression">
+                            <div class="progress-icon">1</div>
+                            <div class="progress-bar"></div>
+                            <div class="progress-text">0 / 50 XP</div>
+                        </div>
+                        <h1 id="account-handle">@guest</h1>
+                        <hr>
+                        <div id="stats-container">
+                            <div>
+                                <p>Highscore:</p>
+                                <p>0</p>
+                            </div>
+                            <div>
+                                <p>Playtime:</p>
+                                <p>0h 0m</p>
+                            </div>
+                            <div>
+                                <p>Total Kills:</p>
+                                <p>0</p>
+                            </div>
+                        </div>
+                        <hr>
+                        <button id="account-button">Login</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="top-left">
+            <div id="changelog">
+                <h2>Blobl.io (Alpha)</h2>
+                <p><a href="changelog" target="_blank">View Full Changelog</a></p>
+                <p>Last Updated: 21.01.2025</p>
+                <p>Best on <strong>Chrome</strong> or <strong>Edge</strong>.</p>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Game Over Screen -->
+    <div id="game-over-container">
+        <div id="game-over-content">
+            <h1><span>Killed by</span> <span id="game-over-killed-by">Eric</span></h1>
+            <div id="game-over-stats">
+                <p><strong>Score:</strong> <span id="game-over-score">0</span></p>
+                <p><strong>Time:</strong> <span id="game-over-time-survived">0s</span></p>
+            </div>
+            <div class="actions">
+                <button class="continue-button" id="continue-button">Continue</button>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Game-related containers -->
+    <div id="game-container">
+        <div id="game-settings">
+            <div class="slider">
+                <button>Settings</button>
+                <img src="assets/arrow_right.svg"></img>
+            </div>
+            <div class="settings">
+                <button id="game-settings-exit" class="exit-button">x</button>
+                <h1>Settings</h1>
+                <div class="theme-settings">
+                    <p>Theme:</p>
+                    <select id="theme-select">
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div id="game-metrics"></div>
+        <div id="resource-container">
+            <div id="power"></div>
+            <div id="shield"></div>
+        </div>
+        <div id="upgrade-container">
+            <h1></h1>
+            <button id="upgrade-container-exit" class="exit-button">x</button>
+            <div id="upgrade-tabs">
+            </div>
+            <div id="upgrade-list">
+            </div>
+            <div id="destroy-button">
+                <p>Destroy</p>
+                <p class="hotkey">[R]</p>
+            </div>
+        </div>
+        <div id="chat-container">
+            <div class="chat" id="chat">
+                <div class="header">
+                    <h3>Blobl Chat:</h3>
+                    <button class="chat-move-button" id="chat-move-button">~</button>
+                </div>
+
+                <div id="chat-messages">
+                    <div class="message"><span class="text">Welcome to Blobl.io</span></div>
+                </div>
+                <div class="actions">
+                    <input type="text" class="chat-message-input" id="chat-message-input" placeholder="Message"
+                        maxlength="64">
+                    <button class="chat-button" id="chat-button">Send</button>
+                </div>
+            </div>
+        </div>
+        <div id="leaderboard-container"></div>
+        <div id="minimap-container"></div>
+        <div id="toolbar-container"></div>
+</body>
+
+</html>

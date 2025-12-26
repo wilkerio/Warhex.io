@@ -1,0 +1,33 @@
+{
+  "default": [
+    {"id": 1, "name": "GD", "base_color": "#cab6a4"},
+    {"id": 2, "name": "Brazil", "base_color": "#43c044"},
+    {"id": 3, "name": "USA", "base_color": "#ff0300"},
+    {"id": 4, "name": "France", "base_color": "#ff0300"},
+    {"id": 5, "name": "Germany", "base_color": "#ffed02"},
+    {"id": 6, "name": "Russia", "base_color": "#0123ff"},
+    {"id": 7, "name": "USSR", "base_color": "#da1a47"},
+    {"id": 8, "name": "Turkey", "base_color": "#da1a47"},
+    {"id": 9, "name": "Ukraine", "base_color": "#019eff"},
+    {"id": 10, "name": "Israel", "base_color": "#0038b7"},
+    {"id": 11, "name": "Japan", "base_color": "#da1a47"},
+    {"id": 12, "name": "Trump", "base_color": "#ff0300"},
+    {"id": 13, "name": "Putin", "base_color": "#0123ff"},
+    {"id": 14, "name": "UwU", "base_color": "transparent"},
+    {"id": 15, "name": "Grumpy", "base_color": "transparent"},
+    {"id": 16, "name": "Switzerland", "base_color": "#ff4343"}
+  ],
+  "veteran": [
+    {"id": 100, "name": "Fly", "base_color": "#c68b5d", "required_level": 5},
+    {"id": 101, "name": "Spider", "base_color": "#ffe624", "required_level": 10},
+    {"id": 102, "name": "Goldfish", "base_color": "#01f8ff", "required_level": 15},
+    {"id": 103, "name": "Jellyfish", "base_color": "#e549f7", "required_level": 20},
+    {"id": 104, "name": "Frog", "base_color": "#ff7085","required_level": 25},
+    {"id": 105, "name": "Wizard", "base_color": "#0073ff","required_level": 30},
+    {"id": 106, "name": "Penguin", "base_color": "#84b7f3","required_level": 35},
+    {"id": 107, "name": "Void", "base_color": "#2d2b2e","required_level": 40}
+  ],
+  "premium": [
+    {"id": 150, "name": "Rat King", "base_color": "transparent", "cost": 50}
+  ]
+}

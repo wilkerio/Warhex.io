@@ -1,0 +1,303 @@
++ 03.12.2024 16:54 
+    New Additions:  
+        Heavy Trapper Turret: A heavy variant of the basic Trapper Turret that shoots large traps dealing massive damage.
+    Balancing Changes:
+        Base Health: Doubled the health of the base.
+        Unit Bullet Damage: Increased the damage dealt by unit bullets against other units.
+        Trapper Bullet Range: Adjusted the flying range of Trapper bullets.
+        Trapper Bullet Damage: Increased the damage output of Trapper bullets.
+        Trapper Bullet Fire Rate: Boosted the shooting speed of the Trapper turret.
+        Soldier Production Speed: Increased the production speed of Soldiers.
+        Tank and Siege Tank Production: Reduced the production speed of Tanks and Siege Tanks.
+
++ 28.11.2024 14:24 
+    New Additions:  
+        Anit-Cheat: Implemented a basic detection system to block building script exploits.
+        
++ 27.11.2024 14:09 
+    New Additions:  
+        Trapper Turret: Reintroduced, the Trapper Turret now fires long-lasting traps directly at enemies.
+    Balancing Changes:
+        Simple Turret: Increased the range of the Simple Turret.
+    Bug Fixes:
+        Rocks: Resolved collision issues with rocks.
+    Improvements:
+        Bullets: Made bullet movement smoother.
+
++ 17.11.2024 23:48 
+    Balancing Changes:
+        Commander: Increased power requirement; Can no longer be purchased instantly; Bullet damage reduced; Health reduced.
+        Power: Maximum power cap raised to 8,000.
+        
++ 17.11.2024 18:56 
+    New Additions:   
+        Commander: Introduced the first commander unit. You can purchase it by selecting your Headquarters (located at the center of your base). It does not consume population and is limited to one at any given time.
+        Repair: Added the ability to repair your main base.
+    Balancing Changes:
+        Siege Tank: Increased health for better durability in combat.
+        Barracks: Boosted production speed.
+        Tank Cannons: Decreased firing rate to balance damage output.
+        Neutral Base: Provides less population.
+
++ 11.11.2024 23:07 
+    New Additions:
+        Rocks: Spawn scattered around the map, can be used to destroy units.
+        Barracks: Added Activation and Deactivation of Barracks (Hotkey - F).
+    Balancing Changes:
+        Barracks: Removed building limit, replaced by activation limit.
+        Siege Tank: Requires more population, received more health.
+        Unit Upgradse: Costs adjusted.
+        Wall: Can now only be placed at the edge of your base.
+        Mega Siege Tank: Removed.
+
++ 09.11.2024 01:03 
+    Improvements:
+        Unit: Unit movement is now smoother.
+
++ 07.11.2024 20:33 
+    Balancing Changes:
+        Micro-Generator: Power generation has been increased.
+        Neutral Bases: Provides more population (32->64).
+    Bug Fixes:
+        Leaderboard: Fixed the score formatting issue.
+        Optimization: Improved collision detection for smoother and faster performance.
+        Multiboxing: Added basic prevention for multiboxing.
+        Protection Timer: Fixed issue with protection time resetting when switching tabs.
+
++ 05.11.2024 19:01 
+    Balancing Changes:
+        Anti-Tank Turret: Increased damage.
+        Semi-Automatic Sniper: Boosted both damage and speed.
+        Simple Turret (Gatling Path): Enhanced damage and speed across all upgrades.
+        Soldiers: Now require more population but have doubled health and improved speed.
+    New Additions:
+        Themes: Added new themes.
+        Unit Selection: Right-click to unselect units.
+    Improvements:
+        Trapper Turret: Temporarily disabled.
+    Notice:
+        Server Optimization: Currently running a slightly unoptimized server version to help debug recent crash issues.
+
++ 01.11.2024 02:36 
+    Balancing Changes:
+        Soldier: Buffed health
+        Trapper Turret: Reduced the amount of traps for Trapper turrets.
+        Heavy Turret: Decreased damage for Heavy Turrets.
+        Unit Cannons: Increased the range of unit cannons & reduced fire rate of unit cannons.
+        Anti-Tank Turret: Increased damage of Anti-Tank Turrets against tanks.
+        Semi-Automatic: Increased range and fire rate for Semi-Automatic Snipers.
+        Heavy Tank Upgrade: Slightly nerfed the heavy tank upgrade for balance.
+    New Additions:
+        Chat Filter: Adjusted
+        Achievements: Added Achievements (Discord only)
+
++ 27.10.2024  23:44 
+    New Additions: 
+        Neutral Base: Neutral bases can now be captured, providing 10 points per second once owned.
+        These bases act as extensions of your main base, allowing for construction and upgrades.
+        If a player disconnects, the neutral base retains all its structures.
+        Capturing a neutral base grants ownership, and the base will be marked with a ring of spikes.
+        Each neutral base adds 32 additional population capacity.
+        Power Gain: Players now earn 10% of the score of any defeated player as power.
+        Animations: Introduced animations for base destruction.
+    Balancing Changes:
+        Base Health: Increased overall health for all bases.
+        Soldier HP: Increased health for soldiers.
+        Anti-Tank Turret: Reduced damage against soldiers.
+        Building Stats: Adjusted statistics for various buildings.
+    Bug Fixes:
+        Leaderboard Bug Fix: Resolved a display issue on the leaderboard.
+        Leaderboard Formatting: Updated formatting for scores exceeding one million for better readability.
+        Unit Rotation: Fixed an initial rotation bug.
+
++ 24.10.2024  22:09 
+    Balancing Changes:
+        Traps: Buffed
+        Turrets: Buffed
+        Walls: Buffed
+        Mega Siege: Nerfed
+
++ 24.10.2024 13:02 
+    Balancing Changes:  
+        Unit: Unit movement is now more precise, ensuring one unit of the swarm always hits the target point exactly.
+        Population: Initial base population set to 64 (8 Soldiers | 2 Tanks).
+        Drone Factory: Drone Factory has been removed.
+        Barracks: Barrack paths have been reordered.
+        Tanks: All Tanks received a speed buff.
+
++ 24.10.2024 00:29 
+    Balancing Changes:  
+        House: Houses now provide more population, Houses building limit reduced.
+
++ 22.10.2024 23:04 
+    Balancing Changes: 
+        Generator: Generator now produces more power.
+
++ 18.10.2024 16:36
+    New Additions: 
+        Large House: Added Large House  ("Increases population limit.")
+
++ 17.10.2024 01:44
+    New Additions: 
+        Mini-Map: Added a mini-map that shows all bushes, bases, your own units, and your camera position. You can toggle it using the M hotkey to maximize or minimize. Clicking anywhere on the mini-map allows you to instantly jump the camera to that location.
+
++ 12.10.2024 02:28
+    Improvements:
+        Optimizations: Reduced bandwidth usage by halving the update rate, compensating by relying on client prediction; optimized unit rotation, eliminating drifting issues.
+    Balancing Changes:
+        Power: Initial power level is now fully filled.
+    Bug Fixes:
+        Active Key Bug: Fixed active keys bug caused by tab switching; resolved polygon rotation bug during game resynchronization.
+
++ 10.10.2024 09:43
+    Improvements:
+        Optimizations: Enhanced game synchronization on network connection loss to prevent various tab-related bugs; optimized performance for higher FPS.
+        Visual Updates: Adjusted the selection color for darker themes for improved visibility; added a smooth camera jump-back.
+    New Additions:
+        Bushes: Added bushes to provide strategic options.
+    Balancing Changes:
+        Kamikaze Drone: Kamikaze Drone no longer deals friendly damage; modified unit movement mechanics to eliminate "doomstacks."
+        Removed: Ability to place buildings on units to prevent wall spamming.
+
++ 04.10.2024 00:27
+    Balancing Changes:
+        Map Size: Increased the map size.
+    New Additions: 
+        Trapper Turret: Introduced the Trapper Turret to enhance defensive capabilities, added the Heavy Sniper Turret, implemented connection lines to visually link nearby players.
+        Upgrade Hotkeys: Added hotkeys (Q/E/R) for quick upgrades.
+    Balancing Changes:
+        Units: Made various adjustments to unit stats.
+    Improvements:
+        Visual Updates: Changed the building radius color in dark mode for better visibility.
+
++ 30.09.2024 02:33
+    New Additions: 
+        Unit Selection: You can now hold Shift to keep your unit selection
+
++ 29.09.2024 20:58
+    New Additions: 
+       Armory: Soldier (Light Armor), Drone (Kamikaze, Autopilot), Tank (Heavy Armor → Cannon, Booster Engine → Light Armor), Siege Tank (Heavy Armor → Cannon or Mega Siege Tank, Booster Engine).
+    Balancing Changes:
+        Initial Power: Increased from 2000 to 3000.
+    Improvements:
+        Enhanced Unit Death Animation: Enhanced unit death animation.
+        Render Optimization: Only receiving unit updates for visible units from the server, various render optimizations.
+        Default Name Changed.
+    Bug Fixes:
+        Fixed Leaderboard Flicker: Fixed leaderboard flicker when player left.
+
++ 20.09.2024 22:12
+    Improvements:
+        Network Optimization: Moved all network tasks, including WebSocket message handling and decoding, to a separate worker to prevent the main thread from slowing down during heavy traffic, improving FPS.
+
++ 20.09.2024 03:54
+    Improvements:
+        Upgrade Panel: Changed UI.
+
++ 19.09.2024 22:23
+    Balancing Changes:
+        Buff: Increased Siege Tank health.
+
++ 18.09.2024 22:47
+    New Additions:
+        Bullet Fadeout Effect: Added bullet fadeout effect.
+    Balancing Changes:
+        Heavy Turret Cooldown: Increased heavy turret cooldown.
+
++ 17.09.2024 23:13
+    New Additions:
+        Quick Select: Added Quick Select (1 - 6).
+
++ 16.09.2024 21:14
+    New Additions: 
+        Heavy Turret: "Heavy shots with massive damage".
+        New Theme: "Midnight".
+    Improvements:
+        Movement: Smoother bullet & unit movement.
+
++ 16.09.2024 00:37
+    New Additions:
+        Themes: Added basic themes.
+
++ 15.09.2024 22:57
+    Balancing Changes:
+        Base Health: Reduced base health from 1500 to 750.
+        Turret Nerfs: Nerfed Anti-Tank Gun.
+        Siege Tank Health: Upgraded Siege Tank health from 1500 to 1800.
+        Tank Health: Boosted Tank health from 600 to 800.
+
++ 15.09.2024 17:18
+    Balancing Changes:
+        Base Health: Increased base health from 118 to 1500 for more durability.
+        Turret Buffs: Buffed Rapid Turret, Gatling Turret, and Anti-Tank Gun.
+        Siege Tank Health: Upgraded Siege Tank health from 1200 to 1500.
+        Tank Health: Boosted Tank health from 400 to 600.
+        Walls: All wall types have been buffed.
+
++ 15.09.2024 00:42
+    New Additions:
+        New Metrics: Added real-time metrics for current player count and bandwidth received per second.
+        Circle Selection: Implemented circle selection for units.
+        Version Control: Added client-server version control for synchronization.
+    Improvements:
+        Canvas Rendering Optimizations: Implemented improvements for smoother rendering.
+    Balancing Changes:
+        Armory Temporarily Removed.
+
++ 06.09.2024 21:15
+    Bug Fixes:
+         Server Crashes Resolved: Solved the server 'crashes'—load balancer was shutting down the server unnecessarily.
+
++ 06.09.2024 01:44
+    Balancing Changes:
+        Increased Building Health: Boosted the health of buildings to improve their durability and balance in gameplay.
+        Turrets in Protection Zones: Turrets now remain active and can target enemies even when a protection zone is active.
+    Improvements:
+        Server Optimization: Implemented various optimizations to enhance server performance and efficiency.
+        Turret Targeting Algorithm: Turret targeting is now more efficient.
+        Bullet Collision Detection Improved: Improved bullet collision detection with units for more precise hit detection.
+        Error Handling Improvements: Upgraded error handling and logging mechanisms to improve debugging and system stability.
+    Bug Fixes:
+        Protection Zone Collision Fixed: Corrected collision detection logic for protection zones.
+
++ 31.08.2024 21:36
+    New Additions:
+        Bullet Impact: Bullets now visibly impact targets.
+        In-Game Alert: Added in-game alert for upcoming server reboot.
+    Improvements:
+        Server Issues Resolved: Various server issues have been resolved.
+        Fallback Server: Added fallback server for full or crashed servers.
+
++ 24.08.2024 01:24
+    New Additions:
+        Base Regeneration: Added base regeneration.
+        Spawn Protection Timer: Implemented a spawn protection timer.
+        New Damage Animation: Introduced a new damage animation for your blob.
+        Building Selection: Added feature to press Shift to keep a building selected.
+        Chat: The chat is now scrollable.
+
++ 23.08.2024 01:11
+    Balancing Changes:
+        Unit Issues Fixed: Housing limit increased from 24 to 64.
+        Max Capacity: 128 drones | 64 soldiers | 21 tanks | 8 siege tanks.
+
++ 22.08.2024 15:50
+    Improvements:
+        Generator: Added animation.
+        Leaderboard: Clicking a name will now shift the camera focus to the player's base.
+        Building: Fixed flickering issue for smoother construction, even with high ping.
+
++ 21.08.2024 19:59
+    Balancing Changes:
+        Barracks: Unit spawn rate has been reduced.
+        Drones: Increased health and slower movement speed.
+        Siege Tanks: Significantly increased health. Population requirement raised.
+        Tanks: Population requirement increased.
+        Unit Cap: Increased maximum unit capacity.
+    New Additions:
+        Chatbox: Added colorful names. Clicking a name will shift the camera focus to the player's base.
+    Improvements:
+        Chat Message Length: Extended from 32 to 64 characters.
+        Server Optimization: Improved server-side unit processing.
+
+
