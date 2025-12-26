@@ -44,6 +44,7 @@ export default class UIManager {
                 screen: "menu-container",
                 playButton: "play-button",
                 menuButton: "menu-button",
+                menuSettingsButton: "menu-settings-button",
                 playerNameInput: "player-name",
             },
 
@@ -88,6 +89,7 @@ export default class UIManager {
                 panel: "#game-settings .settings",
                 exitButton: "game-settings-exit",
                 themeSelect: "theme-select",
+                removeGridCheckbox: "remove-grid-checkbox",
             },
 
             // Account 
@@ -177,6 +179,15 @@ export default class UIManager {
         this.populateThemeSelect();
 
         this.DOM.settings.themeSelect.value = ThemeManager.currentTheme;
+
+        // Initialize remove-grid checkbox from localStorage
+        if (this.DOM.settings.removeGridCheckbox) {
+            this.DOM.settings.removeGridCheckbox.checked = localStorage.getItem('showGrid') === 'false';
+            this.DOM.settings.removeGridCheckbox.addEventListener('change', (e) => {
+                localStorage.setItem('showGrid', e.target.checked ? 'false' : 'true');
+                // No need to reapply theme, grid is rendered every frame
+            });
+        }
     }
 
     async _populateSkinLibrary () {
@@ -1161,6 +1172,13 @@ export default class UIManager {
     }
 
     addSettingsPanelListener () {
+        // menu settings button should open the same settings panel
+        if (this.DOM.menu.menuSettingsButton) {
+            this.DOM.menu.menuSettingsButton.addEventListener('click', () => {
+                this.showGameSettingsButton(false);
+                this.showGameSettingsPanel(true);
+            });
+        }
         if (this.DOM.settings.button) {
             this.DOM.settings.button.addEventListener("click", () => {
                 this.showGameSettingsButton(false)

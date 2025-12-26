@@ -174,7 +174,7 @@ func generateRocks(centers []PositionInt, neutralBases []PositionInt, radius flo
 
 func generateRectangularGameMap() (playerPositions, neutralPositions []PositionInt) {
 	spacing := int16(2500)
-	radius := int16(8000) // Half the side length, so full map is -8000 to 8000
+	radius := int16(7500) // Reduced from 8000 to ensure bases fit within map bounds
 
 	// Generate player positions in a grid
 	for x := -radius; x <= radius; x += spacing {

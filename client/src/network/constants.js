@@ -85,7 +85,7 @@ export const BuildingLimits = {
     WALL: 9999,
     SIMPLE_TURRET: 9999,
     SNIPER_TURRET: 9999,
-    BARRACKS: 9999,
+    BARRACKS: 4,
     GENERATOR: 9999,
     HOUSE: 64
 }

@@ -43,6 +43,14 @@ export default class Toolbar {
         // Get the building limits from GameManager
         const buildingLimit = this.getBuildingLimit(item.type);
 
+        // Add disabled class if limit reached
+        if (buildingLimit.current >= buildingLimit.limit) {
+            toolbarItem.classList.add('disabled');
+        }
+
+        // Add data attribute for building type
+        toolbarItem.setAttribute('data-building-type', item.type);
+
         // Create the tooltip with the building limit and store its reference for later updates
         const tooltip = this.createTooltip(details.name, details.description, details.cost, buildingLimit);
         toolbarItem.appendChild(tooltip);
@@ -143,6 +151,16 @@ export default class Toolbar {
                 ? '<span class="infinity-symbol">∞</span>'
                 : buildingLimit.limit;
             tooltipLimit.innerHTML = `${newCurrent}/${limitDisplay}`;
+
+            // Update disabled state
+            const toolbarItem = this.container.querySelector(`[data-building-type="${buildingType}"]`);
+            if (toolbarItem) {
+                if (newCurrent >= buildingLimit.limit) {
+                    toolbarItem.classList.add('disabled');
+                } else {
+                    toolbarItem.classList.remove('disabled');
+                }
+            }
         }
     }
 }

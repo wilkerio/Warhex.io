@@ -411,13 +411,13 @@ export default class Player extends Renderable {
         this.borderRotation += deltaTime * 1 / 20000;
 
         if (this.hasSpawnProtection) {
-            const protectionColor = ThemeManager.currentThemeProperties.protectionColor;
+            const protectionColor = "#00ff00"; // Verde para a linha de protection
             circleBorder(this.spawnProtectionRadius, protectionColor, this.borderRotation);
         }
 
         const borderColor = ThemeManager.currentThemeProperties.lineColor;
-        circleBorder(this.buildingRadius.min + 8, borderColor, this.borderRotation);
-        circleBorder(this.buildingRadius.max, borderColor, this.borderRotation);
+        circleBorder(this.buildingRadius.min + 8, "#cccccc", this.borderRotation); // Cinza para a linha interna
+        circleBorder(this.buildingRadius.max, "#ffffff", this.borderRotation); // Branca para a linha do meio
         baseCore();
 
 

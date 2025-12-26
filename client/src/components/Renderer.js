@@ -142,6 +142,9 @@ export class Renderer {
     }
 
     renderBackground () {
+        const showGrid = localStorage.getItem('showGrid') !== 'false'; // Default true
+        if (!showGrid) return;
+
         const { context, grid, camera, mapSize } = this;
         const { spacing, lineWidth } = grid;
 
