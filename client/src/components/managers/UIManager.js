@@ -106,6 +106,7 @@ export default class UIManager {
                 statsContainer: "stats-container",
                 // Signup dialog inputs
                 signupEmail: "signup-email",
+                signupNickname: "signup-nickname",
                 signupPassword: "signup-password",
                 signupSubmit: "signup-submit",
                 signupCancel: "signup-cancel",
@@ -405,15 +406,27 @@ export default class UIManager {
         if (this.DOM.account.signupSubmit) {
             this.DOM.account.signupSubmit.addEventListener("click", async () => {
                 const email = this.DOM.account.signupEmail?.value;
+                const nickname = this.DOM.account.signupNickname?.value;
                 const password = this.DOM.account.signupPassword?.value;
 
-                if (!email || !password) {
-                    alert("Please enter email and password.");
+                if (!email || !nickname || !password) {
+                    alert("Please enter email, nickname and password.");
+                    return;
+                }
+
+                // Basic nickname validation
+                if (nickname.length < 3) {
+                    alert("Nickname must be at least 3 characters long.");
+                    return;
+                }
+
+                if (!/^[a-zA-Z0-9_]+$/.test(nickname)) {
+                    alert("Nickname can only contain letters, numbers and underscores.");
                     return;
                 }
 
                 try {
-                    await signUp(email, password);
+                    await signUp(email, password, nickname);
                     this.showSignupDialog(false);
                     alert("Account created! Please check your email to verify your account.");
                 } catch (error) {
@@ -637,9 +650,17 @@ export default class UIManager {
                 // Clear any existing classes before setting the "Logout" state
                 this.DOM.account.accountButton.classList.remove("login");
                 this.DOM.account.accountButton.textContent = "Logout";
+                // Hide signup button when logged in
+                if (this.DOM.account.signupButton) {
+                    this.DOM.account.signupButton.style.display = "none";
+                }
             } else {
                 this.DOM.account.accountButton.classList.add("login");
                 this.DOM.account.accountButton.textContent = "Login";
+                // Show signup button when not logged in
+                if (this.DOM.account.signupButton) {
+                    this.DOM.account.signupButton.style.display = "block";
+                }
             }
             this.DOM.account.accountButton.style.display = "block";
         }
