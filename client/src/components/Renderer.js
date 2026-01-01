@@ -308,7 +308,7 @@ export class Renderer {
         });
     }
 
-    _renderQueues (context, camera, deltaTime) {
+    _renderQueues(context, camera, deltaTime) {
         if (this.cameraMoved || this.cameraZoomChanged) {
             this._updateVisiblePlayers();
             this.cameraMoved = false; // Reset the flag after checking visibility
@@ -324,17 +324,58 @@ export class Renderer {
         }
         this.queues.static.forEach(renderable => renderable.render(context, camera, deltaTime));
 
+        const spawningUnitsUnder = [];
+        const spawningUnitsOver = [];
+        const unitsUnder = [];
+        const unitsOver = [];
+
         for (const player of this.queues.player) {
-            player.renderSpawningUnits(this.context, this.camera, deltaTime);
+            for (const unit of player.spawningUnits) {
+                let isUnder = false;
+                for (const p of this.visiblePlayers) {
+                    if (p.isUnitInsideCore(unit)) {
+                        isUnder = true;
+                        break;
+                    }
+                }
+                if (isUnder) {
+                    spawningUnitsUnder.push(unit);
+                } else {
+                    spawningUnitsOver.push(unit);
+                }
+            }
+
+            for (const unit of player.units) {
+                let isUnder = false;
+                for (const p of this.visiblePlayers) {
+                    if (p.isUnitInsideCore(unit)) {
+                        isUnder = true;
+                        break;
+                    }
+                }
+                if (isUnder) {
+                    unitsUnder.push(unit);
+                } else {
+                    unitsOver.push(unit);
+                }
+            }
         }
+
+        spawningUnitsOver.forEach(unit => unit.render(context, camera, deltaTime));
+        unitsOver.forEach(unit => unit.render(context, camera, deltaTime));
 
         for (const player of this.visiblePlayers) {
             player.render(this.context, this.camera, deltaTime);
         }
 
-        for (const player of this.queues.player) {
-            player.renderUnits(this.context, this.camera, deltaTime);
-        }
+        context.save();
+        context.globalCompositeOperation = 'destination-over';
+
+        spawningUnitsUnder.forEach(unit => unit.render(context, camera, deltaTime));
+        unitsUnder.forEach(unit => unit.render(context, camera, deltaTime));
+
+        context.restore();
+
 
         for (const player of this.visiblePlayers) {
             player.renderBullets(this.context, this.camera, deltaTime);

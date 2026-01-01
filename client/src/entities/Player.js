@@ -315,7 +315,7 @@ export default class Player extends Renderable {
     }
 
 
-    render (context, camera, deltaTime) {
+    render(context, camera, deltaTime) {
         // Translate the player's position according to the camera
         const screenX = this.position.x - camera.x;
         const screenY = this.position.y - camera.y;
@@ -349,7 +349,10 @@ export default class Player extends Renderable {
             context.beginPath();
             context.arc(screenX, screenY, healthRadius, 0, 2 * Math.PI, false);
             context.fillStyle = this.color;
+            context.save();
+            context.globalAlpha = 0.9; // 10% transparent
             context.fill();
+            context.restore();
             context.closePath();
 
             // Set the stroke style and draw the border
@@ -374,6 +377,17 @@ export default class Player extends Renderable {
                 // Restore the context to remove clipping
                 context.restore();
             }
+
+            // Draw the white inner core ring
+            context.beginPath();
+            context.arc(screenX, screenY, 30, 0, 2 * Math.PI, false);
+            context.strokeStyle = "white";
+            context.lineWidth = 4;
+            context.save();
+            context.globalAlpha = 0.5;
+            context.stroke();
+            context.restore();
+            context.closePath();
 
             // Draw the player's name
             let maxWidth = this.buildingRadius.min * 2; // Maximum width allowed for the text
@@ -459,6 +473,11 @@ export default class Player extends Renderable {
 
     getBuilding (buildingID) {
         return this.buildings.find(building => building.id === buildingID) || null;
+    }
+
+    isUnitInsideCore(unit) {
+        const distance = Math.hypot(unit.position.x - this.position.x, unit.position.y - this.position.y);
+        return distance < 30;
     }
 
     getWorldPosition (camera) {
