@@ -83,6 +83,7 @@ export default class UIManager {
                 messages: "chat-messages",
                 input: "chat-message-input",
                 button: "chat-button",
+                suggestions: "chat-suggestions-container",
             },
 
             // Game settings
@@ -172,6 +173,17 @@ export default class UIManager {
             this.DOM.chat.input.addEventListener("blur", () => {
                 this.core.camera.enableControls(true);
                 this.isChatInputFocused = false;
+                setTimeout(() => this.hidePlayerSuggestions(), 100); // Delay to allow click on suggestion
+            });
+            this.DOM.chat.input.addEventListener("input", (e) => {
+                const value = e.target.value;
+                const atIndex = value.lastIndexOf('@');
+                if (atIndex !== -1) {
+                    const query = value.substring(atIndex + 1);
+                    this.showPlayerSuggestions(query);
+                } else {
+                    this.hidePlayerSuggestions();
+                }
             });
         }
 
@@ -1108,6 +1120,11 @@ export default class UIManager {
         const messageDiv = document.createElement("div");
         messageDiv.classList.add("message");
 
+        // Check for mention
+        if (this.core.gameManager.player && message.includes('@' + this.core.gameManager.player.name)) {
+            messageDiv.classList.add("mention-highlight");
+        }
+
         // Create and set username span
         const usernameSpan = document.createElement("span");
         usernameSpan.classList.add("name");
@@ -1696,5 +1713,39 @@ export default class UIManager {
         if (!this.DOM.game.metrics) return;
         const { fps, bandwidthReceived } = this.core.gameManager.metrics;
         this.DOM.game.metrics.innerText = `${fps} FPS | ${bandwidthReceived}`
+    }
+
+    showPlayerSuggestions(query) {
+        if (!this.DOM.chat.suggestions) return;
+
+        const players = this.core.gameManager.players;
+        const filteredPlayers = players.filter(p => p && p.name.toLowerCase().includes(query.toLowerCase()));
+
+        this.DOM.chat.suggestions.innerHTML = "";
+        this.DOM.chat.suggestions.style.display = "block";
+
+        filteredPlayers.forEach(player => {
+            const suggestionElement = document.createElement("div");
+            suggestionElement.classList.add("chat-suggestion-item");
+            suggestionElement.textContent = player.name;
+            suggestionElement.addEventListener("mousedown", (e) => {
+                e.preventDefault(); // Prevent input from losing focus
+                const atIndex = this.DOM.chat.input.value.lastIndexOf('@');
+                this.DOM.chat.input.value = this.DOM.chat.input.value.substring(0, atIndex + 1) + player.name + " ";
+                this.hidePlayerSuggestions();
+                this.DOM.chat.input.focus();
+            });
+            this.DOM.chat.suggestions.appendChild(suggestionElement);
+        });
+
+        if (filteredPlayers.length === 0) {
+            this.hidePlayerSuggestions();
+        }
+    }
+
+    hidePlayerSuggestions() {
+        if (!this.DOM.chat.suggestions) return;
+        this.DOM.chat.suggestions.style.display = "none";
+        this.DOM.chat.suggestions.innerHTML = "";
     }
 }
