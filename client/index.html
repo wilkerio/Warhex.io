@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Blobl.io</title>
+    <title>Infinity.io</title>
     <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport' />
     <meta name="description"
         content="Blobl.io: A strategic 2D multiplayer RTS game where you build and defend your base, capture resources, and outmaneuver opponents in tactical gameplay.">
@@ -37,7 +37,7 @@
                 <p>We couldn't let you join the server.</p>
                 <p>The server might be <b>full</b> or <b>temporarily unavailable</b>.</p>
                 <p>If you were trying to play on multiple tabs, well, that's a big nope from us. <b>Multiboxing? Try
-                        that again, and we’ll send your IP straight to the blacklist!</b></p>
+                        that again, and we'll send your IP straight to the blacklist!</b></p>
                 <img src="https://c.tenor.com/8yMqNs21uTQAAAAd/tenor.gif" alt="Connection Rejected"
                     style="max-width: 100%; height: auto; margin-top: 20px;">
                 <p>Try again in a bit!</p>
@@ -66,14 +66,42 @@
                         against other players!</li>
                 </ul>
                 <hr />
-                <div class="login-form">
-                    <input type="email" id="emailInput" placeholder="Email" required>
-                    <input type="password" id="passwordInput" placeholder="Password" required>
-                    <button id="discordLoginButton">Login</button>
+                <div class="actions">
+                    <button id="guest-button">👤 Continue as Guest</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="dialog" id="signup-dialog">
+            <div class="menu-card">
+                <h2>Create Account</h2>
+                <p>Join Infinity.io and unlock exclusive features!</p>
+                <hr />
+                <div class="signup-form">
+                    <input type="email" id="signup-email" placeholder="Email" required>
+                    <input type="password" id="signup-password" placeholder="Password" required>
                 </div>
                 <hr />
                 <div class="actions">
-                    <button id="guest-button">👤 Continue as Guest</button>
+                    <button id="signup-submit">Create Account</button>
+                    <button id="signup-cancel">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="dialog" id="signin-dialog">
+            <div class="menu-card">
+                <h2>Login</h2>
+                <p>Enter your credentials to access your account.</p>
+                <hr />
+                <div class="signin-form">
+                    <input type="email" id="signin-email" placeholder="Email" required>
+                    <input type="password" id="signin-password" placeholder="Password" required>
+                </div>
+                <hr />
+                <div class="actions">
+                    <button id="signin-submit">Login</button>
+                    <button id="signin-cancel">Cancel</button>
                 </div>
             </div>
         </div>
@@ -95,14 +123,18 @@
                 </div>
             </div>
         </div>
-  
+
+        <div id="featured">
+            <a href="https://oceanbound.io" target="_blank">
+                <img src="/assets/oceanbound.png" alt="oceanbound.io" />
+            </a>
+        </div>
         <div id="global-leaderboard" class="leaderboard"></div>
 
         <div id="game-title">
             <h1 class="title">Infinity<span>.io</span></h1>
-            <p class="subtitle">Build, Battle, Dominate!</p>
         </div>
-        </a>
+
         <div class="menu-content-container">
             <div class="menu-content">
                 <div class="player-settings">
@@ -115,18 +147,27 @@
                             <button id="menu-settings-button" class="menu-settings-button">Settings</button>
                         </div>
                     </div>
-                  
                 </div>
                 <div class="menu-card">
                     <div id="account-container">
-                        <div id="skin-preview">
-                            <div>+</div>
-                            Skins
-                        </div>
                         <div class="progress-container" id="level-progression">
                             <div class="progress-icon">1</div>
-                            <div class="progress-bar"></div>
+                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--progress: 0%;"></div>
                             <div class="progress-text">0 / 50 XP</div>
+                        </div>
+                        <div id="discord-shop-links">
+                            <button id="discord-button">Discord</button>
+                            <button id="shop-button">Shop</button>
+                        </div>
+                        <div id="skin-list-menu" style="margin-top: 15px;">
+                            <button id="skin-carousel-prev-menu" class="end">❮</button>
+                            <button id="skin-preview">
+                                <p>Skins</p>
+                                <div>+</div>
+                            </button>
+                            <div id="skin-container-menu">
+                            </div>
+                            <button id="skin-carousel-next-menu">❯</button>
                         </div>
                         <h1 id="account-handle">@guest</h1>
                         <hr>
@@ -145,12 +186,32 @@
                             </div>
                         </div>
                         <hr>
-                        <button id="account-button">Login</button>
+                        <div class="account-buttons">
+                            <button id="account-button">Login</button>
+                            <button id="signup-button">Sign Up</button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-   
+        <div id="announcement-container">
+            <div class="menu-card">
+                <h2>Anúncio</h2>
+                <p>Seu anúncio ou conteúdo especial aqui!</p>
+            </div>
+        </div>
+        <div id="how-to-play-container">
+            <div class="menu-card">
+                <h2>How to Play</h2>
+                <div class="video-wrapper">
+                    <iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ" 
+                            title="YouTube video player" frameborder="0" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                            allowfullscreen>
+                    </iframe>
+                </div>
+            </div>
+        </div>
     </div>
 
 
@@ -186,7 +247,7 @@
                     </select>
                 </div>
                 <div class="misc-settings">
-                    <label for="remove-grid-checkbox"><input type="checkbox" id="remove-grid-checkbox"> Desativar grid</label>
+                    <label for="remove-grid-checkbox"><input type="checkbox" id="remove-grid-checkbox"> Disable Grid</label>
                 </div>
             </div>
         </div>
@@ -217,6 +278,7 @@
                 <div id="chat-messages">
                     <div class="message"><span class="text">Welcome to Infinity.io</span></div>
                 </div>
+                <div id="chat-suggestions-container"></div>
                 <div class="actions">
                     <input type="text" class="chat-message-input" id="chat-message-input" placeholder="Message"
                         maxlength="64">
@@ -227,8 +289,26 @@
         <div id="leaderboard-container"></div>
         <div id="minimap-container"></div>
         <div id="toolbar-container"></div>
+    </div>
+    <div id="global-settings-button" class="global-settings-button">
+        <span class="settings-icon">⚙️</span>
+        <p class="settings-text">config</p>
+    </div>
 </body>
- <style>
-    
- </style>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const playButton = document.getElementById("play-button");
+    const featured = document.getElementById("featured");
+
+    if (playButton && featured) {
+        playButton.addEventListener("click", () => {
+            featured.style.transition = "opacity 0.5s ease";
+            featured.style.opacity = "0";
+            setTimeout(() => {
+                featured.style.display = "none";
+            }, 500);
+        });
+    }
+});
+</script>
 </html>

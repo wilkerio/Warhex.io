@@ -2,6 +2,7 @@
 
 canvas {
   font-family: 'Ubuntu', sans-serif;
+  border-radius: 0; /* Ensures square limit for the game canvas */
 }
 
 /* Universe background canvas */
@@ -21,6 +22,7 @@ html, body {
   font-family: 'Ubuntu', sans-serif;
   user-select: none;
   background-color: #fff;
+  border-radius: 0; /* Ensuring outer container is square */
 }
 
 h1, h2, h3, h4, p {
@@ -31,7 +33,7 @@ h1, h2, h3, h4, p {
 img {
   -webkit-user-drag: none; 
   user-drag: none;        
-  pointer-events: none;   
+  pointer-events: all;   
 }
 
 .info-alert {
@@ -109,6 +111,98 @@ img {
   width: 100%;
 }
 
+#signup-dialog .signup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+#signup-dialog .signup-form input {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+}
+
+#signup-dialog .signup-form input::placeholder {
+  color: #cccccc;
+}
+
+#signup-dialog .menu-card {
+  color: #ffffff;
+}
+
+#signup-dialog .actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+#signup-dialog .actions > button {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(180,160,255,0.25);
+  color: #ffffff;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+#signup-dialog .actions > button:hover {
+  background: rgba(180,160,255,0.45);
+  transform: scale(1.05);
+}
+
+#signin-dialog .signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+#signin-dialog .signin-form input {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+}
+
+#signin-dialog .signin-form input::placeholder {
+  color: #cccccc;
+}
+
+#signin-dialog .menu-card {
+  color: #ffffff;
+}
+
+#signin-dialog .actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+#signin-dialog .actions > button {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(180,160,255,0.25);
+  color: #ffffff;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+#signin-dialog .actions > button:hover {
+  background: rgba(180,160,255,0.45);
+  transform: scale(1.05);
+}
+
 #guest-button {
   background-color: #f0f0f0;
   color: #333;
@@ -162,13 +256,15 @@ img {
   display: flex;
   margin-bottom: 10px;
   gap: 8px;
+  justify-content: center;
+  align-items: center;
 }
 
 #skin-container{
   display: flex;
-  overflow: hidden;
-  gap: 7px;
-  width: 700px;
+  /* Removed overflow: hidden; to ensure all skins are visible */
+  gap: 15px; /* Increased gap for better spacing */
+  width: fit-content; /* Allow container to grow with content */
   scroll-behavior: smooth;
   scroll-snap-type: x mandatory;
 }
@@ -180,8 +276,7 @@ img {
 #skin-carousel-prev,
 #skin-carousel-next{
   width: min-content;
-  margin-bottom: 58px;
-  font-size: 50px;
+  font-size: 25px;
   z-index: 1;
   border: 2px solid #ff6b6b;
   background: transparent;
@@ -217,14 +312,14 @@ img {
   justify-content: center;
   border-radius: 4px;
   border: 2px dashed rgba(0, 0, 0, 0.3);
-  height: 230px;
-  width: 160px;
+  height: 130px;
+  width: 90px;
 }
 
 .skin-list-item>.skin-details>h1 {
   position: absolute;
   top: 0;
-  font-size: 22px;
+  font-size: 16px;
   padding: 10px;
   color: rgba(0, 0, 0, 0.7);
 }
@@ -249,8 +344,8 @@ img {
   align-items: center;
   gap: 5px;
   margin-top: 10px;
-  height: 45px;
-  font-size: 20px;
+  height: 30px;
+  font-size: 14px;
   font-weight: 600;
   color: #464646;
 }
@@ -259,7 +354,7 @@ img {
   border: 2px #ff6b6b solid;
   color: #ff6b6b;
   background-color: transparent;
-  height: 45px; 
+  height: 30px; 
 }
 
 
@@ -279,14 +374,20 @@ img {
   margin-top: 6px;
 }
 
-#account-button{
-  width: 100%;
+#account-button, #signup-button{
+  width: auto;
   font-size: 16px;
   padding: 5px;
   margin-top: 10px;
+  flex: 1;
 }
 
-#account-button.login{
+.account-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+#account-button.login, #signup-button{
   background-color: #7289da;
   color: #ffffff;
 }
@@ -332,9 +433,8 @@ img {
 }
 
 #level-progression {
-  position: absolute;
-  margin-top: -14px;
-  font-size: 12px;
+  font-size: 16px;
+  width: 100%;
 }
 
 #level-progression .progress-icon {
@@ -383,7 +483,7 @@ img {
   display: none;
   flex-direction: column;
   position: absolute;
-  bottom: 330px;
+
   left: 8px;
   width: 310px;
   z-index: 1;
@@ -512,17 +612,20 @@ img {
   display: flex;
   position: fixed;
   top: 340px;
-  height: 25px;
-  background-color: rgb(97, 176, 255);
-  border: 2px solid #464646;
-  border-left: none;
-  transition: left 0.5s ease;
+  height: 35px; /* Slightly increased height */
+  background: rgba(180, 160, 255, 0.25); /* Consistent background */
+  border: 1px solid rgba(180, 160, 255, 0.3); /* Consistent border */
+  border-radius: 0; /* Consistent with other panels */
+  box-shadow: 0 4px 12px rgba(180, 160, 255, 0.15); /* Added box-shadow */
+  backdrop-filter: blur(5px); /* Added backdrop-filter */
+  transition: left 0.5s ease, background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease; /* Updated transition */
   left: -80px;
   z-index: 5;
 }
 
 #game-settings .slider:hover {
   left: 0px;
+  background: rgba(180, 160, 255, 0.4); /* Darker background on hover */
 }
 
 #game-settings .slider button {
@@ -548,9 +651,12 @@ img {
   width: 250px;
   left: 8px;
   flex-direction: column;
-  background-color: #66666675;
-  padding: 10px;
-  border-radius: 3px;
+  background: rgba(20, 10, 40, 0.6); /* Modernized background */
+  border: 1px solid rgba(180, 160, 255, 0.3); /* Added border */
+  padding: 15px; /* Adjusted padding */
+  border-radius: 0; /* Set to 0 for consistency */
+  box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2); /* Added box-shadow */
+  backdrop-filter: blur(8px); /* Added backdrop-filter */
   text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.2);
   color: #ffffff;
   font-weight: 700;
@@ -672,6 +778,7 @@ img {
 }
 
 .chat {
+  zoom: 0.7 !important;
   position: absolute;
   display: none;
   flex-direction: column;
@@ -691,15 +798,17 @@ img {
   box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2);
   backdrop-filter: blur(10px);
   width: 300px;
-  max-height: 400px;
+  max-height: 300px;
   overflow: hidden;
   font-family: 'Segoe UI', sans-serif;
   color: #e0d6ff;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
+  
 }
 #chat:hover {
   transform: translateY(-3px);
   box-shadow: 0 12px 32px rgba(180, 160, 255, 0.35);
+  
 }
 .chat>.header {
   display: flex;
@@ -736,7 +845,7 @@ img {
   /* For Firefox */
   scrollbar-color: #888 #f1f1f197;
   /* For Firefox */
-  justify-content: end;
+
 }
 
 /* For WebKit browsers like Chrome and Safari */
@@ -811,6 +920,10 @@ img {
   font-size: 18px;
 }
 
+.chat-button:hover {
+  background-color: #66666625;
+}
+
 .leaderboard {
   position: fixed;
   display: flex;
@@ -834,6 +947,7 @@ img {
   color: #e0d6ff;
   font-family: 'Segoe UI', sans-serif;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
+  zoom: 0.7;
 }
 .leaderboard:hover {
   transform: translateY(-5px);
@@ -893,6 +1007,7 @@ img {
   flex-direction: column;
   gap: 5px;
   z-index: 1001;
+  zoom: 0.7;
 }
 
 #resource-container>* {
@@ -954,6 +1069,7 @@ img {
   bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
+  zoom: 0.7;
 }
 
 .toolbar-item {
@@ -1046,6 +1162,108 @@ img {
   background-color: #00000045;
 }
 
+/* Announcement Container */
+#announcement-container {
+  position: fixed;
+  left: 30px; /* Moved to the left edge */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 350px; /* Increased width */
+  max-height: 90vh; /* Increased max height */
+  overflow-y: auto;
+  z-index: 10;
+  
+  /* Glassmorphism styling */
+  background: rgba(20,10,40,0.75);
+  border: 1px solid rgba(180,160,255,0.3);
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(180,160,255,0.2);
+  backdrop-filter: blur(12px);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  color: #ffffff;
+  font-family: 'Segoe UI', sans-serif;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  zoom: 0.8; /* Slightly larger zoom for larger container */
+}
+
+#announcement-container:hover {
+  transform: translateY(-50%) translateY(-4px); /* Lift slightly on hover */
+  box-shadow: 0 16px 40px rgba(180,160,255,0.35);
+}
+
+#announcement-container h2 {
+  font-size: 1.8em;
+  color: #b4a0ff;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+#announcement-container p {
+  font-size: 1em;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* How to Play Container */
+#how-to-play-container {
+  position: fixed;
+  right: 30px; /* Position it 30px from the right edge */
+  top: 50%; /* Center vertically */
+  transform: translateY(-50%); /* Adjust for vertical centering */
+  width: 400px; /* Fixed width, adjust as needed */
+  max-height: 90vh; /* Max height relative to viewport */
+  overflow-y: auto; /* Enable scrolling if content overflows */
+  z-index: 10;
+  
+  /* Glassmorphism styling */
+  background: rgba(20,10,40,0.75);
+  border: 1px solid rgba(180,160,255,0.3);
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(180,160,255,0.2);
+  backdrop-filter: blur(12px);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  color: #ffffff;
+  font-family: 'Segoe UI', sans-serif;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  zoom: 0.8; /* Apply zoom for consistency */
+}
+
+#how-to-play-container:hover {
+  transform: translateY(-50%) translateY(-4px); /* Lift slightly on hover */
+  box-shadow: 0 16px 40px rgba(180,160,255,0.35);
+}
+
+#how-to-play-container h2 {
+  font-size: 1.8em;
+  color: #b4a0ff;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+/* Responsive video wrapper */
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 Aspect Ratio (divide 9 by 16 = 0.5625) */
+  height: 0;
+  overflow: hidden;
+  border-radius: 12px; /* Match menu-card border-radius */
+}
+
+.video-wrapper iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
 
 #menu-container>.top-right,
 #menu-container>.bottom-right {
@@ -1174,9 +1392,23 @@ img {
 }
 
 .progress-bar {
-  height: 20px;
-  background-color: #5be4b6;
-  border-radius: inherit;
+  position: relative;
+  height: 12px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+  --progress: 0%;
+}
+
+.progress-bar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--progress);
+  background: linear-gradient(90deg, rgba(110,220,255,0.95), rgba(80,120,255,0.95));
+  transition: width 420ms cubic-bezier(.2,.9,.2,1);
 }
 
 .progress-text {
@@ -1230,12 +1462,12 @@ img {
   height: min-content;
   justify-content: space-between;
   gap: 6px;
+  align-items: center;
 }
 
 input.player-name-input {
   border: 1px solid #ccc;
   border-radius: 4px;
-  padding: 8px;
   font-size: 18px;
   font-family: 'Ubuntu', sans-serif;
   outline: none;
@@ -1258,19 +1490,11 @@ button:hover {
 
 
 .play-button {
-  width: 100px;
-  height: 45px;
   background-color: #ff605f;
   color: white;
 }
 
-.menu-settings-button {
-  width: 100px;
-  height: 45px;
-  background-color: #4a90e2;
-  color: white;
-  margin-left: 10px;
-}
+
 
 
 .settings-container>select {
@@ -1387,131 +1611,153 @@ button:hover {
 }
 /* =================== CHAT =================== */
 #chat {
-  display: flex;
-  flex-direction: column;
-  background: rgba(20, 10, 40, 0.7);
-  border: 1px solid rgba(180, 160, 255, 0.3);
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2);
-  backdrop-filter: blur(10px);
-  width: 300px;
-  max-height: 400px;
-  overflow: hidden;
-  font-family: 'Segoe UI', sans-serif;
-  color: #e0d6ff;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border-radius: 0;
+    box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2);
+    backdrop-filter: blur(10px);
+    width: 500px;
+    height: 700px;
+    overflow: hidden;
+    font-family: 'Segoe UI', sans-serif;
+    color: #e0d6ff;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 #chat:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 32px rgba(180, 160, 255, 0.35);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 32px rgba(180, 160, 255, 0.35);
 }
 
 #chat .header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 15px;
-  background: rgba(180, 160, 255, 0.05);
-  border-bottom: 1px solid rgba(180, 160, 255, 0.2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: rgba(180, 160, 255, 0.05);
+    border-bottom: 1px solid rgba(180, 160, 255, 0.2);
 }
 
 #chat .header h3 {
-  margin: 0;
-  font-size: 1.2em;
-  color: #b4a0ff;
+    margin: 0;
+    font-size: 1.2em;
+    color: #b4a0ff;
 }
 
 #chat .chat-move-button {
-  background: rgba(180, 160, 255, 0.2);
-  border: none;
-  border-radius: 8px;
-  padding: 2px 6px;
-  cursor: pointer;
-  color: #e0d6ff;
-  font-weight: bold;
-  transition: background 0.3s ease, transform 0.2s ease;
+    background: rgba(180, 160, 255, 0.2);
+    border: none;
+    border-radius: 8px;
+    padding: 2px 6px;
+    cursor: pointer;
+    color: #e0d6ff;
+    font-weight: bold;
+    transition: background 0.3s ease, transform 0.2s ease;
 }
 
 #chat .chat-move-button:hover {
-  background: rgba(180, 160, 255, 0.35);
-  transform: scale(1.1);
+    background: rgba(180, 160, 255, 0.35);
+    transform: scale(1.1);
 }
 
 #chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+    flex: 1;
+    overflow-y: scroll;
+    padding: 10px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 #chat-messages .message {
-  background: rgba(180, 160, 255, 0.1);
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-size: 0.95em;
-  transition: background 0.3s ease;
+    background: rgba(180, 160, 255, 0.1);
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 0.95em;
+    transition: background 0.3s ease;
 }
 
 #chat-messages .message:hover {
-  background: rgba(180, 160, 255, 0.25);
+    background: rgba(180, 160, 255, 0.25);
+}
+
+#chat-suggestions-container {
+    position: relative;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 150px;
+    overflow-y: auto;
+    background: rgba(20, 10, 40, 0.9);
+    border-top: 1px solid rgba(180, 160, 255, 0.2);
+    border-bottom: 1px solid rgba(180, 160, 255, 0.2);
+    display: none; /* Hidden by default */
+    flex-direction: column;
+    padding: 5px 0;
+    z-index: 1001;
+}
+
+.chat-suggestion-item {
+    padding: 8px 15px;
+    cursor: pointer;
+    color: #e0d6ff;
+    font-size: 0.9em;
+    transition: background 0.2s ease;
+}
+
+.chat-suggestion-item:hover, .chat-suggestion-item.selected {
+    background: rgba(180, 160, 255, 0.3);
+}
+
+.chat #chat-messages .message.mention-highlight {
+    background: rgba(255, 165, 0, 0.3); /* A more prominent orange background */
+    border: 2px solid rgba(255, 165, 0, 0.8); /* Thicker, more vibrant orange border */
+    transform: scale(1.03); /* Slightly larger scale */
+    box-shadow: 0 0 10px rgba(255, 165, 0, 0.6); /* Stronger glow effect */
+    font-weight: bold; /* Make text bold */
 }
 
 #chat .actions {
-  display: flex;
-  padding: 10px 15px;
-  gap: 6px;
-  border-top: 1px solid rgba(180, 160, 255, 0.2);
+    display: flex;
+    padding: 10px 15px;
+    gap: 6px;
+    border-top: 1px solid rgba(180, 160, 255, 0.2);
 }
 
 #chat .chat-message-input {
-  flex: 1;
-  padding: 6px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(180, 160, 255, 0.3);
-  background: rgba(30, 15, 60, 0.6);
-  color: #e0d6ff;
-  outline: none;
-  transition: border 0.3s ease, background 0.3s ease;
+    flex: 1;
+    padding: 6px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(180, 160, 255, 0.3);
+    background: rgba(30, 15, 60, 0.6);
+    color: #e0d6ff;
+    outline: none;
+    transition: border 0.3s ease, background 0.3s ease;
 }
 
 #chat .chat-message-input:focus {
-  border: 1px solid #b4a0ff;
-  background: rgba(30, 15, 60, 0.8);
+    border: 1px solid #b4a0ff;
+    background: rgba(30, 15, 60, 0.8);
 }
 
 #chat .chat-button {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 12px;
-  background: rgba(180, 160, 255, 0.25);
-  color: #e0d6ff;
-  font-weight: bold;
-  cursor: pointer;
-  transition: background 0.3s ease, transform 0.2s ease;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 12px;
+    background: rgba(180, 160, 255, 0.25);
+    color: #e0d6ff;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s ease, transform 0.2s ease;
 }
 
 #chat .chat-button:hover {
-  background: rgba(180, 160, 255, 0.45);
-  transform: scale(1.05);
+    background: rgba(180, 160, 255, 0.45);
+    transform: scale(1.05);
 }
 
 /* =================== RESOURCE CONTAINER =================== */
 #resource-container {
-  display: flex;
-  justify-content: flex-start;
-  gap: 20px;
-  padding: 10px 15px;
-  background: rgba(20, 10, 40, 0.6);
-  border: 1px solid rgba(180, 160, 255, 0.3);
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2);
-  backdrop-filter: blur(8px);
-  color: #e0d6ff;
-  font-family: 'Segoe UI', sans-serif;
-  margin-bottom: -30px;
+
+  
 }
 
 #resource-container #power {
@@ -1620,6 +1866,7 @@ button:hover {
   transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
   width: fit-content;
   margin: 10px auto;
+  zoom: 0.7;
 }
 
 #shield:hover {
@@ -1639,6 +1886,8 @@ button:hover {
   backdrop-filter: blur(8px);
   font-family: 'Segoe UI', sans-serif;
   color: #e0d6ff;
+  zoom: 0.7;
+  
 }
 
 /* Botão de fechar */
@@ -1702,4 +1951,433 @@ button:hover {
   color: #b4a0ff;
   font-weight: bold;
   margin-left: 5px;
+}
+/* Container geral do menu */
+.menu-content-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 5px 30px 30px 30px; /* Reduzido padding-top de 30px para 5px */
+  gap: 20px;
+  font-family: 'Segoe UI', sans-serif;
+  color: #ffffff;
+  zoom:0.7;
+}
+
+/* Menu Content */
+.menu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 500px;
+}
+
+/* Cards de menu */
+.menu-card {
+  background: rgba(20,10,40,0.75);
+  border: 1px solid rgba(180,160,255,0.3);
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(180,160,255,0.2);
+  backdrop-filter: blur(12px);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.menu-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(180,160,255,0.35);
+}
+
+/* Player Settings Container - horizontal layout */
+.player-input-container {
+  display: flex;
+  flex-direction: row; /* horizontal */
+  gap: 15px;
+  align-items: center;
+}
+
+/* Player name input */
+
+.player-name-input {
+  flex-grow: 1; /* Allow input to take available space */
+  padding: 12px 15px;
+  border: 1px solid rgba(180, 160, 255, 0.3);
+  border-radius: 12px;
+  background: rgba(30, 15, 60, 0.6);
+  color: #e0d6ff;
+  font-size: 1.1em;
+  font-family: 'Segoe UI', sans-serif;
+  outline: none;
+  transition: border 0.3s ease, background 0.3s ease;
+}
+
+.player-name-input::placeholder {
+  color: #a090c0;
+}
+
+.player-name-input:focus {
+  border: 1px solid #b4a0ff;
+  background: rgba(30, 15, 60, 0.8);
+}
+
+/* Play Button */
+.play-button {
+  padding: 12px 25px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #6e48aa, #9d50bb);
+  color: #ffffff;
+  font-size: 1.1em;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  transition: background 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+}
+
+.play-button:hover {
+  background: linear-gradient(90deg, #5b3d8d, #803f99);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Menu Settings Button */
+.menu-settings-button {
+  padding: 12px 15px;
+  border-radius: 12px;
+  background: rgba(180, 160, 255, 0.2);
+  color: #e0d6ff;
+  font-size: 1.1em;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+.menu-settings-button:hover {
+  background: rgba(180, 160, 255, 0.35);
+  transform: scale(1.05);
+}
+
+
+/* Discord and Shop Links */
+#discord-shop-links {
+  display: flex;
+  justify-content: space-around;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+#discord-button,
+#shop-button {
+  flex: 1;
+  padding: 10px 15px;
+  border-radius: 12px;
+  font-size: 1.0em;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+#discord-button {
+  background: #7289da; /* Discord brand color */
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+#discord-button:hover {
+  background: #5b6eae;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+}
+
+#shop-button {
+  background: #2ecc71; /* Green color for shop */
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+#shop-button:hover {
+  background: #27ae60;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Account Handle */
+#account-handle {
+  font-size: 1.4em;
+  color: #b4a0ff;
+  text-align: center;
+  margin-top: 15px;
+}
+
+/* Account Buttons (Login/Sign Up) */
+.account-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.account-buttons button {
+  flex: 1;
+  padding: 10px 15px;
+  border-radius: 12px;
+  font-size: 1.0em;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+#account-button {
+  background: rgba(180, 160, 255, 0.2);
+  color: #e0d6ff;
+}
+
+#account-button:hover {
+  background: rgba(180, 160, 255, 0.35);
+  transform: scale(1.05);
+}
+
+#signup-button {
+  background: rgba(100, 200, 255, 0.2);
+  color: #c0e0ff;
+}
+
+#signup-button:hover {
+  background: rgba(100, 200, 255, 0.35);
+  transform: scale(1.05);
+}
+
+/* Skins Section */
+#skin-list {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+#skin-carousel-prev,
+#skin-carousel-next {
+  background: rgba(180, 160, 255, 0.1);
+  border: 1px solid rgba(180, 160, 255, 0.2);
+  color: #e0d6ff;
+  font-size: 1.5em;
+  padding: 5px 10px;
+  border-radius: 8px;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+#skin-carousel-prev:hover,
+#skin-carousel-next:hover {
+  background: rgba(180, 160, 255, 0.25);
+  transform: scale(1.1);
+}
+
+#skin-preview {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  border: 3px solid rgba(180, 160, 255, 0.4);
+  background: rgba(30, 15, 60, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+#skin-preview:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+}
+
+#skin-preview>img {
+  width: 90%;
+  height: 90%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+#skin-preview>p {
+  position: absolute;
+  color: #e0d6ff;
+  font-weight: bold;
+  font-size: 1.2em;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+#skin-preview>div {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+  background: #2ecc71;
+  color: #ffffff;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5em;
+  font-weight: bold;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+#skin-container {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-height: 200px; /* Limit height for scroll if many skins */
+  overflow-y: auto;
+  padding: 10px;
+  border-top: 1px solid rgba(180, 160, 255, 0.1);
+  margin-top: 15px;
+}
+
+.skin-list-item {
+  background: rgba(30, 15, 60, 0.4);
+  border: 1px solid rgba(180, 160, 255, 0.2);
+  border-radius: 12px;
+  padding: 10px;
+  text-align: center;
+  width: 120px;
+  transition: transform 0.2s ease, box-shadow 0.3s ease, background 0.3s ease;
+}
+
+.skin-list-item:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+  background: rgba(30, 15, 60, 0.6);
+}
+
+.skin-list-item img {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #b4a0ff;
+  margin-bottom: 8px;
+}
+
+.skin-list-item h1 {
+  font-size: 1em;
+  color: #e0d6ff;
+  margin-bottom: 5px;
+}
+
+.skin-list-item button {
+  background: rgba(180, 160, 255, 0.2);
+  color: #e0d6ff;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 0.9em;
+  font-weight: bold;
+}
+
+.skin-list-item button.selected {
+  background: linear-gradient(90deg, #6e48aa, #9d50bb);
+  color: #ffffff;
+}
+
+.skin-level-locked {
+  color: #a090c0;
+  font-size: 0.8em;
+}
+
+.skin-level-locked img {
+  filter: grayscale(100%);
+}
+
+/* Global Settings Button */
+#global-settings-button {
+    position: fixed;
+    top: 8px; /* For game state: aligned with leaderboard */
+    right: 286px; /* For game state: positioned next to leaderboard */
+    display: flex;
+    align-items: center;
+    gap: 8px; /* Slightly smaller gap for game state */
+    background: linear-gradient(145deg, rgba(20, 10, 40, 0.7), rgba(40, 20, 80, 0.7)); /* Slightly less prominent background for game state */
+    border: 1px solid rgba(180, 160, 255, 0.4); /* Slightly softer border for game state */
+    border-radius: 12px; /* Standard rounded corners for game state */
+    box-shadow: 0 4px 15px rgba(180, 160, 255, 0.3); /* Softer shadow for game state */
+    backdrop-filter: blur(8px);
+    padding: 8px 12px; /* Smaller padding for game state */
+    color: #f0f0f0;
+    font-family: 'Segoe UI', sans-serif;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 1000;
+    width: min-content;
+}
+
+#global-settings-button:hover {
+    transform: translateY(-2px) scale(1.02); /* Less dramatic hover for game state */
+    box-shadow: 0 8px 25px rgba(180, 160, 255, 0.5); /* Medium shadow on hover for game state */
+    background: linear-gradient(145deg, rgba(30, 15, 60, 0.8), rgba(50, 25, 100, 0.8));
+    color: #ffffff;
+}
+
+#global-settings-button .settings-icon {
+    font-size: 24px; /* Smaller icon size for game state */
+    color: #e0d6ff;
+    text-shadow: 0 0 6px rgba(180, 160, 255, 0.6); /* Softer glow for game state */
+    animation: rotate 4s linear infinite;
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+#global-settings-button p.settings-text {
+    margin: 0;
+    font-size: 1em; /* Standard font size for game state */
+    color: #e0d6ff;
+    display: none; /* Hidden by default for game state */
+}
+
+/* Styles for Menu State */
+body.menu-active #global-settings-button {
+    top: 20px; /* Top-right corner for menu state */
+    right: 20px;
+    gap: 10px; /* Larger gap for menu state */
+    background: linear-gradient(145deg, rgba(20, 10, 40, 0.8), rgba(40, 20, 80, 0.8)); /* Prominent background for menu state */
+    border: 2px solid rgba(180, 160, 255, 0.5); /* Stronger border for menu state */
+    border-radius: 15px; /* More rounded for menu state */
+    box-shadow: 0 8px 25px rgba(180, 160, 255, 0.4); /* Stronger shadow for menu state */
+    padding: 12px 20px; /* Larger padding for menu state */
+}
+
+body.menu-active #global-settings-button .settings-icon {
+    font-size: 32px; /* Larger icon for menu state */
+    text-shadow: 0 0 8px rgba(180, 160, 255, 0.7); /* Stronger glow for menu state */
+}
+
+body.menu-active #global-settings-button p.settings-text {
+    display: block; /* Show text for menu state */
+    font-size: 1.2em; /* Larger text for menu state */
+}
+
+#featured {
+    position: fixed;
+    bottom: 30px;
+    left: 30px;
+    z-index: 10;
+    pointer-events: all;
+}
+
+#featured img {
+    width: 150px;
+    height: 150px;
+    border-radius: 12px;
 }

@@ -98,12 +98,22 @@ export default class UIManager {
             account: {
                 guestButton: "guest-button",
                 accountButton: "account-button",
+                signupButton: "signup-button",
                 loginDialog: "login-dialog",
+                signupDialog: "signup-dialog",
+                signinDialog: "signin-dialog",
                 handle: "account-handle",
                 statsContainer: "stats-container",
-                emailInput: "emailInput",
-                passwordInput: "passwordInput",
-                discordLoginButton: "discordLoginButton",
+                // Signup dialog inputs
+                signupEmail: "signup-email",
+                signupPassword: "signup-password",
+                signupSubmit: "signup-submit",
+                signupCancel: "signup-cancel",
+                // Signin dialog inputs
+                signinEmail: "signin-email",
+                signinPassword: "signin-password",
+                signinSubmit: "signin-submit",
+                signinCancel: "signin-cancel",
                 progression: {
                     progressIcon: "#level-progression .progress-icon",
                     progressBar: "#level-progression .progress-bar",
@@ -366,26 +376,63 @@ export default class UIManager {
     }
 
     addLoginDialogButtonListener () {
+        // Account button - opens signin dialog or logs out
         if (this.DOM.account.accountButton) {
             this.DOM.account.accountButton.addEventListener("click", () => {
                 if (this.core.networkManager.loggedIn) {
                     this.core.networkManager.logout();
                 } else {
-                    this.showLoginDialog(true);
+                    this.showSigninDialog(true);
                 }
             });
         }
 
+        // Signup button - opens signup dialog
+        if (this.DOM.account.signupButton) {
+            this.DOM.account.signupButton.addEventListener("click", () => {
+                this.showSignupDialog(true);
+            });
+        }
+
+        // Guest button - closes login dialog
         if (this.DOM.account.guestButton) {
             this.DOM.account.guestButton.addEventListener("click", () => {
                 this.showLoginDialog(false);
             });
         }
 
-        if (this.DOM.account.discordLoginButton) {
-            this.DOM.account.discordLoginButton.addEventListener("click", async () => {
-                const email = this.DOM.account.emailInput?.value;
-                const password = this.DOM.account.passwordInput?.value;
+        // Signup dialog handlers
+        if (this.DOM.account.signupSubmit) {
+            this.DOM.account.signupSubmit.addEventListener("click", async () => {
+                const email = this.DOM.account.signupEmail?.value;
+                const password = this.DOM.account.signupPassword?.value;
+
+                if (!email || !password) {
+                    alert("Please enter email and password.");
+                    return;
+                }
+
+                try {
+                    await signUp(email, password);
+                    this.showSignupDialog(false);
+                    alert("Account created! Please check your email to verify your account.");
+                } catch (error) {
+                    alert("Sign up failed: " + error.message);
+                }
+            });
+        }
+
+        if (this.DOM.account.signupCancel) {
+            this.DOM.account.signupCancel.addEventListener("click", () => {
+                this.showSignupDialog(false);
+            });
+        }
+
+        // Signin dialog handlers
+        if (this.DOM.account.signinSubmit) {
+            this.DOM.account.signinSubmit.addEventListener("click", async () => {
+                const email = this.DOM.account.signinEmail?.value;
+                const password = this.DOM.account.signinPassword?.value;
 
                 if (!email || !password) {
                     alert("Please enter email and password.");
@@ -394,12 +441,30 @@ export default class UIManager {
 
                 try {
                     await signIn(email, password);
-                    this.showLoginDialog(false);
+                    this.showSigninDialog(false);
                     this.core.networkManager.checkLoginStatus();
                 } catch (error) {
                     alert("Login failed: " + error.message);
                 }
             });
+        }
+
+        if (this.DOM.account.signinCancel) {
+            this.DOM.account.signinCancel.addEventListener("click", () => {
+                this.showSigninDialog(false);
+            });
+        }
+    }
+
+    showSignupDialog (show) {
+        if (this.DOM.account.signupDialog) {
+            this.DOM.account.signupDialog.style.display = show ? "flex" : "none";
+        }
+    }
+
+    showSigninDialog (show) {
+        if (this.DOM.account.signinDialog) {
+            this.DOM.account.signinDialog.style.display = show ? "flex" : "none";
         }
     }
 
