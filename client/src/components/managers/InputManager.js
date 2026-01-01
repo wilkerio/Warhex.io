@@ -106,18 +106,14 @@ export default class InputManager {
         this.selectionCircle.radius = 0;
 
         this.selectionCircle.render = (context) => {
-            const centerX = this.selectionCircle.position.x + this.selectionCircle.width / 2;
-            const centerY = this.selectionCircle.position.y + this.selectionCircle.height / 2;
-
-            const width = Math.abs(this.selectionCircle.width);
-            const height = Math.abs(this.selectionCircle.height);
-            const diameter = Math.sqrt(width * width + height * height);
+            const width = this.selectionCircle.width;
+            const height = this.selectionCircle.height;
 
             context.strokeStyle = ThemeManager.currentThemeProperties.selectionStroke;
             context.fillStyle = ThemeManager.currentThemeProperties.selectionColor;
             context.lineWidth = 2;
             context.beginPath();
-            context.arc(centerX, centerY, diameter / 2, 0, 2 * Math.PI);
+            context.rect(this.selectionCircle.position.x, this.selectionCircle.position.y, width, height);
             context.stroke();
             context.fill();
         };

@@ -194,6 +194,7 @@ export default class Core {
         this.buildingManager = new BuildingManager(this);
         this.eventManager = new EventManager(this);
         this.unitManager = new UnitMananger(this);
+        this.networkManager.initialize();
     }
 
     createCanvas () {

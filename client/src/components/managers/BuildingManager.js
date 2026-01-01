@@ -78,11 +78,19 @@ export class BuildingManager {
         const endX = startX + selectionCircle.width;
         const endY = startY + selectionCircle.height;
 
-        // Calculate the center and radius of the selection circle
-        const centerX = (startX + endX) / 2 + this.core.camera.x;
-        const centerY = (startY + endY) / 2 + this.core.camera.y;
+        // For click detection
         const diameter = Math.sqrt(Math.pow(selectionCircle.width, 2) + Math.pow(selectionCircle.height, 2));
         const radius = diameter / 2;
+        
+        const worldStartX = startX + this.core.camera.x;
+        const worldStartY = startY + this.core.camera.y;
+        const worldEndX = endX + this.core.camera.x;
+        const worldEndY = endY + this.core.camera.y;
+
+        const minX = Math.min(worldStartX, worldEndX);
+        const maxX = Math.max(worldStartX, worldEndX);
+        const minY = Math.min(worldStartY, worldEndY);
+        const maxY = Math.max(worldStartY, worldEndY);
 
         const mousePosition = { ...this.core.eventManager.mousePosition };
         const player = this.core.gameManager.player;
@@ -135,7 +143,9 @@ export class BuildingManager {
             const buildingY = building.position.y;
 
             if (checkForBuildingClicked) {
-                const isBuildingClicked = this.isBuildingClicked(building, { x: centerX, y: centerY });
+                const clickX = worldStartX + selectionCircle.width / 2;
+                const clickY = worldStartY + selectionCircle.height / 2;
+                const isBuildingClicked = this.isBuildingClicked(building, { x: clickX, y: clickY });
                 if (isBuildingClicked) {
                     if (trySelectBuilding(building)) {
                         building.setSelectionState(SelectionState.HIGHLIGHT);
@@ -143,11 +153,8 @@ export class BuildingManager {
                     };
                 }
             } else {
-                // Calculate distance from the building to the circle's center
-                const distance = Math.sqrt((buildingX - centerX) ** 2 + (buildingY - centerY) ** 2);
-
-                // Check if the building is within the circle's radius
-                if (distance <= radius) {
+                // Check if the building is within the rectangle
+                if (buildingX >= minX && buildingX <= maxX && buildingY >= minY && buildingY <= maxY) {
                     if (trySelectBuilding(building)) {
                         building.setSelectionState(SelectionState.SELECTED);
                     };

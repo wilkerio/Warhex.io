@@ -12,7 +12,7 @@ import Explosion from "../../entities/effects/Explosion.js";
 import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import SkinCache from "../SkinCache.js";
-import { fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase } from "../../network/supabaseClient.js";
+import { fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -33,7 +33,7 @@ export default class NetworkManager {
         this.userData = null;
 
         // Use async initialization for login status
-        this.initialize();
+        // this.initialize();
 
 
         // Monitor bandwidth every second

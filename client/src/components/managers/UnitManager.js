@@ -97,27 +97,19 @@ export default class UnitManager {
     }
 
     selectUnits (selectionCircle) {
-        const startX = selectionCircle.position.x;
-        const startY = selectionCircle.position.y;
-        const endX = startX + selectionCircle.width;
-        const endY = startY + selectionCircle.height;
-
-        // Calculate the center and radius of the selection circle)
-        const centerX = (startX + endX) / 2 + this.core.camera.x;
-        const centerY = (startY + endY) / 2 + this.core.camera.y;
-        const diameter = Math.sqrt(Math.pow(selectionCircle.width, 2) + Math.pow(selectionCircle.height, 2));
-        const radius = diameter / 2;
+        const rc = selectionCircle; // selection rectangle
+        const r_left = rc.position.x + this.core.camera.x;
+        const r_top = rc.position.y + this.core.camera.y;
+        const r_right = r_left + rc.width;
+        const r_bottom = r_top + rc.height;
+        
+        const minX = Math.min(r_left, r_right);
+        const maxX = Math.max(r_left, r_right);
+        const minY = Math.min(r_top, r_bottom);
+        const maxY = Math.max(r_top, r_bottom);
 
         this.core.gameManager.player.units.forEach(unit => {
-
-            const unitX = unit.position.x;
-            const unitY = unit.position.y;
-
-            // Calculate distance from the unit to the circle's center
-            const distance = Math.sqrt((unitX - centerX) ** 2 + (unitY - centerY) ** 2);
-
-            // Check if the unit is within the circle's radius
-            if (distance <= radius) {
+            if (unit.position.x > minX && unit.position.x < maxX && unit.position.y > minY && unit.position.y < maxY) {
                 if (!this.selectedUnits.includes(unit)) {
                     this.selectedUnits.push(unit);
                     unit.isSelected = true;
