@@ -11,6 +11,13 @@
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
     <link rel="manifest" href="assets/site.webmanifest">
+    <script type="importmap">
+        {
+            "imports": {
+                "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm"
+            }
+        }
+    </script>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-LSJ1RTH753"></script>
     <script>
         window.dataLayer = window.dataLayer || [];
@@ -59,6 +66,12 @@
                         against other players!</li>
                 </ul>
                 <hr />
+                <div class="login-form">
+                    <input type="email" id="emailInput" placeholder="Email" required>
+                    <input type="password" id="passwordInput" placeholder="Password" required>
+                    <button id="discordLoginButton">Login</button>
+                </div>
+                <hr />
                 <div class="actions">
                     <button id="guest-button">👤 Continue as Guest</button>
                 </div>
@@ -86,7 +99,7 @@
         <div id="global-leaderboard" class="leaderboard"></div>
 
         <div id="game-title">
-            <h1 class="title">Blobl<span>.io</span></h1>
+            <h1 class="title">Infinity<span>.io</span></h1>
             <p class="subtitle">Build, Battle, Dominate!</p>
         </div>
         </a>
@@ -97,6 +110,7 @@
                         <div class="player-input-container">
                             <input type="text" class="player-name-input" id="player-name" placeholder="Player Name"
                                 maxlength="12">
+                            <div id="logged-in-nickname" style="display: none;"></div>
                             <button class="play-button" id="play-button">Play</button>
                             <button id="menu-settings-button" class="menu-settings-button">Settings</button>
                         </div>

@@ -12,6 +12,7 @@ import Explosion from "../../entities/effects/Explosion.js";
 import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import SkinCache from "../SkinCache.js";
+import { fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -40,6 +41,21 @@ export default class NetworkManager {
     }
 
     async initialize () {
+        // Listen for auth state changes
+        onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN') {
+                this.loggedIn = true;
+                this.userId = session.user.id;
+                await this.getUserData();
+                this.core.uiManager.updateAccountButton();
+            } else if (event === 'SIGNED_OUT') {
+                this.loggedIn = false;
+                this.userData = null;
+                this.core.uiManager.updateAccount();
+                this.core.uiManager.updateAccountButton();
+            }
+        });
+
         await this.checkLoginStatus();
 
         if (this.loggedIn) {
@@ -48,25 +64,66 @@ export default class NetworkManager {
     }
 
     async getUserData () {
-        if (this.isDev) {
+        console.log('getUserData called');
+        // In dev mode, still attempt to fetch real user data when logged in.
+        // Only use the dev fallback when not logged in.
+        if (this.isDev && !this.loggedIn) {
             this.userData = { skins: { unlocked: [0], equipped: 0 } };
             this.core.uiManager.updateAccount();
             return;
         }
         try {
-            const authUrl = this.isDev ? 'http://localhost:3000' : 'https://auth.blobl.io';
-            const response = await fetch(`${authUrl}/user`, {
-                method: "GET",
-                credentials: "include"
-            });
+            console.log('Starting supabase select for id:', this.userId);
+            const selectPromise = supabase
+                .from('users')
+                .select('*')
+                .eq('id', this.userId);
 
-            if (!response.ok) {
-                throw new Error("Failed to request user data");
+            // Timeout helper to detect hangs (shorter for faster fallback)
+            const timeoutMs = 2500; // 2.5s
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error(`Supabase select timeout after ${timeoutMs}ms`)), timeoutMs));
+
+            let res;
+            try {
+                res = await Promise.race([selectPromise, timeoutPromise]);
+            } catch (e) {
+                console.error('Supabase select failed or timed out:', e);
+                throw e;
             }
 
-            const data = await response.json();
+            console.log('Supabase response for users select:', res);
 
-            this.userData = data;
+            const { data, error } = res;
+            if (error) {
+                console.error('Error from supabase select:', error);
+                throw error;
+            }
+
+            if (data && data.length > 0) {
+                this.userData = data[0];
+                console.log('User data from table:', this.userData);
+                console.log('Nickname from table:', this.userData?.nickname);
+                try {
+                    // persist minimal userData for instant restore on reload
+                    const minimal = {
+                        id: this.userData.id,
+                        nickname: this.userData.nickname,
+                        skins: this.userData.skins || {}
+                    };
+                    localStorage.setItem('blobl_user_data', JSON.stringify(minimal));
+                } catch (e) {
+                    console.warn('Could not persist userData to localStorage:', e);
+                }
+            } else {
+                console.log('No user data found in table for id:', this.userId);
+                this.userData = null;
+            }
+            // Get nickname from auth metadata if not in table
+            const user = await getCurrentUser();
+            if (user && user.user_metadata && user.user_metadata.nickname && !this.userData.nickname) {
+                this.userData.nickname = user.user_metadata.nickname;
+                console.log('Using nickname from auth metadata:', this.userData.nickname);
+            }
             if (this.userData) {
                 // Ensure skins and unlocked properties exist before accessing them
                 const equippedSkin = Number(localStorage.getItem("equippedSkin")) || 0;
@@ -82,54 +139,112 @@ export default class NetworkManager {
     }
 
     async checkLoginStatus () {
-        if (this.isDev) {
-            this.loggedIn = true;
-            this.core.uiManager.updateAccountButton();
-            return;
-        }
         try {
-            const authUrl = this.isDev ? 'http://localhost:3000' : 'https://auth.blobl.io';
-            const response = await fetch(`${authUrl}/check`, {
-                method: "GET",
-                credentials: "include"
-            });
+            // Fast-path: use persisted session and userData for instant UI
+            try {
+                const rawSession = localStorage.getItem('blobl_supabase_session');
+                const rawUser = localStorage.getItem('blobl_user_data');
+                if (rawSession) {
+                    try {
+                        const sess = JSON.parse(rawSession);
+                        if (sess && sess.user && sess.user.id) {
+                            this.loggedIn = true;
+                            this.userId = sess.user.id;
+                            console.log('Restored session quick (local):', this.userId);
+                            if (rawUser) {
+                                try {
+                                    this.userData = JSON.parse(rawUser);
+                                    console.log('Restored userData quick (local):', this.userData);
+                                    this.core.uiManager.updateAccount();
+                                } catch (e) {
+                                    console.warn('Failed to parse local userData:', e);
+                                }
+                            }
+                            // Kick off background restore + fetch but don't await here
+                            (async () => {
+                                try {
+                                    const restored = await restoreSessionFromStorage();
+                                    if (restored && restored.user && restored.user.id) {
+                                        if (!this.loggedIn || this.userId !== restored.user.id) {
+                                            this.loggedIn = true;
+                                            this.userId = restored.user.id;
+                                        }
+                                    }
+                                    await this.getUserData();
+                                } catch (e) {
+                                    console.warn('Background restore failed:', e);
+                                }
+                            })();
+                            // fast-path done
+                            this.core.uiManager.updateAccountButton();
+                            return;
+                        }
+                    } catch (e) {
+                        console.warn('Failed parsing local session:', e);
+                    }
+                }
 
-            if (!response.ok) {
-                throw new Error("Failed to verify login status");
-            }
-
-            const data = await response.json();
-            if (data.loggedIn) {
-                this.loggedIn = true;
-            } else {
-                console.log("User is not logged in.")
+                // Fallback: normal getSession flow if no local session
+                const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+                if (sessionError) console.error('Error getting supabase session:', sessionError);
+                const session = sessionData?.session || null;
+                console.log('Supabase session on checkLoginStatus:', session);
+                if (session && session.user) {
+                    this.loggedIn = true;
+                    this.userId = session.user.id;
+                    console.log('Calling getUserData for userId:', this.userId);
+                    await this.getUserData();
+                } else {
+                    this.loggedIn = false;
+                    this.userData = null;
+                }
+            } catch (e) {
+                console.error('Error during checkLoginStatus flow:', e);
+                this.loggedIn = false;
+                this.userData = null;
             }
         } catch (error) {
             console.error("Error checking login status:", error);
-            // Handle errors appropriately, such as showing a login page
+            this.loggedIn = false;
         }
         this.core.uiManager.updateAccountButton();
     }
 
     async logout () {
         try {
-            const response = await fetch('https://auth.blobl.io/logout', {
-                method: 'POST',
-                credentials: 'include' // Ensure cookies are sent with the request
-            });
-
-            if (response.ok) {
-                //this.loggedIn = false;
-                //this.userData = null;
-                //this.core.uiManager.updateAccount();
-                //this.core.uiManager.updateAccountButton();
-                // ! Forces the server to reload the UserData and cleares the discord id 
-                window.location.reload();
-            } else {
-                console.error("Failed to log out.");
-            }
+            await signOut();
+            this.loggedIn = false;
+            this.userData = null;
+            this.core.uiManager.updateAccount();
+            this.core.uiManager.updateAccountButton();
+            try { localStorage.removeItem('blobl_user_data'); } catch(e) {}
+            window.location.reload();
         } catch (error) {
             console.error("Error during logout:", error);
+        }
+    }
+
+    async updateUserData (data) {
+        if (this.isDev) {
+            // In dev mode, just update locally
+            this.userData = { ...this.userData, ...data };
+            this.core.uiManager.updateAccount();
+            return;
+        }
+        try {
+            const { error } = await supabase
+                .from('users')
+                .update(data)
+                .eq('id', this.userId);
+
+            if (error) throw error;
+
+            // Update local userData
+            this.userData = { ...this.userData, ...data };
+            this.core.uiManager.updateAccount();
+
+        } catch (error) {
+            console.error("Error updating user data:", error);
         }
     }
 

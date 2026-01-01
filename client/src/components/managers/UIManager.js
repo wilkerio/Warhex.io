@@ -1,6 +1,7 @@
 import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
+import { signUp, signIn, getCurrentUser } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -46,6 +47,7 @@ export default class UIManager {
                 menuButton: "menu-button",
                 menuSettingsButton: "menu-settings-button",
                 playerNameInput: "player-name",
+                loggedInNickname: "logged-in-nickname",
             },
 
             // Game UI elements
@@ -99,6 +101,9 @@ export default class UIManager {
                 loginDialog: "login-dialog",
                 handle: "account-handle",
                 statsContainer: "stats-container",
+                emailInput: "emailInput",
+                passwordInput: "passwordInput",
+                discordLoginButton: "discordLoginButton",
                 progression: {
                     progressIcon: "#level-progression .progress-icon",
                     progressBar: "#level-progression .progress-bar",
@@ -378,14 +383,22 @@ export default class UIManager {
         }
 
         if (this.DOM.account.discordLoginButton) {
-            this.DOM.account.discordLoginButton.addEventListener("click", () => {
-                const clientId = "1297630936254386287";
-                const redirectUri = encodeURIComponent("https://auth.blobl.io/discord/callback");
-                const scope = encodeURIComponent("identify");
-                const gameServer = encodeURIComponent(this.core.networkManager.network.serverAddress);
+            this.DOM.account.discordLoginButton.addEventListener("click", async () => {
+                const email = this.DOM.account.emailInput?.value;
+                const password = this.DOM.account.passwordInput?.value;
 
-                const oauthUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${gameServer}`;
-                window.location.href = oauthUrl;
+                if (!email || !password) {
+                    alert("Please enter email and password.");
+                    return;
+                }
+
+                try {
+                    await signIn(email, password);
+                    this.showLoginDialog(false);
+                    this.core.networkManager.checkLoginStatus();
+                } catch (error) {
+                    alert("Login failed: " + error.message);
+                }
             });
         }
     }
@@ -439,8 +452,26 @@ export default class UIManager {
         }
 
         // Update the username
-        const username = userData.discord?.username || 'Unknown User';
+        const username = userData.nickname || userData.discord?.username || 'Unknown User';
         this.DOM.account.handle.textContent = `@${username}`;
+        if (userData.nickname) {
+            this.DOM.account.handle.style.color = "#32CD32"; // Lime green for logged in users
+        } else {
+            this.DOM.account.handle.style.color = ""; // Default color for guests
+        }
+
+        // Update player name input based on login status
+        const isLoggedIn = this.core.networkManager.loggedIn;
+        if (isLoggedIn && userData.nickname) {
+            // Hide input and show nickname
+            this.DOM.menu.playerNameInput.style.display = 'none';
+            this.DOM.menu.loggedInNickname.style.display = 'block';
+            this.DOM.menu.loggedInNickname.textContent = `Playing as: ${userData.nickname}`;
+        } else {
+            // Show input and hide nickname
+            this.DOM.menu.playerNameInput.style.display = 'block';
+            this.DOM.menu.loggedInNickname.style.display = 'none';
+        }
 
         // Handle progression data safely
         const level = userData.progression?.level || 1;
@@ -547,6 +578,8 @@ export default class UIManager {
             }
             this.DOM.account.accountButton.style.display = "block";
         }
+        // Also update the account display
+        this.updateAccount();
     }
 
 
@@ -1199,6 +1232,13 @@ export default class UIManager {
     }
 
     extractPlayerName () {
+        const isLoggedIn = this.core.networkManager.loggedIn;
+        const userData = this.core.networkManager.userData;
+
+        if (isLoggedIn && userData && userData.nickname) {
+            return userData.nickname;
+        }
+
         const defaultNames = ["◕‿↼", "•◡•", "(ㆆ _ ㆆ)", "ಠ╭╮ಠ", "(• ε •)",
             "⇀‸↼‶", "◔̯◔", "◉‿◉", "•`_´•", "-_-",
             "⌐■_■", "•_•", "ಠ_ರೃ", "´◔ ω◔`", "♥‿♥", "⊙＿⊙'", "⊙ω⊙", "> _ <"
