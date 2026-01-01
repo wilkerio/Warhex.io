@@ -712,68 +712,98 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	if validUnitCount == 1 {
-		unitsToUpdate[0].SetTargetPosition(game.IntToFloat(targetPosition))
-		BroadcastUnitsRotationUpdate(player.ID, unitsToUpdate)
-		return
-	}
+	basePosition := player.Base.Position
+	dx_base := float64(targetPosition.X - basePosition.X)
+	dy_base := float64(targetPosition.Y - basePosition.Y)
+	distance_from_base := math.Sqrt(dx_base*dx_base + dy_base*dy_base)
 
-	// Set the spacing between units
-	const spacing = 50.0 // Space between units
-	radius := spacing    // Start radius
-	totalUnits := 0      // Count total units placed
+	isClickOnBase := distance_from_base <= game.PLAYER_MAX_BUILDING_RADIUS
 
-	// Store the index of the nearest unit
-	var nearestUnitIndex int
-	nearestDistance := float32(math.MaxFloat32)
-
-	for {
-		circumference := 2.0 * math.Pi * radius
-		unitsInLayer := int(circumference / spacing)
-
-		// Exit if no units can fit or we placed all valid units
-		if unitsInLayer <= 0 || totalUnits >= validUnitCount {
-			break
-		}
-
-		// Define the magnitude of the random offset
-		const offsetMagnitude float32 = 50.0 // Adjust this value to control how large the offset is
-
-		// Place units for the current layer
-		for i := 0; i < unitsInLayer && totalUnits < validUnitCount; i++ {
-			angle := float64(i) * (2.0 * math.Pi / float64(unitsInLayer))
-			targetX := float32(targetPosition.X) + float32(radius)*float32(math.Cos(angle))
-			targetY := float32(targetPosition.Y) + float32(radius)*float32(math.Sin(angle))
-
-			// Add random offset
-			offsetX := (rand.Float32() - 0.5) * offsetMagnitude
-			offsetY := (rand.Float32() - 0.5) * offsetMagnitude
-
-			// Apply the offset to target positions
-			targetX += offsetX
-			targetY += offsetY
-
-			// Set the target position for the unit
-			unitsToUpdate[totalUnits].SetTargetPosition(game.PositionFloat{X: targetX, Y: targetY})
-
-			// Get the current position of the unit
-			currentPosition := unitsToUpdate[totalUnits].Position
-			// Calculate distance from the current position of the unit to the targetPosition
-			distance := float32(math.Sqrt(float64((currentPosition.X-float32(targetPosition.X))*(currentPosition.X-float32(targetPosition.X)) +
-				(currentPosition.Y-float32(targetPosition.Y))*(currentPosition.Y-float32(targetPosition.Y)))))
-
-			// Check if this unit is the nearest to the targetPosition
-			if distance < nearestDistance {
-				nearestDistance = distance
-				nearestUnitIndex = totalUnits
+	isClickOnBush := false
+	if !isClickOnBase {
+		const bushClickRadius = 100.0 // Max bush size from client code
+		game.State.RLock()
+		for _, bushPos := range game.State.Bushes {
+			dx_bush := float64(targetPosition.X - bushPos.X)
+			dy_bush := float64(targetPosition.Y - bushPos.Y)
+			distance_from_bush := math.Sqrt(dx_bush*dx_bush + dy_bush*dy_bush)
+			if distance_from_bush <= bushClickRadius {
+				isClickOnBush = true
+				break
 			}
-
-			totalUnits++
 		}
-		radius += spacing // Increase the radius for the next layer
+		game.State.RUnlock()
 	}
-	// Set the nearest unit's target position to the exact targetPosition if it’s not already set
-	unitsToUpdate[nearestUnitIndex].SetTargetPosition(game.IntToFloat(targetPosition))
+
+	if isClickOnBase || isClickOnBush {
+		// Target is inside the base radius or on a bush, group all units at the exact target position.
+		floatTargetPosition := game.IntToFloat(targetPosition)
+		for _, unit := range unitsToUpdate {
+			unit.SetTargetPosition(floatTargetPosition)
+		}
+	} else {
+		// Target is outside the base radius, use formation logic.
+		if validUnitCount == 1 {
+			unitsToUpdate[0].SetTargetPosition(game.IntToFloat(targetPosition))
+		} else {
+			// Set the spacing between units
+			const spacing = 50.0 // Space between units
+			radius := spacing    // Start radius
+			totalUnits := 0      // Count total units placed
+
+			// Store the index of the nearest unit
+			var nearestUnitIndex int
+			nearestDistance := float32(math.MaxFloat32)
+
+			for {
+				circumference := 2.0 * math.Pi * radius
+				unitsInLayer := int(circumference / spacing)
+
+				// Exit if no units can fit or we placed all valid units
+				if unitsInLayer <= 0 || totalUnits >= validUnitCount {
+					break
+				}
+
+				// Define the magnitude of the random offset
+				const offsetMagnitude float32 = 50.0 // Adjust this value to control how large the offset is
+
+				// Place units for the current layer
+				for i := 0; i < unitsInLayer && totalUnits < validUnitCount; i++ {
+					angle := float64(i) * (2.0 * math.Pi / float64(unitsInLayer))
+					targetX := float32(targetPosition.X) + float32(radius)*float32(math.Cos(angle))
+					targetY := float32(targetPosition.Y) + float32(radius)*float32(math.Sin(angle))
+
+					// Add random offset
+					offsetX := (rand.Float32() - 0.5) * offsetMagnitude
+					offsetY := (rand.Float32() - 0.5) * offsetMagnitude
+
+					// Apply the offset to target positions
+					targetX += offsetX
+					targetY += offsetY
+
+					// Set the target position for the unit
+					unitsToUpdate[totalUnits].SetTargetPosition(game.PositionFloat{X: targetX, Y: targetY})
+
+					// Get the current position of the unit
+					currentPosition := unitsToUpdate[totalUnits].Position
+					// Calculate distance from the current position of the unit to the targetPosition
+					distance := float32(math.Sqrt(float64((currentPosition.X-float32(targetPosition.X))*(currentPosition.X-float32(targetPosition.X)) +
+						(currentPosition.Y-float32(targetPosition.Y))*(currentPosition.Y-float32(targetPosition.Y)))))
+
+					// Check if this unit is the nearest to the targetPosition
+					if distance < nearestDistance {
+						nearestDistance = distance
+						nearestUnitIndex = totalUnits
+					}
+
+					totalUnits++
+				}
+				radius += spacing // Increase the radius for the next layer
+			}
+			// Set the nearest unit's target position to the exact targetPosition if it’s not already set
+			unitsToUpdate[nearestUnitIndex].SetTargetPosition(game.IntToFloat(targetPosition))
+		}
+	}
 	BroadcastUnitsRotationUpdate(player.ID, unitsToUpdate)
 }
 
