@@ -209,7 +209,12 @@ export default class MiniMap {
             this.dynamicContext.restore(); // Restore to the original state
         };
 
-        // Draw each unit as a triangle, using its rotation
+        // Draw each unit as a triangle, using its rotation for all players
+        this.players.forEach(player => {
+            player.units.forEach(unit => drawUnit(unit.position.x, unit.position.y, player.color, 150, unit.rotation + Math.PI / 2));
+        });
+
+        // Draw client player's units
         clientPlayer.units.forEach(unit => drawUnit(unit.position.x, unit.position.y, clientPlayer.color, 150, unit.rotation + Math.PI / 2));
 
         // Draw the camera rectangle
