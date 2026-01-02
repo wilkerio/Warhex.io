@@ -193,6 +193,7 @@ export class Renderer {
 
     renderBorder () {
         const { context, camera } = this;
+        const halfSize = this.mapSize / 2;
 
         // Save the current transformation matrix
         context.save();
@@ -200,31 +201,27 @@ export class Renderer {
         // Apply camera transformations
         context.translate(-camera.x, -camera.y);
 
-        // Define the clipping path for the outer circle
-        const circleX = 0; // Center of the canvas
-        const circleY = 0; // Center of the canvas
-        const circleRadius = this.mapSize * 2;
-        context.beginPath();
-        context.arc(circleX, circleY, circleRadius / 2, 0, Math.PI * 2);
-        context.closePath(); // Close the path to ensure a complete shape
-        context.clip(); // Set the clipping region
+        // Draw dark overlay outside the map boundaries
+        context.globalAlpha = 0.5;
+        context.fillStyle = 'rgba(0, 0, 0, 0.8)';
 
-        // Draw the outer dark transparent circle
-        context.globalAlpha = 0.1; // Set transparency level
-        context.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Dark color with transparency
-        context.beginPath();
-        context.arc(circleX, circleY, circleRadius, 0, Math.PI * 2);
-        context.fill();
+        // Draw four rectangles around the square map
+        const largeSize = this.mapSize * 4;
+        
+        // Top
+        context.fillRect(-largeSize, -largeSize, largeSize * 2, largeSize - halfSize);
+        // Bottom
+        context.fillRect(-largeSize, halfSize, largeSize * 2, largeSize - halfSize);
+        // Left
+        context.fillRect(-largeSize, -halfSize, largeSize - halfSize, this.mapSize);
+        // Right
+        context.fillRect(halfSize, -halfSize, largeSize - halfSize, this.mapSize);
 
-        // Define the clipping path for the inner circle
-        const innerCircleRadius = this.mapSize / 2; // Adjust as needed
-        context.beginPath();
-        context.arc(circleX, circleY, innerCircleRadius, 0, Math.PI * 2);
-        context.closePath(); // Close the path to ensure a complete shape
-        context.clip(); // Set the clipping region
-
-        // Clear the inner circle area
-        context.clearRect(circleX - innerCircleRadius, circleY - innerCircleRadius, innerCircleRadius * 2, innerCircleRadius * 2);
+        // Draw border line around the map
+        context.globalAlpha = 1.0;
+        context.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+        context.lineWidth = 8;
+        context.strokeRect(-halfSize, -halfSize, this.mapSize, this.mapSize);
 
         // Restore the previous transformation matrix
         context.restore();

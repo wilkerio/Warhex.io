@@ -1,6 +1,10 @@
 package game
 
-import "math"
+import (
+	"log"
+	"math"
+	"math/rand"
+)
 
 type PositionInt struct {
 	X int16
@@ -30,48 +34,60 @@ func MarkPositionAvailable(pos PositionInt) {
 	State.AvailablePositions[pos] = true
 }
 
-// Helper function to find a free position for a player
+// Helper function to find a free position for a player with random spawning
 func FindFreePosition() PositionInt {
-	// If there are no players yet, return a random available position
-	if len(State.Players) == 0 {
-		// Select a random available position
-		for pos, isAvailable := range State.AvailablePositions {
-			if isAvailable {
-				// Mark the position as occupied
-				State.AvailablePositions[pos] = false
-				return pos
-			}
+	// Get all occupied positions from existing players
+	occupiedPositions := make([]PositionInt, 0, len(State.Players))
+	for _, player := range State.Players {
+		occupiedPositions = append(occupiedPositions, player.Base.GetPosition())
+	}
+
+	// Also add neutral bases to occupied positions
+	for _, neutralBase := range State.NeutralBases {
+		occupiedPositions = append(occupiedPositions, neutralBase.Base.GetPosition())
+	}
+
+	// Map boundaries (based on generateRectangularGameMap)
+	const mapRadius int16 = 7500
+	minX := -mapRadius + MIN_BORDER_DISTANCE
+	maxX := mapRadius - MIN_BORDER_DISTANCE
+	minY := -mapRadius + MIN_BORDER_DISTANCE
+	maxY := mapRadius - MIN_BORDER_DISTANCE
+
+	rangeX := int(maxX - minX)
+	rangeY := int(maxY - minY)
+
+	// Try to find a valid random position
+	maxAttempts := 1000
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		// Generate random position within bounds
+		x := int16(rand.Intn(rangeX)) + minX
+		y := int16(rand.Intn(rangeY)) + minY
+		pos := PositionInt{X: x, Y: y}
+
+		// Check if far enough from all other players and neutral bases
+		if isFarEnoughFromAll(pos, occupiedPositions, MIN_PLAYER_SPAWN_DISTANCE) {
+			log.Printf("Player spawned at random position: X=%d, Y=%d (attempt %d)", pos.X, pos.Y, attempt+1)
+			return pos
 		}
-		// If no available position is found, return an empty position
-		return PositionInt{}
 	}
 
-	var nearestPosition PositionInt
-	minDistance := float32(math.MaxFloat32)
+	// If no valid position found after many attempts, return a random position anyway
+	x := int16(rand.Intn(rangeX)) + minX
+	y := int16(rand.Intn(rangeY)) + minY
+	pos := PositionInt{X: x, Y: y}
+	log.Printf("Player spawned at fallback random position: X=%d, Y=%d (no valid position found)", pos.X, pos.Y)
+	return pos
+}
 
-	// Iterate over all available positions
-	for pos, isAvailable := range State.AvailablePositions {
-		if isAvailable {
-			// Calculate the distance to the nearest player
-			for _, player := range State.Players {
-				playerPosition := player.Base.GetPosition()
-				distance := pos.DistanceTo(playerPosition)
-				if distance < minDistance {
-					minDistance = distance
-					nearestPosition = pos
-				}
-			}
+// Helper function to check if a position is far enough from all occupied positions
+func isFarEnoughFromAll(pos PositionInt, occupiedPositions []PositionInt, minDistance int16) bool {
+	for _, occupied := range occupiedPositions {
+		if pos.DistanceTo(occupied) < float32(minDistance) {
+			return false
 		}
 	}
-
-	if minDistance == float32(math.MaxFloat32) {
-		// No available position found
-		return PositionInt{}
-	}
-
-	// Mark the chosen position as occupied
-	State.AvailablePositions[nearestPosition] = false
-	return nearestPosition
+	return true
 }
 
 // Conversion functions between PositionInt and PositionFloat
