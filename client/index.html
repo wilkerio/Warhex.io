@@ -110,17 +110,9 @@
         <div class="dialog" id="skin-library-dialog">
             <div class="menu-card">
                 <button id="skin-library-exit" class="exit-button">x</button>
-                <h1>Skins</h1>
-                <div id="skin-tabs">
-                    <p style="display: none;">Owned</p>
-                    <p style="cursor:default; color: rgba(0, 0, 0, 0.179);">Premium</p>
-                    <p class="selected">Veteran</p>
-                </div>
-                <div id="skin-list">
-                    <button id="skin-carousel-prev" class="end">❮</button>
-                    <div id="skin-container">
-                    </div>
-                    <button id="skin-carousel-next">❯</button>
+                <h1>Your Skins</h1>
+                <div id="skin-grid-container">
+                    <!-- Skins serão carregadas aqui dinamicamente -->
                 </div>
             </div>
         </div>
@@ -160,15 +152,16 @@
                             <button id="discord-button">Discord</button>
                             <button id="shop-button">Shop</button>
                         </div>
-                        <div id="skin-list-menu" style="margin-top: 15px;">
-                            <button id="skin-carousel-prev-menu" class="end">❮</button>
-                            <button id="skin-preview">
-                                <p>Skins</p>
-                                <div>+</div>
-                            </button>
-                            <div id="skin-container-menu">
+                        <div id="skin-selector-wrapper" style="margin-top: 15px;">
+                            <div id="skin-selector" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                                <button id="skin-carousel-prev-menu" class="skin-nav-btn">❮</button>
+                                <div id="skin-preview-circle" class="skin-circle">
+                                    <img id="current-skin-img" src="" alt="Skin" style="display: none;">
+                                    <p id="skin-name-display">Default</p>
+                                </div>
+                                <button id="skin-carousel-next-menu" class="skin-nav-btn">❯</button>
                             </div>
-                            <button id="skin-carousel-next-menu">❯</button>
+                            <button id="skin-use-button" class="skin-use-btn">Use</button>
                         </div>
                         <h1 id="account-handle">@guest</h1>
                         <hr>

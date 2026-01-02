@@ -30,6 +30,14 @@ export default class EventManager {
                 this.core.inputManager.clearActiveKeys();
             } else {
                 this.core.networkManager.sendResyncRequest();
+                
+                // Re-ensure skin is loaded when page becomes visible again
+                const player = this.core.gameManager?.player;
+                if (player && player.skinID && !player.skin) {
+                    console.log('Page visible again, reloading skin...');
+                    player.skinLoadAttempts = 0; // Reset attempts
+                    player._loadSkin(player.skinID);
+                }
             }
         });
         // Handle window focus loss (when user switches to another app or browser window)

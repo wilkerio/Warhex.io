@@ -5,7 +5,7 @@ import ThemeManager from "../components/managers/ThemeManager.js";
 import SkinCache from "../components/SkinCache.js";
 
 export default class Player extends Renderable {
-    constructor (id, name = "blobl.io", color, skinID = 0, position = { x: 0, y: 0 }, health = 2000, hasSpawnProtection = true) {
+    constructor (id, name = "blobl.io", color, skinID = null, position = { x: 0, y: 0 }, health = 2000, hasSpawnProtection = true) {
         super();
         this.isVisible = true;
         this.isClient = false; // Indicates whether this player instance is the client player
@@ -15,8 +15,9 @@ export default class Player extends Renderable {
         this.nameWidth = null;
         this.color = color;
         this.skin = null; // Initially no skin
-        this.skinID = skinID; // The skin ID to fetch
+        this.skinID = skinID; // The skin ID/name to fetch
         this.skinLoaded = false;
+        this.skinLoadAttempts = 0; // Track load attempts to prevent infinite retries
         this.position = position;
         this.health = { current: health, max: 2000 };
         this.targetHealth = health; // Target health value for animation
@@ -43,17 +44,34 @@ export default class Player extends Renderable {
     }
     // Method to load the skin asynchronously
     async _loadSkin (skinID) {
-        if (skinID > 0) {
+        // Support both string (name) and numeric IDs
+        if (skinID && skinID !== 0 && skinID !== '0' && skinID !== 'null') {
             try {
-                const { image } = await SkinCache.getSkin(skinID);
-                if (image) {
-                    this.skin = image;
+                this.skinLoadAttempts++;
+                let result;
+                if (typeof skinID === 'string') {
+                    result = await SkinCache.getSkinByName(skinID);
+                } else {
+                    result = await SkinCache.getSkinById(skinID);
+                }
+                
+                if (result && result.image) {
+                    this.skin = result.image;
                     this.skinLoaded = true;
+                    console.log('Skin loaded successfully:', skinID);
                 }
             } catch (error) {
                 console.error(`Error loading skin for skinID ${skinID}:`, error);
                 this.skinLoaded = false;
             }
+        }
+    }
+    
+    // Method to ensure skin is loaded, can be called before rendering
+    ensureSkinLoaded() {
+        // If we have a skinID but no skin loaded, and haven't tried too many times, try again
+        if (this.skinID && !this.skin && this.skinLoadAttempts < 3) {
+            this._loadSkin(this.skinID);
         }
     }
 
@@ -316,6 +334,9 @@ export default class Player extends Renderable {
 
 
     render(context, camera, deltaTime) {
+        // Ensure skin is loaded before rendering
+        this.ensureSkinLoaded();
+        
         // Translate the player's position according to the camera
         const screenX = this.position.x - camera.x;
         const screenY = this.position.y - camera.y;

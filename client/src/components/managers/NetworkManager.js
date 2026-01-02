@@ -520,8 +520,18 @@ export default class NetworkManager {
         // Process each player in the game state
         players.forEach(playerData => {
             const { id, name, color, skinID, position, health, hasSpawnProtection } = playerData;
+            
+            // For the client player, use the skin from localStorage instead of server
+            let playerSkinID = skinID;
+            if (clientPlayer && clientPlayer.id === id) {
+                const localSkin = localStorage.getItem('equippedSkin') || null;
+                if (localSkin && localSkin !== '' && localSkin !== 'null') {
+                    playerSkinID = localSkin;
+                }
+            }
+            
             // Create new player instance
-            const newPlayer = new Player(id, name, color, skinID, position, health, hasSpawnProtection);
+            const newPlayer = new Player(id, name, color, playerSkinID, position, health, hasSpawnProtection);
 
             // Set as client player if matched
             if (clientPlayer && clientPlayer.id === id) {
@@ -582,7 +592,24 @@ export default class NetworkManager {
 
     handleInitialPlayerData (payload) {
         const { playerID, name, color, skinID, position } = payload;
-        const player = new Player(playerID, name, color, skinID, position);
+        
+        // Get the selected skin from localStorage (for both guests and logged in users)
+        let selectedSkin = localStorage.getItem('equippedSkin') || null;
+        
+        // If logged in, prefer userData's selected_skin
+        if (this.loggedIn && this.userData && this.userData.selected_skin) {
+            selectedSkin = this.userData.selected_skin;
+        }
+        
+        // Normalize empty values
+        if (selectedSkin === '' || selectedSkin === 'null' || selectedSkin === '0') {
+            selectedSkin = null;
+        }
+        
+        console.log('Creating player with skin:', selectedSkin);
+        
+        // Pass the skin name (string) instead of skinID from server
+        const player = new Player(playerID, name, color, selectedSkin, position);
         player.hasSpawnProtection = true;
         this.core.gameManager.setClientPlayer(player);
         this.core.toolbar.changeColor(color);
