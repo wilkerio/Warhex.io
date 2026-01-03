@@ -25,9 +25,19 @@ export default class Message {
         // Encode the name as bytes
         const nameBytes = new TextEncoder().encode(name);
 
-        // Convert equippedSkin to a single byte 
-        const skinByte = new Uint8Array(1); // Create a single byte array
-        skinByte[0] = equippedSkin;
+        // Convert equippedSkin to a single byte or encode skin name
+        // If equippedSkin is a string (skin name), we'll pass 0 and let the server use default
+        // The skin will be loaded client-side
+        let skinByte = 0;
+        if (typeof equippedSkin === 'number') {
+            skinByte = equippedSkin;
+        } else if (equippedSkin && typeof equippedSkin === 'string') {
+            // For now, pass 0 to server - client will load skin by name
+            skinByte = 0;
+        }
+        
+        const skinByteArray = new Uint8Array(1);
+        skinByteArray[0] = skinByte;
 
         // Convert the fingerprint to a 4-byte Uint8Array (32-bit integer)
         const fingerprintBytes = new Uint8Array(4);
@@ -43,7 +53,7 @@ export default class Message {
         payload.set(nameBytes, 0);
 
         // Copy the skin byte
-        payload.set(skinByte, nameBytes.length);
+        payload.set(skinByteArray, nameBytes.length);
 
         // Append the fingerprint bytes at the end of the payload
         payload.set(fingerprintBytes, nameBytes.length + 1);

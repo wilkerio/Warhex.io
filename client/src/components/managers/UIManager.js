@@ -1,7 +1,7 @@
 import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
-import { signUp, signIn, getCurrentUser } from "../../network/supabaseClient.js";
+import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -26,16 +26,104 @@ export default class UIManager {
         this.upgradeCostElements = []; // Stores elements for later updates 
         this.selectedUpgradeTab = 0;
         this.upgradePanelOpen = false;
+        
+        // Skin navigation properties
+        this.currentSkinIndex = 0;
+        this.availableSkins = [];
 
         this.initializeUIElements();
+        this.initializeSkinsFromCache(); // First: load from localStorage cache
+        this.loadSupabaseSkins(); // Then: fetch fresh from Supabase (updates cache)
         this.addLoginDialogButtonListener();
         this.addPlayButtonListener();
         this.addContinueButtonListener();
         this.addMenuDialogButtonListener();
-        this.addSkinPreviewButtonListener();
+        this.addSkinNavigationListeners(); // New: skin navigation
+        this.addSkinUseButtonListener(); // New: Use button
+        this.addSkinCircleClickListener(); // New: click on circle to open library
         this.addSkinLibraryButtonListener();
         this.addSettingsPanelListener();
         this.addChatButtonElementListener();
+    }
+
+    // Initialize skins from localStorage cache immediately (no async wait)
+    initializeSkinsFromCache() {
+        try {
+            // Try to load cached skins from localStorage
+            const cachedSkins = localStorage.getItem('supabaseSkins');
+            if (cachedSkins) {
+                const skins = JSON.parse(cachedSkins);
+                if (Array.isArray(skins) && skins.length > 0) {
+                    SkinCache.supabaseSkins = skins;
+                    this.availableSkins = [
+                        { name: 'Default', url: null },
+                        ...skins
+                    ];
+                    console.log('Skins loaded from localStorage cache:', skins.length);
+                    
+                    // Restore selected skin index
+                    const equippedSkinName = localStorage.getItem('equippedSkin') || null;
+                    if (equippedSkinName && equippedSkinName !== '' && equippedSkinName !== 'null') {
+                        const skinIndex = this.availableSkins.findIndex(s => s.name === equippedSkinName);
+                        if (skinIndex !== -1) {
+                            this.currentSkinIndex = skinIndex;
+                        }
+                    }
+                    
+                    // Update UI immediately
+                    this.updateSkinCircle();
+                    this.updateUseButton();
+                    return;
+                }
+            }
+        } catch (error) {
+            console.warn('Could not load skins from cache:', error);
+        }
+        
+        // Initialize with default skin if no cache
+        this.availableSkins = [{ name: 'Default', url: null }];
+        this.currentSkinIndex = 0;
+        this.updateSkinCircle();
+        this.updateUseButton();
+    }
+
+    async loadSupabaseSkins() {
+        try {
+            const skins = await fetchSkins();
+            if (skins.length > 0) {
+                // Save to cache
+                SkinCache.setSupabaseSkins(skins);
+                console.log('Supabase skins fetched and cached:', skins.length);
+                
+                // Build available skins array (default + supabase skins)
+                this.availableSkins = [
+                    { name: 'Default', url: null },
+                    ...skins
+                ];
+                
+                // Get currently equipped skin
+                const equippedSkinName = localStorage.getItem('equippedSkin') || null;
+                
+                // Find index of equipped skin
+                if (equippedSkinName && equippedSkinName !== '' && equippedSkinName !== 'null') {
+                    const skinIndex = this.availableSkins.findIndex(s => s.name === equippedSkinName);
+                    if (skinIndex !== -1) {
+                        this.currentSkinIndex = skinIndex;
+                    }
+                }
+                
+                // Update circle display
+                this.updateSkinCircle();
+                this.updateUseButton();
+                this.populateSkinLibrary();
+            } else if (this.availableSkins.length <= 1) {
+                // Only set default if we don't have cached skins
+                console.warn('No Supabase skins found - using cached or default');
+            }
+        } catch (error) {
+            console.error('Error loading Supabase skins:', error);
+            // Keep whatever we have from cache
+        }
     }
 
     initializeUIElements () {
@@ -129,9 +217,12 @@ export default class UIManager {
                 previewButton: "skin-preview",
                 libraryDialog: "skin-library-dialog",
                 libraryExit: "skin-library-exit",
+                containerMenu: "skin-container-menu",
                 carousel: {
                     prevButton: "skin-carousel-prev",
                     nextButton: "skin-carousel-next",
+                    prevButtonMenu: "skin-carousel-prev-menu",
+                    nextButtonMenu: "skin-carousel-next-menu",
                 },
             },
         };
@@ -680,6 +771,194 @@ export default class UIManager {
         this.updateAccount();
     }
 
+    updateSkinCircle() {
+        const circle = document.getElementById('skin-preview-circle');
+        const img = document.getElementById('current-skin-img');
+        const nameDisplay = document.getElementById('skin-name-display');
+        const prevBtn = document.getElementById('skin-carousel-prev-menu');
+        const nextBtn = document.getElementById('skin-carousel-next-menu');
+        
+        if (!circle || !img || !nameDisplay) {
+            return; // Elements not ready yet
+        }
+        
+        const currentSkin = this.availableSkins[this.currentSkinIndex];
+        
+        if (currentSkin) {
+            nameDisplay.textContent = currentSkin.name || 'Default';
+            
+            if (currentSkin.url) {
+                img.src = currentSkin.url;
+                img.style.display = 'block';
+            } else {
+                img.style.display = 'none';
+            }
+        }
+        
+        // Update button states
+        if (prevBtn) {
+            prevBtn.disabled = this.currentSkinIndex === 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = this.currentSkinIndex >= this.availableSkins.length - 1;
+        }
+        
+        // Update Use button state
+        this.updateUseButton();
+    }
+    
+    updateUseButton() {
+        const useBtn = document.getElementById('skin-use-button');
+        if (!useBtn) return;
+        
+        const currentSkin = this.availableSkins[this.currentSkinIndex];
+        const equippedSkinName = localStorage.getItem('equippedSkin') || '';
+        
+        // Check if current viewing skin is the equipped one
+        const isCurrentEquipped = 
+            (currentSkin?.name === 'Default' && (!equippedSkinName || equippedSkinName === '')) ||
+            (currentSkin?.name === equippedSkinName);
+        
+        if (isCurrentEquipped) {
+            useBtn.textContent = 'Equipped ✓';
+            useBtn.classList.add('selected');
+        } else {
+            useBtn.textContent = 'Use';
+            useBtn.classList.remove('selected');
+        }
+    }
+    
+    addSkinNavigationListeners() {
+        const prevBtn = document.getElementById('skin-carousel-prev-menu');
+        const nextBtn = document.getElementById('skin-carousel-next-menu');
+        
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (this.currentSkinIndex > 0) {
+                    this.currentSkinIndex--;
+                    this.updateSkinCircle();
+                }
+            });
+        }
+        
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                if (this.currentSkinIndex < this.availableSkins.length - 1) {
+                    this.currentSkinIndex++;
+                    this.updateSkinCircle();
+                }
+            });
+        }
+    }
+    
+    addSkinUseButtonListener() {
+        const useBtn = document.getElementById('skin-use-button');
+        if (useBtn) {
+            useBtn.addEventListener('click', () => {
+                this.selectCurrentSkin();
+            });
+        }
+    }
+    
+    async selectCurrentSkin() {
+        const currentSkin = this.availableSkins[this.currentSkinIndex];
+        if (!currentSkin) return;
+        
+        const skinName = currentSkin.name === 'Default' ? null : currentSkin.name;
+        
+        // Save to localStorage
+        localStorage.setItem('equippedSkin', skinName || '');
+        
+        console.log('Skin equipped:', skinName);
+        
+        // Update Use button immediately
+        this.updateUseButton();
+        
+        // If logged in, save to database
+        const isLoggedIn = this.core.networkManager.loggedIn;
+        const userId = this.core.networkManager.userId;
+        
+        if (isLoggedIn && userId) {
+            try {
+                await updateSelectedSkin(userId, skinName);
+                console.log('Skin saved to database');
+                
+                if (this.core.networkManager.userData) {
+                    this.core.networkManager.userData.selected_skin = skinName;
+                }
+            } catch (error) {
+                console.error('Error saving skin to database:', error);
+            }
+        }
+        
+        // Update library if open
+        this.populateSkinLibrary();
+    }
+    
+    addSkinCircleClickListener() {
+        const circle = document.getElementById('skin-preview-circle');
+        if (circle) {
+            circle.addEventListener('click', () => {
+                // Populate skins before showing dialog
+                this.populateSkinLibrary();
+                this.showSkinLibraryDialog(true);
+            });
+        }
+    }
+    
+    populateSkinLibrary() {
+        const container = document.getElementById('skin-grid-container');
+        if (!container) {
+            console.warn('Skin grid container not found');
+            return; // Container not ready yet
+        }
+        
+        console.log('Populating skin library with', this.availableSkins.length, 'skins');
+        
+        container.innerHTML = '';
+        
+        let currentEquippedName = localStorage.getItem('equippedSkin') || '';
+        
+        this.availableSkins.forEach((skin, index) => {
+            const skinCard = document.createElement('div');
+            skinCard.classList.add('skin-item');
+            
+            const isEquipped = (skin.name === 'Default' && (!currentEquippedName || currentEquippedName === '')) || 
+                               (skin.name === currentEquippedName);
+            
+            if (isEquipped) {
+                skinCard.classList.add('equipped');
+            }
+            
+            if (skin.url) {
+                const img = document.createElement('img');
+                img.src = skin.url;
+                img.alt = skin.name;
+                img.loading = 'lazy';
+                skinCard.appendChild(img);
+            } else {
+                const placeholder = document.createElement('div');
+                placeholder.classList.add('skin-placeholder');
+                placeholder.textContent = '🎮';
+                skinCard.appendChild(placeholder);
+            }
+            
+            const nameLabel = document.createElement('p');
+            nameLabel.classList.add('skin-name');
+            nameLabel.textContent = skin.name;
+            skinCard.appendChild(nameLabel);
+            
+            skinCard.addEventListener('click', async () => {
+                this.currentSkinIndex = index;
+                this.updateSkinCircle();
+                await this.selectCurrentSkin();
+                this.showSkinLibraryDialog(false); // Close dialog after selection
+            });
+            
+            container.appendChild(skinCard);
+        });
+    }
+
 
     populateThemeSelect () {
         if (!this.DOM.settings.themeSelect) return;
@@ -1222,7 +1501,21 @@ export default class UIManager {
         this.DOM.menu.playButton.addEventListener("click", () => {
             const playerName = this.extractPlayerName();
             localStorage.setItem("playerName", playerName);
-            const equippedSkin = this.core.networkManager.userData?.skins?.equipped || 0;
+            
+            // Get equipped skin name (from localStorage for guests, or userData for logged in)
+            let equippedSkin = localStorage.getItem('equippedSkin') || null;
+            
+            // If logged in, prefer userData's selected_skin
+            if (this.core.networkManager.loggedIn && this.core.networkManager.userData?.selected_skin) {
+                equippedSkin = this.core.networkManager.userData.selected_skin;
+            }
+            
+            // Normalize empty string to null
+            if (equippedSkin === '' || equippedSkin === 'null') {
+                equippedSkin = null;
+            }
+            
+            console.log('Joining game with skin:', equippedSkin);
             this.core.handlePlayButtonPress(playerName, equippedSkin);
         });
     }
@@ -1244,65 +1537,10 @@ export default class UIManager {
         }
     }
 
-    addSkinPreviewButtonListener () {
-        if (this.DOM.skins.previewButton) {
-            this.DOM.skins.previewButton.addEventListener("click", () => {
-                if (this.core.networkManager.loggedIn) {
-                    this._populateSkinLibrary();
-                    this.showSkinLibraryDialog(true);
-                } else {
-                    this.showLoginDialog(true);
-                }
-            });
-        }
-    }
-
     addSkinLibraryButtonListener () {
         if (this.DOM.skins.libraryExit) {
             this.DOM.skins.libraryExit.addEventListener("click", () => {
                 this.showSkinLibraryDialog(false);
-            });
-        }
-
-        const updateCarouselButtons = (list, updatedScrollLeft) => {
-            const totalScrollWidth = list.scrollWidth - list.clientWidth; // Total scrollable width
-            const currentScrollPosition = updatedScrollLeft; // Current scroll position
-
-            // Check and update the prevButton class
-            if (currentScrollPosition <= 100) {
-                this.DOM.skins.carousel.prevButton.classList.add("end");
-            } else {
-                this.DOM.skins.carousel.prevButton.classList.remove("end");
-            }
-
-            // Check and update the nextButton class
-            if (currentScrollPosition >= totalScrollWidth) {
-                this.DOM.skins.carousel.nextButton.classList.add("end");
-            } else {
-                this.DOM.skins.carousel.nextButton.classList.remove("end");
-            }
-        }
-
-        if (this.DOM.skins.carousel.prevButton) {
-            this.DOM.skins.carousel.prevButton.addEventListener("click", () => {
-                const list = this.DOM.skins.libraryList;
-                const itemWidth = list.children[0].offsetWidth * 3;
-                const updatedScrollLeft = list.scrollLeft - itemWidth;
-                list.scrollLeft = updatedScrollLeft;
-
-                updateCarouselButtons(list, updatedScrollLeft);
-
-            });
-        }
-
-        if (this.DOM.skins.carousel.nextButton) {
-            this.DOM.skins.carousel.nextButton.addEventListener("click", () => {
-                const list = this.DOM.skins.libraryList;
-                const itemWidth = list.children[0].offsetWidth * 3;
-                const updatedScrollLeft = list.scrollLeft + itemWidth;
-                list.scrollLeft = updatedScrollLeft;
-
-                updateCarouselButtons(list, updatedScrollLeft);
             });
         }
     }
