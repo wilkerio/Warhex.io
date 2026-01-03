@@ -49,6 +49,9 @@ const (
 	MessageTypeClientBuyCommander       byte = 39
 	MessageTypeClientRequestSkinData    byte = 40
 	MessageTypeSkinData                 byte = 41
+	MessageTypePlayerInactiveWarning    byte = 42
+	MessageTypePlayerActive             byte = 43
+	MessageTypeClientActivity           byte = 44
 	MessageTypeHeartbeat                byte = 69
 	MessageTypeServerVersion            byte = 98
 	MessageTypeRebootAlertMessage       byte = 99

@@ -224,5 +224,10 @@ export default class Message {
         return new Message(MessageTypes.BUY_REPAIR, payload);
     }
 
+    static createPlayerActivityMessage() {
+        const payload = new Uint8Array(0);
+        return new Message(MessageTypes.CLIENT_ACTIVITY, payload);
+    }
+
 
 }

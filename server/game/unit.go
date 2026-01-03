@@ -27,6 +27,7 @@ type Unit struct {
 	ExplosionRadius           int
 	LastTargetPositionUpdate  time.Time
 	ExactTargetPositonRequest PositionInt
+	LastDamageTime            time.Time
 	RemoveFlag                bool // Flag to mark unit for removal
 	sync.RWMutex
 }
@@ -52,6 +53,7 @@ func (u *Unit) GetPosition() PositionFloat {
 }
 
 func (u *Unit) TakeDamage(amount uint16) bool {
+	u.LastDamageTime = time.Now()
 	u.Health.Decrement(amount)
 	return u.Health.IsAlive()
 }

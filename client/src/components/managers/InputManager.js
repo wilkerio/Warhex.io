@@ -25,7 +25,28 @@ export default class InputManager {
         this.registerMouseUpHandler((mousePosition) => this.removeSelectionCircle(mousePosition));
         this.registerMouseMoveHandler((mousePosition) => this.updateSelectionCircle(mousePosition));
 
+        this.activityEvents = ['mousemove', 'keydown', 'mousedown'];
+        this.activityHandler = () => this.notifyServerOfActivity();
+        this.addActivityListeners();
+
         this.initializeKeyListeners();
+    }
+
+    addActivityListeners() {
+        this.activityEvents.forEach(eventType => {
+            document.addEventListener(eventType, this.activityHandler);
+        });
+    }
+
+    removeActivityListeners() {
+        this.activityEvents.forEach(eventType => {
+            document.removeEventListener(eventType, this.activityHandler);
+        });
+    }
+
+    notifyServerOfActivity() {
+        this.core.networkManager.sendPlayerActivity();
+        this.core.uiManager.hideInactivityWarning();
     }
 
     initializeKeyListeners () {

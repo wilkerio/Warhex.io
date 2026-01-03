@@ -26,6 +26,8 @@ export default class UIManager {
         this.upgradeCostElements = []; // Stores elements for later updates 
         this.selectedUpgradeTab = 0;
         this.upgradePanelOpen = false;
+        this.inactivityTimerInterval = null;
+        this.inactivityTimeout = 600; // 10 minutes in seconds
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -146,6 +148,10 @@ export default class UIManager {
                     content: "game-over-content", // ! Look this up
                     killedBy: "killed-by-container", // ! Look this up
                     continueButton: "continue-button",
+                },
+                inactivityWarning: {
+                    container: "inactivity-warning-container",
+                    timer: "inactivity-timer",
                 },
                 toolbar: "toolbar-container",
                 upgrades: {
@@ -1985,5 +1991,31 @@ export default class UIManager {
         if (!this.DOM.chat.suggestions) return;
         this.DOM.chat.suggestions.style.display = "none";
         this.DOM.chat.suggestions.innerHTML = "";
+    }
+
+    showInactivityWarning() {
+        this.DOM.game.inactivityWarning.container.style.display = 'flex';
+        let timeLeft = this.inactivityTimeout;
+
+        const updateTimer = () => {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            this.DOM.game.inactivityWarning.timer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            if (timeLeft <= 0) {
+                clearInterval(this.inactivityTimerInterval);
+            }
+            timeLeft--;
+        };
+
+        updateTimer();
+        this.inactivityTimerInterval = setInterval(updateTimer, 1000);
+    }
+
+    hideInactivityWarning() {
+        this.DOM.game.inactivityWarning.container.style.display = 'none';
+        if (this.inactivityTimerInterval) {
+            clearInterval(this.inactivityTimerInterval);
+            this.inactivityTimerInterval = null;
+        }
     }
 }

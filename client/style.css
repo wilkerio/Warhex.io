@@ -1917,6 +1917,37 @@ button:hover {
   height: 50px;
   width: 150px;
 }
+
+#inactivity-warning-container {
+  position: fixed;
+  height: 100vh;
+  width: 100vw;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #000000a0;
+  z-index: 10000;
+  color: white;
+  text-shadow: 0 0 10px black;
+}
+
+.inactivity-warning-content {
+  text-align: center;
+}
+
+.inactivity-warning-content h1 {
+    font-size: 48px;
+}
+
+.inactivity-warning-content p {
+    font-size: 24px;
+}
+
+#inactivity-timer {
+    font-size: 48px;
+    font-weight: bold;
+}
 /* =================== CHAT =================== */
 #chat {
     border-radius: 0;

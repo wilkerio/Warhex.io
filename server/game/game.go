@@ -38,6 +38,7 @@ func init() {
 	go startTargetingLoop()
 	go startEntityUpdateLoop()
 	go startProtectionCheckLoop()
+	go startCommanderRegenerationLoop()
 }
 
 func Start() {
@@ -73,15 +74,28 @@ func startRegenerationLoop() {
 }
 
 func startInactivityCheckLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(1 * time.Second) // Check every second
 	defer ticker.Stop()
 
 	for range ticker.C {
 		State.RLock()
 		for _, player := range State.Players {
+			if player.IsMarkedForRemoval() {
+				continue
+			}
+
+			// Kick after 10 minutes
 			if time.Since(player.GetLastActivity()) > PLAYER_TIMEOUT*time.Minute {
 				player.MarkForRemoval()
 				TriggerKickEvent(player, KICK_REASON_TIMEOUT)
+				continue
+			}
+
+			// Send warning after 10 seconds
+			if time.Since(player.GetLastActivity()) > 10*time.Second && time.Since(player.LastActivityWarningSent) > 10*time.Second {
+				player.LastActivityWarningSent = time.Now()
+				// Send warning message to player
+				TriggerPlayerInactiveWarningEvent(player)
 			}
 		}
 		State.RUnlock()
@@ -97,6 +111,26 @@ func startProtectionCheckLoop() {
 		for _, player := range State.Players {
 			if player.HasProtection() && time.Now().After(player.GetProtectionEndTime()) {
 				player.RemoveProtection()
+			}
+		}
+		State.RUnlock()
+	}
+}
+
+func startCommanderRegenerationLoop() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		State.RLock()
+		for _, player := range State.Players {
+			for _, unit := range player.Units {
+				if unit.Type == COMMANDER {
+					if time.Since(unit.LastDamageTime) > 10*time.Second && unit.Health.Current < unit.Health.Max {
+						unit.Health.Increment(100) // Regenerate 100 health per second
+						TriggerUnitHealthUpdateEvent(player, unit)
+					}
+				}
 			}
 		}
 		State.RUnlock()
@@ -1426,6 +1460,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		HasCommander:           false,
 		SpawnProtectionEndTime: time.Now().Add(PLAYER_SPAWN_PROTECTION_TIME * time.Minute),
 		LastActivity:           time.Now(),
+		LastActivityWarningSent: time.Now(),
 		RemoveFlag:             false,
 		SuspiciousCounter:      0.0, // Initial suspicious counter is 0
 		SuspicionDecayRate:     1.0, // Decay rate per update, adjust as needed

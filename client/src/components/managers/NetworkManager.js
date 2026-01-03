@@ -381,6 +381,8 @@ export default class NetworkManager {
             [MessageTypes.SKIN_DATA, () => this.handleSkinData(payload)],
             [MessageTypes.SERVER_VERSION, () => this.handleServerVersion(payload)],
             [MessageTypes.REBOOT_ALERT, () => this.handleRebootAlert(payload)],
+            [MessageTypes.PLAYER_INACTIVE_WARNING, () => this.handlePlayerInactiveWarning()],
+            [MessageTypes.PLAYER_ACTIVE, () => this.handlePlayerActive()],
             [MessageTypes.ERROR, () => this.handleError(payload)],
         ]);
 
@@ -1202,6 +1204,19 @@ export default class NetworkManager {
     sendChatMessage (text) {
         const message = Message.createChatMessageMessage(text);
         this.sendMessage(message);
+    }
+
+    sendPlayerActivity() {
+        const message = Message.createPlayerActivityMessage();
+        this.sendMessage(message);
+    }
+
+    handlePlayerInactiveWarning() {
+        this.core.uiManager.showInactivityWarning();
+    }
+
+    handlePlayerActive() {
+        this.core.uiManager.hideInactivityWarning();
     }
 
     sendResyncRequest () {

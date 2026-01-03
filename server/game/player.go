@@ -23,6 +23,7 @@ type Player struct {
 	Permission   Permission
 	Name         [12]byte
 	LastActivity time.Time // Used for timeout
+	LastActivityWarningSent time.Time
 	LastResync   time.Time
 	SkinID       ID
 
@@ -266,6 +267,7 @@ func (p *Player) AddCommander() (*Unit, bool) {
 		Speed:          unitStats.Speed,
 
 		ExplosionRadius: int(unitStats.ExplosionRadius),
+		LastDamageTime:  time.Now(),
 	}
 	p.Lock()
 	// Add the unit to the player's list of units
@@ -319,6 +321,7 @@ func (p *Player) AddUnit(unitType UnitType, unitVariant UnitVariant, barracks *B
 		Size:            unitStats.Size,
 		Speed:           unitStats.Speed,
 		ExplosionRadius: int(unitStats.ExplosionRadius),
+		LastDamageTime:  time.Now(),
 	}
 
 	p.Lock()

@@ -56,6 +56,8 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleClientRequestSkinData(conn)
 	case MessageTypeClientNewChatMessage:
 		handleClientNewChatMessage(conn, payload)
+	case MessageTypeClientActivity:
+		handleClientActivity(conn, payload)
 
 	default:
 		log.Printf("Received unsupported message type: %d", messageType)
@@ -1099,6 +1101,17 @@ func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
 
 	// Broadcast the sanitized message to all except the sender
 	broadcastChatMessage(player.ID, cleanMessageBytes)
+}
+
+func handleClientActivity(conn *websocket.Conn, payload []byte) {
+	player, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		return
+	}
+
+	player.SetLastActivity()
+	player.LastActivityWarningSent = time.Now()
+	SendPlayerActive(player)
 }
 
 func removePlayerMessageState(playerID game.ID) {

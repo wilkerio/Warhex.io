@@ -24,8 +24,13 @@ const (
 	LeaderboardUpdate
 	RemoveSpawnProtection
 	Kick
+	PlayerInactiveWarning
 	// Add more event types as needed
 )
+
+type PlayerInactiveWarningEvent struct {
+	Player *Player
+}
 
 type LeaderboardUpdateEvent struct {
 	Changes *[]LeaderboardEntry
@@ -288,4 +293,11 @@ func TriggerKickEvent(player *Player, reason byte) {
 		Reason: reason,
 	}
 	eventChan <- Event{Type: Kick, Payload: event}
+}
+
+func TriggerPlayerInactiveWarningEvent(player *Player) {
+	event := &PlayerInactiveWarningEvent{
+		Player: player,
+	}
+	eventChan <- Event{Type: PlayerInactiveWarning, Payload: event}
 }

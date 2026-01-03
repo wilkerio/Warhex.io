@@ -143,6 +143,10 @@ func handleEvent(event game.Event) {
 		ClearFingerprintForConn(player.Conn)
 
 		removePlayerMessageState(player.ID)
+	case game.PlayerInactiveWarning:
+		e := event.Payload.(*game.PlayerInactiveWarningEvent)
+		player := e.Player
+		SendPlayerInactiveWarning(player)
 	case game.UnitBulletSpawn:
 		e := event.Payload.(*game.UnitBulletSpawnEvent)
 		player := e.Player

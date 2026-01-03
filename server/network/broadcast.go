@@ -886,3 +886,19 @@ func SendBuildingPlacementFailed(player *game.Player, buildingType game.Building
 		removePlayerByConnection(conn)
 	}
 }
+
+func SendPlayerInactiveWarning(player *game.Player) {
+	message := Message{
+		Type: MessageTypePlayerInactiveWarning,
+	}
+	// No payload needed
+	sendToClient(player.Conn, EncodeMessage(message), nil)
+}
+
+func SendPlayerActive(player *game.Player) {
+	message := Message{
+		Type: MessageTypePlayerActive,
+	}
+	// No payload needed
+	sendToClient(player.Conn, EncodeMessage(message), nil)
+}
