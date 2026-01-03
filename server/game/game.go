@@ -691,15 +691,13 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 						damage *= uint16(bullet.DamageMultiplier) // 150% damage to tanks
 					}
 
-					if bullet.Behavior == UnitBullet { // ! Only applied in bullet against unit collisions
-						damage *= uint16(bullet.DamageMultiplier) // 200% against other units
-					}
-
 					isAlive = unit.TakeDamage(damage)
 					if !isAlive { // Unit is destroyed
 						unit.MarkForRemoval()
 						handleUnitDestroyed(unit)
 						break // Unit destroyed no need for more bullet checks for that unit
+					} else {
+						TriggerUnitHealthUpdateEvent(unit.Player, unit)
 					}
 				}
 			}
@@ -808,6 +806,8 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 						unit.MarkForRemoval()
 						handleUnitDestroyed(unit)
 						break // Unit destroyed no need for more bullet checks for that unit
+					} else {
+						TriggerUnitHealthUpdateEvent(unit.Player, unit)
 					}
 				}
 			}
@@ -947,17 +947,18 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 					// Mark the other player for removal and trigger the kill event
 					otherPlayer.MarkForRemoval()
 					TriggerPlayerKilledEvent(otherPlayer, player)
-				} else {
-					// Update the health
-					TriggerBaseHealthUpdateEvent(otherPlayer.Base)
-				}
-
-				if !unitIsAlive {
-					unit.MarkForRemoval()
-					handleUnitDestroyed(unit)
-					continue
-				}
-			}
+				                } else {
+				                    // Update the health
+				                    TriggerBaseHealthUpdateEvent(otherPlayer.Base)
+				                }
+				
+				                if !unitIsAlive {
+				                    unit.MarkForRemoval()
+				                    handleUnitDestroyed(unit)
+				                    continue
+				                } else {
+				                    TriggerUnitHealthUpdateEvent(unit.Player, unit)
+				                }			}
 
 			// Check collision with buildings
 			for _, building := range otherBuildings {
@@ -1032,6 +1033,8 @@ func checkNeutralBaseCollisions(player *Player, neutrals []*NeutralBase, units [
 					unit.MarkForRemoval()
 					handleUnitDestroyed(unit)
 					continue
+				} else {
+					TriggerUnitHealthUpdateEvent(unit.Player, unit)
 				}
 			}
 
@@ -1114,6 +1117,8 @@ func applyExplosionDamage(unit *Unit) {
 					otherUnit.MarkForRemoval()
 					unit.Player.IncrementScore(uint32(otherUnit.Health.Max) / 10)
 					handleUnitDestroyed(otherUnit)
+				} else {
+					TriggerUnitHealthUpdateEvent(otherUnit.Player, otherUnit)
 				}
 			}
 		}
@@ -1310,6 +1315,9 @@ func handleUnitBuildingCollision(unit *Unit, building *Building) (bool, bool) {
 	buildingHealth := building.Health.Current
 
 	isUnitAlive := unit.TakeDamage(buildingHealth)
+	if isUnitAlive {
+		TriggerUnitHealthUpdateEvent(unit.Player, unit)
+	}
 	isBuildingAlive := building.TakeDamage(unitHealth)
 
 	return isUnitAlive, isBuildingAlive
@@ -1330,7 +1338,13 @@ func handleUnitCollision(unit1, unit2 *Unit) (bool, bool) {
 
 	// Apply damage
 	isAliveUnit1 := unit1.TakeDamage(unit2Health)
+	if isAliveUnit1 {
+		TriggerUnitHealthUpdateEvent(unit1.Player, unit1)
+	}
 	isAliveUnit2 := unit2.TakeDamage(unit1Health)
+	if isAliveUnit2 {
+		TriggerUnitHealthUpdateEvent(unit2.Player, unit2)
+	}
 
 	// Return the alive status in the original order
 	if originalUnit1 > originalUnit2 {

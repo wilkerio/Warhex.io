@@ -7,7 +7,7 @@ export default class TriCommander extends Unit {
     constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1) {
         const details = getUnitDetails(UnitTypes.TRI_COMMANDER, variant);
 
-        super(id, UnitTypes.TRI_COMMANDER, color, details, position, variant, details);
+        super(id, UnitTypes.TRI_COMMANDER, color, details, position, variant);
 
         this.flameAnimationTime = 0; // Time tracker for flame animation
 

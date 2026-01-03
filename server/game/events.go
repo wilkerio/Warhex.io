@@ -11,6 +11,7 @@ const (
 	UnitsRotationUpdate
 	TurretRotationUpdate
 	BaseHealthUpdate
+	UnitHealthUpdate
 	NeutralBaseCaptured
 	PlayerKilled
 	UnitRemove
@@ -67,6 +68,11 @@ type UnitsTargetPointUpdateEvent struct {
 	Player      *Player
 	Units       []*Unit
 	TargetPoint PositionInt
+}
+
+type UnitHealthUpdateEvent struct {
+	Player *Player
+	Unit   *Unit
 }
 
 type UnitRemoveEvent struct {
@@ -165,6 +171,14 @@ func TriggerUnitsRotationUpdateEvent(player *Player, units []*Unit) {
 		Units:  units,
 	}
 	eventChan <- Event{Type: UnitsRotationUpdate, Payload: event}
+}
+
+func TriggerUnitHealthUpdateEvent(player *Player, unit *Unit) {
+	event := &UnitHealthUpdateEvent{
+		Player: player,
+		Unit:   unit,
+	}
+	eventChan <- Event{Type: UnitHealthUpdate, Payload: event}
 }
 
 func TriggerUnitRemoveEvent(player *Player, unitID ID) {

@@ -85,6 +85,11 @@ func handleEvent(event game.Event) {
 	case game.BaseHealthUpdate:
 		base := event.Payload.(*game.Base)
 		broadcastBaseHealthUpdate(base)
+	case game.UnitHealthUpdate:
+		e := event.Payload.(*game.UnitHealthUpdateEvent)
+		player := e.Player
+		unit := e.Unit
+		broadcastUnitHealthUpdate(player.ID, unit)
 	case game.PlayerKilled:
 		e := event.Payload.(*game.PlayerKilledEvent)
 		player := e.Player

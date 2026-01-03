@@ -14,7 +14,7 @@ export default class Soldier extends Unit {
         const adjustedColor = variantColorMap[variant] || color;
 
 
-        super(id, UnitTypes.SOLDIER, adjustedColor, details, position, variant, details);
+        super(id, UnitTypes.SOLDIER, adjustedColor, details, position, variant);
 
         // Set the upgrade method based on the variant during initialization
         this.renderUpgrade = this.getUpgradeRenderMethod(variant);

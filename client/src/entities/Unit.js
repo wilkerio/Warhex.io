@@ -1,9 +1,9 @@
 import ThemeManager from "../components/managers/ThemeManager.js";
 import Renderable from "../components/Renderable.js";
-import { BuildingSizes } from "../network/constants.js";
+import { BuildingSizes, UnitTypes } from "../network/constants.js";
 
 export default class Unit extends Renderable {
-    constructor (id, type, color, details, position, variant = 0) {
+    constructor (id, type, color, details, position, variant = 0, health, maxHealth) {
         super();
         this.id = id;
         this.type = type;
@@ -16,6 +16,8 @@ export default class Unit extends Renderable {
         this.rotation = 0;
         this.variant = variant; // Store the current upgrade
         this.isSelected = false;
+        this.health = health;
+        this.maxHealth = maxHealth;
 
         // Fading properties
         this.isFadingOut = false;
@@ -28,6 +30,9 @@ export default class Unit extends Renderable {
     // Getters and Setters
     setColor (color) {
         this.color = color;
+    }
+    setHealth (health) {
+        this.health = health;
     }
 
     setTargetPosition (targetPosition) {
@@ -114,6 +119,30 @@ export default class Unit extends Renderable {
             this.renderShadow(context, worldPosition);
         }
         context.globalAlpha = this.alpha;
+
+        // Add health bar rendering here
+        if (this.type === UnitTypes.COMMANDER || this.health < this.maxHealth) { // Only show if not full health
+            const healthBarWidth = this.size * 1.5;
+            const healthBarHeight = 5;
+            const x = worldPosition.x - healthBarWidth / 2;
+            const y = worldPosition.y - this.size - 10;
+
+            // Background of the health bar
+            context.fillStyle = '#333';
+            context.fillRect(x, y, healthBarWidth, healthBarHeight);
+
+            // Foreground of the health bar
+            const healthPercentage = this.health / this.maxHealth;
+            let healthBarColor = 'green';
+            if (healthPercentage < 0.6) {
+                healthBarColor = 'yellow';
+            }
+            if (healthPercentage < 0.3) {
+                healthBarColor = 'red';
+            }
+            context.fillStyle = healthBarColor;
+            context.fillRect(x, y, healthBarWidth * healthPercentage, healthBarHeight);
+        }
     }
 
     // When selected

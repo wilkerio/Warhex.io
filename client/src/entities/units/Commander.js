@@ -3,10 +3,10 @@ import { UnitDetails, UnitTypes, UnitVariantTypes, darkenColor, getUnitBulletDet
 import Unit from "../Unit.js";
 
 export default class Commander extends Unit {
-    constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1) {
+    constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1, health = 4000, maxHealth = 4000) {
         const details = getUnitDetails(UnitTypes.COMMANDER, variant);
 
-        super(id, UnitTypes.COMMANDER, color, details, position, variant, details);
+        super(id, UnitTypes.COMMANDER, color, details, position, variant, health, maxHealth);
 
         this.flameAnimationTime = 0; // Time tracker for flame animation
 

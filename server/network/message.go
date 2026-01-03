@@ -33,6 +33,7 @@ const (
 	MessageTypeKickNotification       byte = 23
 	MessageTypeClientNewChatMessage   byte = 24
 	MessageTypeChatMessage            byte = 25
+	MessageTypeUnitHealthUpdate       byte = 26
 	//? 27 is currently not used
 	MessageTypeUnitSpawnBullet          byte = 28
 	MessageTypeBuildingPlacementFailed  byte = 29

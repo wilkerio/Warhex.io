@@ -161,6 +161,7 @@ function decodePayload (messageType, payload) {
         [MessageTypes.INITIAL_BULLET_STATES]: decodeInitialBulletStates,
         [MessageTypes.TURRET_ROTATION_UPDATE]: decodeTurretRotationUpdate,
         [MessageTypes.NEUTRAL_BASE_CAPTURED]: decodeNeutralBaseCaptured,
+        [MessageTypes.UNIT_HEALTH_UPDATE]: decodeUnitHealthUpdate,
         [MessageTypes.SKIN_DATA]: decodeSkinData,
         [MessageTypes.SERVER_VERSION]: decodeServerVersion,
         [MessageTypes.REBOOT_ALERT]: decodeRebootAlert,
@@ -253,6 +254,14 @@ function decodeNeutralBaseCaptured (payload) {
     }
 
     return { neutralID, playerID, buildings };
+}
+
+function decodeUnitHealthUpdate (payload) {
+    const dataView = new DataView(payload);
+    const playerID = dataView.getUint8(0);
+    const unitID = dataView.getUint8(1);
+    const health = dataView.getUint16(2);
+    return { playerID, unitID, health };
 }
 
 function decodeTurretRotationUpdate (payload) {

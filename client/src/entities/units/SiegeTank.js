@@ -16,7 +16,7 @@ export default class SiegeTank extends Unit {
 
         const adjustedColor = variantColorMap[variant] || color;
 
-        super(id, UnitTypes.SIEGE_TANK, adjustedColor, details, position, variant, details);
+        super(id, UnitTypes.SIEGE_TANK, adjustedColor, details, position, variant);
 
         this.flameAnimationTime = 0; // Time tracker for flame animation
 

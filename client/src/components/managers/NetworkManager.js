@@ -377,6 +377,7 @@ export default class NetworkManager {
             [MessageTypes.INITIAL_BULLET_STATES, () => this.handleInitialBulletStates(payload)],
             [MessageTypes.TURRET_ROTATION_UPDATE, () => this.handleTurretRotationUpdate(payload)],
             [MessageTypes.NEUTRAL_BASE_CAPTURED, () => this.handleNeutralBaseCaptured(payload)],
+            [MessageTypes.UNIT_HEALTH_UPDATE, () => this.handleUnitHealthUpdate(payload)],
             [MessageTypes.SKIN_DATA, () => this.handleSkinData(payload)],
             [MessageTypes.SERVER_VERSION, () => this.handleServerVersion(payload)],
             [MessageTypes.REBOOT_ALERT, () => this.handleRebootAlert(payload)],
@@ -791,6 +792,17 @@ export default class NetworkManager {
                     this.core.gameManager.increaseBuildingLimit(newBuilding.type);
                 }
             });
+        }
+    }
+
+    handleUnitHealthUpdate (payload) {
+        const { playerID, unitID, health } = payload;
+        const player = this.core.gameManager.getPlayerById(playerID);
+        if (!player) return;
+
+        const unit = player.getUnit(unitID);
+        if (unit) {
+            unit.setHealth(health);
         }
     }
 
