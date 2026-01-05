@@ -1431,7 +1431,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 	maxPower := uint16(PLAYER_MAX_POWER)
 	if permission == PERMISSION_ADMIN {
 		// ! OP power for me :)
-		initialPower = uint16(60000)
+		initialPower = uint16(6000)
 		maxPower = uint16(60000)
 	}
 

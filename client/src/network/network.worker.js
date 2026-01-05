@@ -678,7 +678,8 @@ function decodeInitialGameState (payload) {
 function decodeResourceUpdate (payload) {
     const dataView = new DataView(payload)
     const power = dataView.getUint16(0);
-    return { power }
+    const generatingPower = dataView.getUint16(2);
+    return { power, generatingPower }
 }
 
 function decodeSpawnUnit (payload) {

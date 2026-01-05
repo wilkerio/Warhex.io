@@ -627,9 +627,10 @@ export default class NetworkManager {
     }
 
     handleResourceUpdate (payload) {
-        const { power } = payload;
+        const { power, generatingPower } = payload;
         const resources = this.core.gameManager.resources;
         resources.power.current = power;
+        resources.power.generationRate = generatingPower;
         this.core.uiManager.updateResources();
     }
 

@@ -20,6 +20,7 @@ export default class Building extends Renderable {
         this.angleToTarget = 0;
         this.rotationOffset = 0;
         this.variant = variant; // Store the current upgrade
+        this.yOffset = 0;
 
         this.selectionState = SelectionState.NOT_SELECTED;
 

@@ -19,8 +19,9 @@ class GameManager {
         }
         this.resources = {
             power: {
-                current: 6000,
-                max: 8000
+                current: 1000,
+                max: 6000,
+                generationRate: 0
             },
             protectionTime: {
                 current: 10, // This will store elapsed time in minutes

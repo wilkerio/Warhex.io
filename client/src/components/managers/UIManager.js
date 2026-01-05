@@ -1739,7 +1739,7 @@ export default class UIManager {
             ? `${protectionTime.current}min`
             : "<1min";
 
-        this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max}</span>`;
+        this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max} (+${power.generationRate}/s)</span>`;
         this.DOM.game.resources.shield.innerHTML = `Protection: <span>${protectionTimeDisplay}</span>`;
 
 

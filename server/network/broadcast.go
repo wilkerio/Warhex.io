@@ -854,6 +854,7 @@ func sendResourceUpdate(player *game.Player) {
 
 	buffer := new(bytes.Buffer)
 	binary.Write(buffer, binary.BigEndian, player.Resources.Power.Current)
+	binary.Write(buffer, binary.BigEndian, player.Generating.Power)
 	message.Payload = buffer.Bytes()
 
 	var toRemove []*websocket.Conn
