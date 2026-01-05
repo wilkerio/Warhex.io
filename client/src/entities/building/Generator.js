@@ -10,11 +10,6 @@ export default class Generator extends Building {
         super(id, BuildingTypes.GENERATOR, color, details, position, variant);
         this.rotationOffset = Math.PI / 2;
 
-        // Initialize animation properties
-        this.animationPhase = 0;
-        this.animationSpeed = 0.003; // Speed of animation
-        this.animationOffset = Math.random() * Math.PI * 2; // Random offset
-
         this.points = [];
 
         this.setUpgrade(variant);
@@ -52,10 +47,6 @@ export default class Generator extends Building {
     render (context, camera, deltaTime) {
         const worldPosition = this.getWorldPosition(camera);
 
-        // Update animation state
-        this.animationPhase = (this.animationPhase + this.animationSpeed * deltaTime) % (Math.PI * 2);
-        const phaseWithOffset = (this.animationPhase + this.animationOffset) % (Math.PI * 2);
-
         context.save();
         context.translate(worldPosition.x, worldPosition.y);
         super.render(context);
@@ -67,32 +58,21 @@ export default class Generator extends Building {
             this.renderSelection(context, this.details.range, ThemeManager.currentThemeProperties.selectionColor);
         }
 
-        this.renderUpgrade(context, worldPosition, phaseWithOffset);
+        this.renderUpgrade(context);
         context.restore();
     }
 
-    _renderGenerator (context, worldPosition, phaseWithOffset) {
+    _renderGenerator (context) {
         // Draw the outer polygon (static)
-        this._drawPolygon(context, this.points[0], this.color, "#666666", 4, worldPosition, this.angleToTarget);
-
-        // Prepare inner polygon properties
-        const scalingFactor = 1 + 0.065 * Math.sin(phaseWithOffset);
-
-        context.scale(scalingFactor, scalingFactor);
+        this._drawPolygon(context, this.points[0], this.color, "#666666", 4);
 
         // Inner polygon points, scaled but not affecting outer polygon
         this._drawPolygon(context, this.points[1], "#a8a8a8", "#666666", 4);
     }
 
-    _renderPowerPlant (context, worldPosition, phaseWithOffset) {
+    _renderPowerPlant (context) {
         // Draw the outer polygon (static)
-        this._drawPolygon(context, this.points[0], this.color, "#666666", 4, worldPosition, this.angleToTarget);
-
-        // Prepare inner polygon properties
-        const scalingFactor = 1 + 0.065 * Math.sin(phaseWithOffset);
-
-
-        context.scale(scalingFactor, scalingFactor);
+        this._drawPolygon(context, this.points[0], this.color, "#666666", 4);
 
         this._drawPolygon(context, this.points[1], "#a8a8a8", "#666666", 4);
     }

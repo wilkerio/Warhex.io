@@ -614,10 +614,31 @@ func handleDestroyBuildingsMessage(conn *websocket.Conn, payload []byte) {
 		// Add the buildingID to the list
 		buildingIDs = append(buildingIDs, buildingID)
 
+		base.RLock()
+		building, ok := base.Buildings[buildingID]
+		base.RUnlock()
+
+		if !ok {
+			log.Println("Failed to get building for refund: Building not found, ID:", buildingID)
+			continue
+		}
+
+		var refund uint16
+		costs, ok := game.GetBuildingCost(building.Type, building.Variant)
+		if !ok {
+			log.Println("Costs not found for building:", building.Type)
+		} else {
+			refund = costs / 2
+			player.Resources.Power.Increment(refund)
+		}
+
 		// Remove the building from the base
 		success := base.RemoveBuilding(buildingID)
 		if !success {
 			log.Println("Failed to remove building: Building not found, ID:", buildingID)
+			if ok {
+				player.Resources.Power.Decrement(refund)
+			}
 			continue
 		}
 	}

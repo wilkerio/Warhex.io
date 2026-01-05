@@ -123,14 +123,7 @@ export class BuildingManager {
         }
 
         const trySelectBuilding = (building) => {
-            let isSameBuildingType = true;
-            if (this.lastSelectedBuilding) {
-                isSameBuildingType = this.lastSelectedBuilding.type === building.type && this.lastSelectedBuilding.variant === building.variant;
-            } else {
-                this.lastSelectedBuilding = building;
-            }
-
-            if (!this.selectedBuildings.includes(building) && isSameBuildingType) {
+            if (!this.selectedBuildings.includes(building)) {
                 this.selectedBuildings.push(building);
                 return true;
             }
@@ -164,31 +157,6 @@ export class BuildingManager {
 
         if (this.selectedBuildings.length > 0) {
             const buildingIDs = this.selectedBuildings.map(building => building.id);
-            const onUpgradeClicked = (data) => {
-
-                if (data) {
-                    const currentPower = this.core.gameManager.resources.power.current;
-
-                    // Check if sufficient power is available
-                    if (currentPower < data.cost) {
-                        console.error("Not enough power to build!");
-                        return;
-                    }
-
-                    this.core.gameManager.subtractResources(data.cost);
-
-                    const neutralBaseID = isNeutralBase ? closestBase.id : null;
-
-                    this.deselectBuildings();
-                    this.core.uiManager.hideUpgrades();
-
-                    this.core.networkManager.upgradeBuildings(buildingIDs, data.buildingVariant, neutralBaseID);
-                }else if(this.selectedBuildings.length === 1 && this.selectedBuildings[0].type === BuildingTypes.BARRACKS){
-                    const neutralBaseID = isNeutralBase ? closestBase.id : null;
-                    this.core.networkManager.toggleUnitSpawning(this.selectedBuildings[0].id, neutralBaseID)
-                }
-            };
-            
             const onDestroyClicked = () => {
                 this.deselectBuildings();
                 this.core.uiManager.hideUpgrades();
@@ -198,15 +166,53 @@ export class BuildingManager {
                 this.core.networkManager.removeBuildings(buildingIDs, neutralBaseID);
             };
 
-            this.core.uiManager.showUpgrades({
-                count: this.selectedBuildings.length,
-                name: this.selectedBuildings[0].details.name,
-                type: this.selectedBuildings[0].type,
-                variant: this.selectedBuildings[0].variant,
-                color: this.selectedBuildings[0].color,
-                activated: this.selectedBuildings[0].activated //! Only used for barracks (count === 1)
-            },
+            const allSameTypeAndVariant = this.selectedBuildings.every(b => b.type === this.selectedBuildings[0].type && b.variant === this.selectedBuildings[0].variant);
+
+            if (allSameTypeAndVariant) {
+                const onUpgradeClicked = (data) => {
+
+                    if (data) {
+                        const currentPower = this.core.gameManager.resources.power.current;
+    
+                        // Check if sufficient power is available
+                        if (currentPower < data.cost) {
+                            console.error("Not enough power to build!");
+                            return;
+                        }
+    
+                        this.core.gameManager.subtractResources(data.cost);
+    
+                        const neutralBaseID = isNeutralBase ? closestBase.id : null;
+    
+                        this.deselectBuildings();
+                        this.core.uiManager.hideUpgrades();
+    
+                        this.core.networkManager.upgradeBuildings(buildingIDs, data.buildingVariant, neutralBaseID);
+                    }else if(this.selectedBuildings.length === 1 && this.selectedBuildings[0].type === BuildingTypes.BARRACKS){
+                        const neutralBaseID = isNeutralBase ? closestBase.id : null;
+                        this.core.networkManager.toggleUnitSpawning(this.selectedBuildings[0].id, neutralBaseID)
+                    }
+                };
+
+                this.core.uiManager.showUpgrades({
+                    buildings: this.selectedBuildings,
+                    count: this.selectedBuildings.length,
+                    name: this.selectedBuildings[0].details.name,
+                    type: this.selectedBuildings[0].type,
+                    variant: this.selectedBuildings[0].variant,
+                    color: this.selectedBuildings[0].color,
+                    activated: this.selectedBuildings[0].activated //! Only used for barracks (count === 1)
+                },
                 onUpgradeClicked, onDestroyClicked);
+
+            } else {
+                // Buildings of different types are selected, only allow destroy
+                this.core.uiManager.showUpgrades({
+                    buildings: this.selectedBuildings,
+                    count: this.selectedBuildings.length,
+                    name: "Multiple Buildings",
+                }, null, onDestroyClicked);
+            }
         } else {
             const minBuildingRadius = player.buildingRadius.min;
             const isWithinCoreRadius = Math.sqrt(

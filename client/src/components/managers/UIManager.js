@@ -1,4 +1,4 @@
-import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
+import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
 import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin } from "../../network/supabaseClient.js";
@@ -220,7 +220,7 @@ export default class UIManager {
             // Skins
             skins: {
                 libraryList: "skin-container",
-                previewButton: "skin-preview",
+                previewButton: "skin-preview-circle",
                 libraryDialog: "skin-library-dialog",
                 libraryExit: "skin-library-exit",
                 containerMenu: "skin-container-menu",
@@ -1157,134 +1157,138 @@ export default class UIManager {
     }
 
     showUpgrades (building, onUpgradeSelect, onDestroyClicked) {
-        const isArmory = BuildingTypes.ARMORY === building.type;
-        const isBarracks = BuildingTypes.BARRACKS === building.type;
-        const upgradeHotkeys = ["Q", "E", "T"];
-
-        // Inline helper to fetch available upgrades based on type
-        const getAvailableUpgrades = () => {
-            /* if (isArmory) {
-                 const unitType = this.selectedUpgradeTab;
-                 const currentUpgrade = this.core.gameManager.unitUpgrades[unitType] || 0;
-                 return getAvailableUnitUpgrades(unitType, currentUpgrade);
-             }*/
-            return getAvailableBuildingUpgrades(building.type, building.variant);
-        };
-
-        // Inline helper to create and append upgrade items to the list
-        const createUpgradeItem = (upgradeInfo, index) => {
-            const upgradeItem = document.createElement("div");
-            upgradeItem.classList.add("upgrade-item");
-
-            const preview = document.createElement("canvas");
-            preview.classList.add("preview");
-            preview.width = 80;
-            preview.height = 80;
-
-            let renderable;
-            if (isArmory) {
-                const unitType = this.selectedUpgradeTab;
-                const UnitClass = UnitManager.getUnitClassByType(unitType);
-                renderable = new UnitClass(building.color, { x: 0, y: 0 }, upgradeInfo.variant);
-            } else {
-                const BuildingClass = BuildingManager.getBuildingClassByType(building.type);
-                renderable = new BuildingClass(building.color, { x: 0, y: 0 }, upgradeInfo.variant);
-            }
-
-            if (renderable) {
-                this.animatePreview(preview, renderable);
-            }
-
-            const description = document.createElement("div");
-            description.classList.add("description");
-
-            description.innerHTML = `
-                <p class="header">${upgradeInfo.name}</p>
-                <p class="text">${upgradeInfo.description}</p>
-                <p class="hotkey">[${upgradeHotkeys[index]}]</p>
-                <p class="cost">${upgradeInfo.cost} Power</p>
-            `;
-            this.upgradeCostElements.push({ cost: upgradeInfo.cost, element: description.querySelector(".cost") });
-
-            upgradeItem.appendChild(preview);
-            upgradeItem.appendChild(description);
-
-            upgradeItem.addEventListener("click", () => {
-                const upgradeData = isArmory
-                    ? { unitType: this.selectedUpgradeTab, unitVariant: upgradeInfo.variant }
-                    : { buildingVariant: upgradeInfo.variant, cost: upgradeInfo.cost };
-                onUpgradeSelect(upgradeData);
-            });
-
-            this.DOM.game.upgrades.list.appendChild(upgradeItem);
-
-            this._updateCost();
-        };
-
-        // Inline helper to handle "no upgrades" or "coming soon" messages
-        const handleEmptyUpgrades = (availableUpgrades) => {
-            if (isArmory && availableUpgrades.length < 2) {
-                for (let i = 0; i < 2 - availableUpgrades.length; i++) {
-                    const comingSoonItem = document.createElement("div");
-                    comingSoonItem.classList.add("upgrade-item", "coming-soon");
-                    comingSoonItem.innerHTML = "<p>In the lab—upgrades incoming!</p>";
-                    this.DOM.game.upgrades.list.appendChild(comingSoonItem);
-                }
-            } else if (availableUpgrades.length === 0) {
-                const noUpgradesItem = document.createElement("div");
-                noUpgradesItem.classList.add("upgrade-item", "coming-soon");
-                noUpgradesItem.innerHTML = "<p>No upgrades available</p>";
-                this.DOM.game.upgrades.list.appendChild(noUpgradesItem);
-            }
-        };
-
-        const availableUpgrades = getAvailableUpgrades();
-
-        // Define a list of names that should not be pluralized
-        const nonPluralizable = new Set(["Barracks"]);
-
-        // Determine the building label
-        const buildingLabel = nonPluralizable.has(building.name)
-            ? building.name
-            : building.count === 1
-                ? building.name
-                : `${building.name}s`;
-
-        // Update the header, showing the count only if it"s greater than 1
-        document.querySelector("#upgrade-container h1").textContent =
-            building.count > 1 ? `${buildingLabel} (${building.count})` : buildingLabel;
-
-        // Stop and clear previous animations, then clear the upgrade list
         this.hideUpgrades();
         this.DOM.game.upgrades.list.innerHTML = "";
 
-        // Populate upgrade tabs for armory or clear if not an armory
-        if (isBarracks && building.count === 1) {
-            this._populateBarrackActivationSettings(building, onUpgradeSelect);
-        } else {
-            this._clearUpgradeTabsElement();
-        }
-
-        // Populate available upgrades
-        availableUpgrades.forEach((upgradeInfo, index) => {
-            // Check if upgradeInfo is defined and has a valid structure
-            if (upgradeInfo && (upgradeInfo.baseCost || upgradeInfo.cost)) {
-                // Ensure a valid base cost
-                const baseCost = upgradeInfo.baseCost ?? upgradeInfo.cost; // Use baseCost if available, fallback to cost
-                const calculatedCost = baseCost * building.count;
-                const upgradeInfoCopy = { ...upgradeInfo, cost: calculatedCost }; // Create a copy with updated cost
-                createUpgradeItem(upgradeInfoCopy, index);
-            } else {
-                console.warn(`Invalid upgradeInfo at index ${index}:`, upgradeInfo);
-            }
-        });
-        // Handle cases with no or fewer upgrades than expected
-        handleEmptyUpgrades(availableUpgrades);
-
-        // Set up the destroy button with a new click handler
+        // Set up destroy button
         this.DOM.game.upgrades.destroyButton.removeEventListener("click", this.destroyClickHandler);
         this.destroyClickHandler = () => onDestroyClicked();
         this.DOM.game.upgrades.destroyButton.addEventListener("click", this.destroyClickHandler);
+
+        if (onUpgradeSelect === null) {
+            // MULTIPLE BUILDING TYPES
+            document.querySelector("#upgrade-container h1").textContent = "Multiple Buildings";
+            
+            let totalRefund = 0;
+            building.buildings.forEach(b => {
+                const buildingDetails = getBuildingDetails(b.type, b.variant);
+                if (buildingDetails) {
+                    totalRefund += Math.floor(buildingDetails.cost / 2);
+                }
+            });
+            this.DOM.game.upgrades.destroyButton.innerHTML = `<p>Destroy</p><p class="refund-amount">+${totalRefund} Power</p>`;
+            this._clearUpgradeTabsElement();
+        } else {
+            // SINGLE BUILDING TYPE
+            const isArmory = BuildingTypes.ARMORY === building.type;
+            const isBarracks = BuildingTypes.BARRACKS === building.type;
+            const upgradeHotkeys = ["Q", "E", "T"];
+
+            const getAvailableUpgrades = () => {
+                return getAvailableBuildingUpgrades(building.type, building.variant);
+            };
+
+            const createUpgradeItem = (upgradeInfo, index) => {
+                const upgradeItem = document.createElement("div");
+                upgradeItem.classList.add("upgrade-item");
+
+                const preview = document.createElement("canvas");
+                preview.classList.add("preview");
+                preview.width = 80;
+                preview.height = 80;
+
+                let renderable;
+                if (isArmory) {
+                    const unitType = this.selectedUpgradeTab;
+                    const UnitClass = UnitManager.getUnitClassByType(unitType);
+                    renderable = new UnitClass(building.color, { x: 0, y: 0 }, upgradeInfo.variant);
+                } else {
+                    const BuildingClass = BuildingManager.getBuildingClassByType(building.type);
+                    renderable = new BuildingClass(building.color, { x: 0, y: 0 }, upgradeInfo.variant);
+                }
+
+                if (renderable) {
+                    this.animatePreview(preview, renderable);
+                }
+
+                const description = document.createElement("div");
+                description.classList.add("description");
+
+                description.innerHTML = `
+                    <p class="header">${upgradeInfo.name}</p>
+                    <p class="text">${upgradeInfo.description}</p>
+                    <p class="hotkey">[${upgradeHotkeys[index]}]</p>
+                    <p class="cost">${upgradeInfo.cost} Power</p>
+                `;
+                this.upgradeCostElements.push({ cost: upgradeInfo.cost, element: description.querySelector(".cost") });
+
+                upgradeItem.appendChild(preview);
+                upgradeItem.appendChild(description);
+
+                upgradeItem.addEventListener("click", () => {
+                    const upgradeData = isArmory
+                        ? { unitType: this.selectedUpgradeTab, unitVariant: upgradeInfo.variant }
+                        : { buildingVariant: upgradeInfo.variant, cost: upgradeInfo.cost };
+                    onUpgradeSelect(upgradeData);
+                });
+
+                this.DOM.game.upgrades.list.appendChild(upgradeItem);
+
+                this._updateCost();
+            };
+
+            const handleEmptyUpgrades = (availableUpgrades) => {
+                if (isArmory && availableUpgrades.length < 2) {
+                    for (let i = 0; i < 2 - availableUpgrades.length; i++) {
+                        const comingSoonItem = document.createElement("div");
+                        comingSoonItem.classList.add("upgrade-item", "coming-soon");
+                        comingSoonItem.innerHTML = "<p>In the lab—upgrades incoming!</p>";
+                        this.DOM.game.upgrades.list.appendChild(comingSoonItem);
+                    }
+                } else if (availableUpgrades.length === 0) {
+                    const noUpgradesItem = document.createElement("div");
+                    noUpgradesItem.classList.add("upgrade-item", "coming-soon");
+                    noUpgradesItem.innerHTML = "<p>No upgrades available</p>";
+                    this.DOM.game.upgrades.list.appendChild(noUpgradesItem);
+                }
+            };
+
+            const availableUpgrades = getAvailableUpgrades();
+            const nonPluralizable = new Set(["Barracks"]);
+            const buildingLabel = nonPluralizable.has(building.name)
+                ? building.name
+                : building.count === 1
+                    ? building.name
+                    : `${building.name}s`;
+
+            document.querySelector("#upgrade-container h1").textContent =
+                building.count > 1 ? `${buildingLabel} (${building.count})` : buildingLabel;
+
+            if (isBarracks && building.count === 1) {
+                this._populateBarrackActivationSettings(building, onUpgradeSelect);
+            } else {
+                this._clearUpgradeTabsElement();
+            }
+
+            availableUpgrades.forEach((upgradeInfo, index) => {
+                if (upgradeInfo && (upgradeInfo.baseCost || upgradeInfo.cost)) {
+                    const baseCost = upgradeInfo.baseCost ?? upgradeInfo.cost;
+                    const calculatedCost = baseCost * building.count;
+                    const upgradeInfoCopy = { ...upgradeInfo, cost: calculatedCost };
+                    createUpgradeItem(upgradeInfoCopy, index);
+                } else {
+                    console.warn(`Invalid upgradeInfo at index ${index}:`, upgradeInfo);
+                }
+            });
+            
+            handleEmptyUpgrades(availableUpgrades);
+
+            const buildingDetails = getBuildingDetails(building.type, building.variant);
+            if (buildingDetails) {
+                const refundAmount = Math.floor(buildingDetails.cost * building.count / 2);
+                this.DOM.game.upgrades.destroyButton.innerHTML = `<p>Destroy</p><p class="refund-amount">+${refundAmount} Power</p>`;
+            }
+        }
 
         // Show the upgrade container
         this.DOM.game.upgrades.container.style.display = "flex";

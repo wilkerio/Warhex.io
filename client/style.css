@@ -895,19 +895,7 @@ img {
   right: 8px;
 }
 
-#destroy-button {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 20px;
-  font-weight: 600;
-  height: 40px;
-  background-color: #00000037;
-  transition: ease-in-out 100ms;
-  cursor: pointer;
-  border-radius: inherit;
-}
+
 
 #upgrade-tabs>.tab:hover,
 #upgrade-list>.upgrade-item:hover,
@@ -2260,10 +2248,26 @@ button:hover {
 
 /* Destroy button */
 #destroy-button {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  height: 40px;
   background: rgba(180, 40, 40, 0.3);
   border: 1px solid rgba(180, 40, 40, 0.5);
   font-family: 'Segoe UI', sans-serif;
   color: #ffcccc;
+  transition: ease-in-out 100ms;
+  cursor: pointer;
+  border-radius: inherit;
+}
+
+#destroy-button .refund-amount {
+  font-size: 14px;
+  color: #a0ffa0;
 }
 #power {
   display: inline-flex;
