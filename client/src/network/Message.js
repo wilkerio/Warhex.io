@@ -25,15 +25,10 @@ export default class Message {
         // Encode the name as bytes
         const nameBytes = new TextEncoder().encode(name);
 
-        // Convert equippedSkin to a single byte or encode skin name
-        // If equippedSkin is a string (skin name), we'll pass 0 and let the server use default
-        // The skin will be loaded client-side
+        // Convert equippedSkin to a single byte. We now map Supabase skins to byte IDs client-side.
         let skinByte = 0;
-        if (typeof equippedSkin === 'number') {
-            skinByte = equippedSkin;
-        } else if (equippedSkin && typeof equippedSkin === 'string') {
-            // For now, pass 0 to server - client will load skin by name
-            skinByte = 0;
+        if (typeof equippedSkin === 'number' && !Number.isNaN(equippedSkin)) {
+            skinByte = Math.max(0, Math.min(255, equippedSkin));
         }
         
         const skinByteArray = new Uint8Array(1);

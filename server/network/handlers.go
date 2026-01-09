@@ -136,10 +136,21 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		}
 	}
 
+	// If still not found, accept the client-provided skin ID (e.g., Supabase skins)
+	if !ok {
+		skinData = game.SkinData{
+			ID:           equippedSkin,
+			Name:         "external",
+			BaseColor:    game.NonSkinColors[byte(rand.Intn(len(game.NonSkinColors)))],
+			BaseColorHex: "#ffffff",
+		}
+		ok = true
+	}
+
 	// If skinData is uninitialized, provide a default value
-	if skinData.BaseColorHex == "" || skinData.BaseColorHex == "transparent" {
+	if len(skinData.BaseColor) == 0 || skinData.BaseColorHex == "" || skinData.BaseColorHex == "transparent" {
 		// Assign a random color for the base
-		color = game.NonSkinColors[byte(rand.IntN(len(game.NonSkinColors)))]
+		color = game.NonSkinColors[byte(rand.Intn(len(game.NonSkinColors)))]
 	} else {
 		// Use the base color from skinData
 		color = skinData.BaseColor

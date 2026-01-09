@@ -54,20 +54,28 @@ export default class UIManager {
         try {
             // Try to load cached skins from localStorage
             const cachedSkins = localStorage.getItem('supabaseSkins');
+            const cachedName = localStorage.getItem('equippedSkinName') || null;
             if (cachedSkins) {
                 const skins = JSON.parse(cachedSkins);
                 if (Array.isArray(skins) && skins.length > 0) {
                     SkinCache.supabaseSkins = skins;
+                    // rebuild maps when loading from cache
+                    SkinCache.supabaseIdMap = new Map();
+                    SkinCache.supabaseNameToId = new Map();
+                    skins.forEach(s => {
+                        SkinCache.supabaseIdMap.set(s.numericId, s);
+                        SkinCache.supabaseNameToId.set(s.name, s.numericId);
+                    });
+
                     this.availableSkins = [
-                        { name: 'Default', url: null },
+                        { name: 'Default', id: 0, numericId: 0, url: null },
                         ...skins
                     ];
                     console.log('Skins loaded from localStorage cache:', skins.length);
                     
-                    // Restore selected skin index
-                    const equippedSkinName = localStorage.getItem('equippedSkin') || null;
-                    if (equippedSkinName && equippedSkinName !== '' && equippedSkinName !== 'null') {
-                        const skinIndex = this.availableSkins.findIndex(s => s.name === equippedSkinName);
+                    // Restore selected skin index by name
+                    if (cachedName && cachedName !== 'null') {
+                        const skinIndex = this.availableSkins.findIndex(s => s.name === cachedName);
                         if (skinIndex !== -1) {
                             this.currentSkinIndex = skinIndex;
                         }
@@ -84,7 +92,7 @@ export default class UIManager {
         }
         
         // Initialize with default skin if no cache
-        this.availableSkins = [{ name: 'Default', url: null }];
+        this.availableSkins = [{ name: 'Default', id: 0, numericId: 0, url: null }];
         this.currentSkinIndex = 0;
         this.updateSkinCircle();
         this.updateUseButton();
@@ -100,12 +108,12 @@ export default class UIManager {
                 
                 // Build available skins array (default + supabase skins)
                 this.availableSkins = [
-                    { name: 'Default', url: null },
+                    { name: 'Default', id: 0, numericId: 0, url: null },
                     ...skins
                 ];
                 
                 // Get currently equipped skin
-                const equippedSkinName = localStorage.getItem('equippedSkin') || null;
+                const equippedSkinName = localStorage.getItem('equippedSkinName') || null;
                 
                 // Find index of equipped skin
                 if (equippedSkinName && equippedSkinName !== '' && equippedSkinName !== 'null') {
@@ -687,33 +695,34 @@ export default class UIManager {
         this.DOM.account.progression.progressBar.style.backgroundColor = progressBarColor;
 
         // Fetch the equipped skin from SkinCache
-        const equipped = userData.skins.equipped;
+        const previewButton = this.DOM?.skins?.previewButton;
+        const equipped = userData.selected_skin
+            ?? userData.skins?.equipped
+            ?? localStorage.getItem('equippedSkin')
+            ?? null;
 
-        if (equipped) {
-            const skinImageData = await SkinCache.getSkin(equipped);
+        if (previewButton && equipped) {
+            // Load either Supabase (string) or legacy (numeric) skins
+            const skinImageData = typeof equipped === 'string'
+                ? await SkinCache.getSkinByName(equipped)
+                : await SkinCache.getSkin(equipped);
+
             if (skinImageData && skinImageData.image) {
-                // Create the image element
                 const img = document.createElement('img');
                 img.src = skinImageData.image.src;
 
-                // Clear any existing content inside the preview button
-                this.DOM.skins.previewButton.innerHTML = '';
+                previewButton.innerHTML = '';
+                previewButton.appendChild(img);
 
-                // Append the image to the preview button
-                this.DOM.skins.previewButton.appendChild(img);
-
-                // Create and append the "+" text in the button
                 const plusDiv = document.createElement('div');
                 plusDiv.textContent = '+';
-                this.DOM.skins.previewButton.appendChild(plusDiv);
+                previewButton.appendChild(plusDiv);
             }
-        } else {
-            // Clear any existing content inside the preview button
-            this.DOM.skins.previewButton.innerHTML = '<p>Skins</p>';
-            // Create and append the "+" text in the button
+        } else if (previewButton) {
+            previewButton.innerHTML = '<p>Skins</p>';
             const plusDiv = document.createElement('div');
             plusDiv.textContent = '+';
-            this.DOM.skins.previewButton.appendChild(plusDiv);
+            previewButton.appendChild(plusDiv);
         }
 
         // Clear previous stats
@@ -823,7 +832,7 @@ export default class UIManager {
         if (!useBtn) return;
         
         const currentSkin = this.availableSkins[this.currentSkinIndex];
-        const equippedSkinName = localStorage.getItem('equippedSkin') || '';
+        const equippedSkinName = localStorage.getItem('equippedSkinName') || '';
         
         // Check if current viewing skin is the equipped one
         const isCurrentEquipped = 
@@ -876,9 +885,11 @@ export default class UIManager {
         if (!currentSkin) return;
         
         const skinName = currentSkin.name === 'Default' ? null : currentSkin.name;
-        
-        // Save to localStorage
-        localStorage.setItem('equippedSkin', skinName || '');
+        const skinNumeric = currentSkin.numericId ?? currentSkin.id ?? 0;
+
+        // Save to localStorage (name for DB/UI, numeric for network byte)
+        localStorage.setItem('equippedSkin', skinNumeric);
+        localStorage.setItem('equippedSkinName', skinName || '');
         
         console.log('Skin equipped:', skinName);
         
@@ -928,7 +939,7 @@ export default class UIManager {
         
         container.innerHTML = '';
         
-        let currentEquippedName = localStorage.getItem('equippedSkin') || '';
+        let currentEquippedName = localStorage.getItem('equippedSkinName') || '';
         
         this.availableSkins.forEach((skin, index) => {
             const skinCard = document.createElement('div');
@@ -1537,21 +1548,25 @@ export default class UIManager {
             const playerName = this.extractPlayerName();
             localStorage.setItem("playerName", playerName);
             
-            // Get equipped skin name (from localStorage for guests, or userData for logged in)
-            let equippedSkin = localStorage.getItem('equippedSkin') || null;
-            
-            // If logged in, prefer userData's selected_skin
-            if (this.core.networkManager.loggedIn && this.core.networkManager.userData?.selected_skin) {
-                equippedSkin = this.core.networkManager.userData.selected_skin;
+            // Equipped skin: prefer DB-selected name, else cached numeric id
+            let equippedSkinName = this.core.networkManager.loggedIn ? this.core.networkManager.userData?.selected_skin : null;
+            const cachedNumeric = Number(localStorage.getItem('equippedSkin')) || 0;
+            const cachedName = localStorage.getItem('equippedSkinName') || null;
+
+            if (!equippedSkinName && cachedName) equippedSkinName = cachedName;
+
+            let equippedSkinByte = 0;
+            if (equippedSkinName && SkinCache.supabaseNameToId.has(equippedSkinName)) {
+                equippedSkinByte = SkinCache.supabaseNameToId.get(equippedSkinName);
+            } else if (!isNaN(cachedNumeric) && cachedNumeric > 0) {
+                equippedSkinByte = cachedNumeric;
             }
-            
-            // Normalize empty string to null
-            if (equippedSkin === '' || equippedSkin === 'null') {
-                equippedSkin = null;
-            }
-            
-            console.log('Joining game with skin:', equippedSkin);
-            this.core.handlePlayButtonPress(playerName, equippedSkin);
+
+            // Normalize to byte range
+            equippedSkinByte = Math.max(0, Math.min(255, equippedSkinByte));
+
+            console.log('Joining game with skin (byte):', equippedSkinByte, 'name:', equippedSkinName);
+            this.core.handlePlayButtonPress(playerName, equippedSkinByte);
         });
     }
 

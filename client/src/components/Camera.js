@@ -9,7 +9,7 @@ export default class Camera {
         this.minZoom = 0.5; // Minimum zoom level
         this.maxZoom = 1.5; // Maximum zoom level
         this.cameraSpeed = 3; // Camera movement speed
-        this.maxRadius = maxRadius; // Maximum distance from the center
+        this.mapHalfSize = maxRadius; // Half the map size (square boundary)
         this.controlsEnabled = false; // Flag to enable/disable camera control
     }
 
@@ -28,13 +28,9 @@ export default class Camera {
             y: this.y
         }
 
-        // Clamp camera position to circular boundary
-        const distanceToCenter = Math.sqrt(this.x * this.x + this.y * this.y);
-        if (distanceToCenter > this.maxRadius) {
-            const angle = Math.atan2(this.y, this.x);
-            this.x = Math.cos(angle) * this.maxRadius;
-            this.y = Math.sin(angle) * this.maxRadius;
-        }
+        // Clamp camera position to square boundary
+        this.x = Math.max(-this.mapHalfSize, Math.min(this.mapHalfSize, this.x));
+        this.y = Math.max(-this.mapHalfSize, Math.min(this.mapHalfSize, this.y));
     }
 
 

@@ -3,6 +3,7 @@ package game
 import (
 	"log"
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -41,7 +42,32 @@ func init() {
 	go startCommanderRegenerationLoop()
 }
 
+// clearSpawnArea removes bushes and rocks within a radius of the spawn position
+func clearSpawnArea(position PositionInt, radius float32) {
+	posFloat := PositionFloat{X: float32(position.X), Y: float32(position.Y)}
+
+	// Clear bushes
+	var newBushes []PositionInt
+	for _, bush := range State.Bushes {
+		bushFloat := PositionFloat{X: float32(bush.X), Y: float32(bush.Y)}
+		if posFloat.DistanceTo(bushFloat) > radius {
+			newBushes = append(newBushes, bush)
+		}
+	}
+	State.Bushes = newBushes
+
+	// Clear rocks
+	var newRocks []Rock
+	for _, rock := range State.Rocks {
+		if posFloat.DistanceTo(rock.Polygon.Center) > radius {
+			newRocks = append(newRocks, rock)
+		}
+	}
+	State.Rocks = newRocks
+}
+
 func Start() {
+	rand.Seed(time.Now().UnixNano()) // Initialize random seed
 	availablePlayerIDs = InitAvailableIDs(64)
 	InitializeGameMap()
 	State.Leaderboard = &Leaderboard{}
@@ -1500,6 +1526,9 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		log.Println("No available positions for player")
 		return nil, false
 	}
+
+	// Clear objects around spawn position
+	clearSpawnArea(player.Base.Position, PLAYER_SPAWN_CLEAR_RADIUS)
 
 	playerID, ok := availablePlayerIDs.getNextAvailableID()
 	if !ok {

@@ -3,6 +3,9 @@ export default class SkinCache {
     static categories = {};
     static categoryRanges = {};
     static supabaseSkins = []; // Skins from Supabase bucket
+    static supabaseIdOffset = 200; // Reserve numeric IDs in byte range for Supabase skins
+    static supabaseIdMap = new Map(); // id -> skin
+    static supabaseNameToId = new Map();
 
     static cache = new Map();
     static localStorageSkinDataKey = "skinData";
@@ -23,7 +26,16 @@ export default class SkinCache {
             // Load Supabase skins from localStorage
             const supabaseData = localStorage.getItem(this.supabaseSkinsKey);
             if (supabaseData) {
-                this.supabaseSkins = JSON.parse(supabaseData);
+                const parsed = JSON.parse(supabaseData);
+                this.supabaseSkins = parsed;
+                this.supabaseIdMap.clear();
+                this.supabaseNameToId.clear();
+                parsed.forEach(s => {
+                    if (s.numericId !== undefined) {
+                        this.supabaseIdMap.set(s.numericId, s);
+                    }
+                    this.supabaseNameToId.set(s.name, s.numericId ?? s.id);
+                });
                 console.log('Supabase skins loaded from localStorage:', this.supabaseSkins.length);
             }
         } catch (error) {
@@ -109,9 +121,25 @@ export default class SkinCache {
 
     // Set Supabase skins
     static setSupabaseSkins(skins) {
-        this.supabaseSkins = skins;
-        localStorage.setItem(this.supabaseSkinsKey, JSON.stringify(skins));
-        console.log('Supabase skins cached:', skins.length);
+        // Assign stable numeric IDs in the 200+ range so they fit in the 1-byte protocol
+        const skinsWithIds = skins.map((skin, idx) => {
+            const numericId = this.supabaseIdOffset + idx; // 200,201,...
+            if (numericId > 255) {
+                console.warn('Supabase skin ID overflow: truncating list at byte limit');
+            }
+            return { ...skin, numericId };
+        }).filter(s => s.numericId <= 255);
+
+        this.supabaseSkins = skinsWithIds;
+        this.supabaseIdMap.clear();
+        this.supabaseNameToId.clear();
+        skinsWithIds.forEach((skin) => {
+            this.supabaseIdMap.set(skin.numericId, skin);
+            this.supabaseNameToId.set(skin.name, skin.numericId);
+        });
+
+        localStorage.setItem(this.supabaseSkinsKey, JSON.stringify(skinsWithIds));
+        console.log('Supabase skins cached:', skinsWithIds.length);
     }
 
     // Get all Supabase skins
@@ -139,8 +167,8 @@ export default class SkinCache {
         }
         
         // Check numeric ID for Supabase skins
-        if (typeof id === 'number' && id >= 1000) {
-            const supabaseSkin = this.supabaseSkins.find(s => s.id === id);
+        if (typeof id === 'number' && id >= this.supabaseIdOffset) {
+            const supabaseSkin = this.supabaseIdMap.get(id) || this.supabaseSkins.find(s => s.numericId === id);
             if (supabaseSkin) {
                 const image = await this._fetchImage(supabaseSkin.url);
                 const cached = { image, url: supabaseSkin.url, name: supabaseSkin.name };
@@ -190,6 +218,10 @@ export default class SkinCache {
             const image = await this._fetchImage(supabaseSkin.url);
             const cached = { image, url: supabaseSkin.url, name: supabaseSkin.name };
             this.cache.set(name, cached);
+            // Also cache by numeric ID so player rendering can reuse
+            if (supabaseSkin.numericId !== undefined) {
+                this.cache.set(supabaseSkin.numericId, cached);
+            }
             return cached;
         }
         
@@ -241,10 +273,36 @@ export default class SkinCache {
     }
 
     static _fetchImage (path) {
-        const img = new Image();
+        // Try normal load with CORS enabled; fallback to fetch+blob to better support SVG cross-origin
         return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+
+            const tryBlobFallback = async () => {
+                try {
+                    const response = await fetch(path, { mode: 'cors' });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const blob = await response.blob();
+                    const objectUrl = URL.createObjectURL(blob);
+
+                    const imgBlob = new Image();
+                    imgBlob.crossOrigin = 'anonymous';
+                    imgBlob.onload = () => {
+                        URL.revokeObjectURL(objectUrl);
+                        resolve(imgBlob);
+                    };
+                    imgBlob.onerror = (err) => {
+                        URL.revokeObjectURL(objectUrl);
+                        reject(err);
+                    };
+                    imgBlob.src = objectUrl;
+                } catch (err) {
+                    reject(err);
+                }
+            };
+
             img.onload = () => resolve(img);
-            img.onerror = reject;
+            img.onerror = () => tryBlobFallback();
             img.src = path;
         });
     }
