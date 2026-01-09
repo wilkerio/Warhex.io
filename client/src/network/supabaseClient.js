@@ -83,35 +83,78 @@ export async function restoreSessionFromStorage() {
     }
 }
 
-// Function to fetch skins from Supabase storage bucket
-export async function fetchSkins() {
-    try {
-        const { data, error } = await supabase.storage.from('skins').list();
+// Recursively list all files in the Supabase storage bucket (supports nested folders)
+async function listAllStorageFiles(prefix = '') {
+    const pageSize = 100;
+    const files = [];
+    let page = 0;
+
+    while (true) {
+        const { data, error } = await supabase.storage.from('skins').list(prefix, {
+            limit: pageSize,
+            offset: page * pageSize,
+            sortBy: { column: 'name', order: 'asc' }
+        });
+
         if (error) {
-            console.error('Error fetching skins from storage:', error);
-            return [];
+            throw error;
         }
 
-        // Filter only PNG files, sort alphabetically, and create skin objects with URLs
-        const skins = data
-            .filter(file => file.name.endsWith('.png'))
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((file, index) => {
-                const publicUrl = supabase.storage.from('skins').getPublicUrl(file.name).data.publicUrl;
-                const skinName = file.name.replace('.png', '');
+        if (!data || data.length === 0) {
+            break;
+        }
+
+        for (const entry of data) {
+            const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+            const isFile = (entry.metadata && typeof entry.metadata.size === 'number') || /\.[^.]+$/.test(entry.name);
+            if (isFile) {
+                files.push({ ...entry, fullPath });
+            } else {
+                // Treat as folder and recurse
+                const nested = await listAllStorageFiles(fullPath);
+                files.push(...nested);
+            }
+        }
+
+        if (data.length < pageSize) {
+            break;
+        }
+        page += 1;
+    }
+
+    return files;
+}
+
+// Function to fetch skins from Supabase storage bucket (PNG and SVG, nested folders supported)
+export async function fetchSkins() {
+    try {
+        const files = await listAllStorageFiles('');
+
+        // Filter only PNG or SVG files, sort alphabetically (by base name), and create skin objects with URLs
+        const skins = files
+            .filter(file => /\.(png|svg)$/i.test(file.fullPath))
+            .map(file => {
+                const skinName = file.fullPath.replace(/\.(png|svg)$/i, '').split('/').pop();
+                return { file, skinName };
+            })
+            .sort((a, b) => a.skinName.localeCompare(b.skinName))
+            .map(({ file, skinName }) => {
+                const publicUrl = supabase.storage.from('skins').getPublicUrl(file.fullPath).data.publicUrl;
+                const extension = (file.fullPath.match(/\.(png|svg)$/i) || [])[0] || '';
                 return {
-                    id: skinName, // Use name as ID for consistency
+                    id: skinName,
                     name: skinName,
                     url: publicUrl,
+                    extension: extension.replace('.', '').toLowerCase(),
                     category: 'default',
-                    unlocked: true, // Default skins are free for everyone
+                    unlocked: true,
                     requiredLevel: 0,
                     price: 0,
                     isPurchasable: false
                 };
             });
 
-        console.log('Fetched skins from storage:', skins);
+        console.log('Fetched skins from storage:', skins.length, 'files');
         return skins;
     } catch (error) {
         console.error('Error in fetchSkins:', error);
