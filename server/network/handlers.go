@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"log"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"server/game"
 	"sync"

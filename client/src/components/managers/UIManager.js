@@ -19,6 +19,7 @@ export default class UIManager {
         this.core = core;
         this.loadingOverlay = null;
         this.timerInterval = null;
+        this.barracksCountdownInterval = null;
         this.lastSendMessage = "";
         this.isDraggingChat = false;
         this.isChatInputFocused = false;
@@ -1172,8 +1173,41 @@ export default class UIManager {
         this.DOM.game.upgrades.container.style.display = "flex";
     }
 
+    _clearBarracksCountdown () {
+        if (this.barracksCountdownInterval) {
+            clearInterval(this.barracksCountdownInterval);
+            this.barracksCountdownInterval = null;
+        }
+    }
+
+    _getBarracksRemainingSeconds (building) {
+        if (!building || building.type !== BuildingTypes.BARRACKS) return null;
+        if (typeof building.spawnTimeRemaining !== "number") return null;
+        if (!building.spawnLastUpdatedAt) return building.spawnTimeRemaining;
+        const elapsedSeconds = Math.floor((performance.now() - building.spawnLastUpdatedAt) / 1000);
+        return Math.max(0, building.spawnTimeRemaining - elapsedSeconds);
+    }
+
+    _startBarracksCountdownHeader (building, headingEl, baseLabel) {
+        if (!headingEl) return;
+        this._clearBarracksCountdown();
+
+        const updateHeader = () => {
+            const remaining = this._getBarracksRemainingSeconds(building);
+            if (remaining === null || Number.isNaN(remaining)) {
+                headingEl.textContent = baseLabel;
+                return;
+            }
+            headingEl.textContent = `${baseLabel} - ${remaining}s`;
+        };
+
+        updateHeader();
+        this.barracksCountdownInterval = setInterval(updateHeader, 1000);
+    }
+
     showUpgrades (building, onUpgradeSelect, onDestroyClicked) {
         this.hideUpgrades();
+        this._clearBarracksCountdown();
         this.DOM.game.upgrades.list.innerHTML = "";
 
         // Set up destroy button
@@ -1277,13 +1311,18 @@ export default class UIManager {
                     ? building.name
                     : `${building.name}s`;
 
-            document.querySelector("#upgrade-container h1").textContent =
-                building.count > 1 ? `${buildingLabel} (${building.count})` : buildingLabel;
+            const headingEl = document.querySelector("#upgrade-container h1");
+            const headingBase = building.count > 1 ? `${buildingLabel} (${building.count})` : buildingLabel;
+
+            const barracksInstance = building.buildings && building.buildings.length > 0 ? building.buildings[0] : building;
 
             if (isBarracks && building.count === 1) {
+                this._startBarracksCountdownHeader(barracksInstance, headingEl, headingBase);
                 this._populateBarrackActivationSettings(building, onUpgradeSelect);
             } else {
+                if (headingEl) headingEl.textContent = headingBase;
                 this._clearUpgradeTabsElement();
+                this._clearBarracksCountdown();
             }
 
             availableUpgrades.forEach((upgradeInfo, index) => {
@@ -1397,6 +1436,7 @@ export default class UIManager {
     hideUpgrades () {
         if (this.DOM.game.upgrades.container.style.display === "none") return;
         this.upgradeCostElements = []; // Clear
+        this._clearBarracksCountdown();
 
 
         // Make the destroy button visible in case it got set to none (see showCoreUpgrades())

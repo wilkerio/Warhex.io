@@ -309,13 +309,21 @@ func broadcastBuildingPlaced(base *game.Base, buildingID game.ID) {
 	binary.Write(buffer, binary.BigEndian, building.Position.X)
 	binary.Write(buffer, binary.BigEndian, building.Position.Y)
 
-	if building.Type == game.BARRACKS && player != nil {
-		unitSpawning := player.GetUnitSpawningForBarrack(building)
-		if unitSpawning != nil && unitSpawning.Activated {
-			buffer.WriteByte(1) // Indicate active spawning
-		} else {
-			buffer.WriteByte(0) // Indicate no active spawning
+	if building.Type == game.BARRACKS {
+		var isActive byte = 0
+		var spawnTimeRemaining uint16
+		var spawnInterval uint16
+		if player != nil {
+			unitSpawning := player.GetUnitSpawningForBarrack(building)
+			if unitSpawning != nil && unitSpawning.Activated {
+				isActive = 1
+				spawnTimeRemaining = unitSpawning.Frequency.Get()
+				spawnInterval = unitSpawning.Frequency.Original
+			}
 		}
+		buffer.WriteByte(isActive)
+		binary.Write(buffer, binary.BigEndian, spawnTimeRemaining)
+		binary.Write(buffer, binary.BigEndian, spawnInterval)
 	}
 
 	message.Payload = buffer.Bytes()

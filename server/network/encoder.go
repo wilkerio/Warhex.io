@@ -170,13 +170,19 @@ func writeBuildingData(buffer *bytes.Buffer, building *game.Building, player *ga
 	// If the building is a barrack, check if it has an active UnitSpawning and append its details if active
 	if building.Type == game.BARRACKS {
 		var isActive byte = 0 // Default to inactive
+		var spawnTimeRemaining uint16
+		var spawnInterval uint16
 		if player != nil {
 			unitSpawning := player.GetUnitSpawningForBarrack(building)
 			if unitSpawning != nil && unitSpawning.Activated {
 				isActive = 1 // Indicate active spawning
+				spawnTimeRemaining = unitSpawning.Frequency.Get()
+				spawnInterval = unitSpawning.Frequency.Original
 			}
 		}
 		buffer.WriteByte(isActive)
+		binary.Write(buffer, binary.BigEndian, spawnTimeRemaining)
+		binary.Write(buffer, binary.BigEndian, spawnInterval)
 	}
 
 	return nil

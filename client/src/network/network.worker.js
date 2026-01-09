@@ -235,9 +235,9 @@ function decodeNeutralBaseCaptured (payload) {
     // Start reading building data from the byte offset after playerID
     let offset = 2; // Start after neutralID and playerID
     while (offset < dataView.byteLength) {
-        // Check if there is enough data to read a building
-        if (offset + 11 > dataView.byteLength) {
-            break; // Not enough data to read the building (1 ID + 1 Type + 1 Variant + 4 X + 4 Y)
+        const baseLength = 11; // 1 id + 1 type + 1 variant + 4 x + 4 y
+        if (offset + baseLength > dataView.byteLength) {
+            break; // Not enough data to read the base building structure
         }
 
         const buildingID = dataView.getUint8(offset);
@@ -246,11 +246,27 @@ function decodeNeutralBaseCaptured (payload) {
         const positionX = dataView.getFloat32(offset + 3);
         const positionY = dataView.getFloat32(offset + 7);
 
+        let unitSpawningActive = null;
+        let spawnTimeRemaining = null;
+        let spawnInterval = null;
+        let entryLength = baseLength;
+
+        if (buildingType === BuildingTypes.BARRACKS) {
+            entryLength = 16; // base 11 + 1 isActive + 2 remaining + 2 interval
+            if (offset + entryLength > dataView.byteLength) {
+                break; // avoid partial read
+            }
+            const extraOffset = offset + baseLength;
+            unitSpawningActive = dataView.getUint8(extraOffset) === 1;
+            spawnTimeRemaining = dataView.getUint16(extraOffset + 1);
+            spawnInterval = dataView.getUint16(extraOffset + 3);
+        }
+
         // Add building information to the array
-        buildings.push({ id: buildingID, type: buildingType, variant: buildingVariant, position: { x: positionX, y: positionY } });
+        buildings.push({ id: buildingID, type: buildingType, variant: buildingVariant, position: { x: positionX, y: positionY }, unitSpawningActive, spawnTimeRemaining, spawnInterval });
 
         // Move offset to the next building 
-        offset += 11;
+        offset += entryLength;
     }
 
     return { neutralID, playerID, buildings };
@@ -475,15 +491,19 @@ function decodeBuildingPlaced (payload) {
         x: dataView.getFloat32(offset),
         y: dataView.getFloat32(offset + 4)
     };
+    offset += 8;
 
     // Check for UnitSpawning activation if building is a barrack
     let unitSpawningActive = null;
+    let spawnTimeRemaining = null;
+    let spawnInterval = null;
     if (buildingType === BuildingTypes.BARRACKS) {
-        offset += 8; // Move past position data
-        unitSpawningActive = dataView.getUint8(offset) === 1; // 1 for active, 0 for inactive
+        unitSpawningActive = dataView.getUint8(offset++) === 1; // 1 for active, 0 for inactive
+        spawnTimeRemaining = dataView.getUint16(offset); offset += 2;
+        spawnInterval = dataView.getUint16(offset); offset += 2;
     }
 
-    return { isPlayer, ownerID, buildingID, buildingType, position, unitSpawningActive };
+    return { isPlayer, ownerID, buildingID, buildingType, position, unitSpawningActive, spawnTimeRemaining, spawnInterval };
 }
 
 
@@ -586,8 +606,12 @@ function decodeInitialGameState (payload) {
 
             // Check if building is a barrack and read UnitSpawning status if applicable
             let unitSpawningActive = null;
+            let spawnTimeRemaining = null;
+            let spawnInterval = null;
             if (buildingType === BuildingTypes.BARRACKS) {
                 unitSpawningActive = dataView.getUint8(offset++) === 1; // 1 for active, 0 for inactive
+                spawnTimeRemaining = dataView.getUint16(offset); offset += 2;
+                spawnInterval = dataView.getUint16(offset); offset += 2;
             }
 
             buildings.push({
@@ -595,7 +619,9 @@ function decodeInitialGameState (payload) {
                 type: buildingType,
                 variant: buildingVariant,
                 position: { x: buildingX, y: buildingY },
-                unitSpawningActive // Add to building data if it's a barrack
+                unitSpawningActive,
+                spawnTimeRemaining,
+                spawnInterval // Add to building data if it's a barrack
             });
         }
 

@@ -288,6 +288,20 @@ export default class NetworkManager {
         }, 1000); // every 1 second
     }
 
+    _applyBarracksSpawnData (building, data) {
+        if (!building || building.type !== BuildingTypes.BARRACKS) return;
+        const now = performance.now();
+
+        if (typeof data?.spawnInterval === "number") {
+            building.spawnInterval = data.spawnInterval;
+        }
+
+        if (typeof data?.spawnTimeRemaining === "number") {
+            building.spawnTimeRemaining = data.spawnTimeRemaining;
+            building.spawnLastUpdatedAt = now;
+        }
+    }
+
     connect () {
         this.core.uiManager.showConnectingOverlay(true);
         this.network.connect();
@@ -489,14 +503,17 @@ export default class NetworkManager {
                 const newBuilding = new BuildingClass(owner.color, building.position, building.variant, building.id);
                 owner.addBuilding(newBuilding);
 
+                const ownerIsClient = Boolean(owner?.isClient);
+
                 if (building.type === BuildingTypes.BARRACKS) {
                     newBuilding.activated = building.unitSpawningActive;
-                    if (newBuilding.activated && owner.isClient) {
+                    this._applyBarracksSpawnData(newBuilding, building);
+                    if (newBuilding.activated && ownerIsClient) {
                         this.core.gameManager.increaseActiveBarracks(1);
                     }
                 }
 
-                if (owner.isClient) {
+                if (ownerIsClient) {
                     this.core.gameManager.increaseBuildingLimit(building.type);
                 }
             });
@@ -667,6 +684,10 @@ export default class NetworkManager {
         const unit = new UnitClass(base.color, initialPosition, unitVariant, unitID)
         if (barracks) {
             player.spawnUnit(unit, targetPosition);
+            if (typeof barracks.spawnInterval === "number") {
+                barracks.spawnTimeRemaining = barracks.spawnInterval;
+                barracks.spawnLastUpdatedAt = performance.now();
+            }
         } else {
             // Add without targetPosition
             //? This always handles Commander spawns, because commanders dont spawn in barracks
@@ -791,6 +812,11 @@ export default class NetworkManager {
                 const newBuilding = new BuildingClass(player.color, building.position, building.variant, building.id);
                 neutral.addBuilding(newBuilding);
 
+                if (building.type === BuildingTypes.BARRACKS) {
+                    newBuilding.activated = building.unitSpawningActive;
+                    this._applyBarracksSpawnData(newBuilding, building);
+                }
+
                 if (player.isClient) {
                     this.core.gameManager.increaseBuildingLimit(newBuilding.type);
                 }
@@ -913,7 +939,7 @@ export default class NetworkManager {
     }
 
     handleBuildingPlaced (payload) {
-        const { isPlayer, ownerID, buildingID, buildingType, position, unitSpawningActive } = payload;
+        const { isPlayer, ownerID, buildingID, buildingType, position, unitSpawningActive, spawnTimeRemaining, spawnInterval } = payload;
         let base = null;
         let player = null;
         let isClient = false;
@@ -969,6 +995,7 @@ export default class NetworkManager {
 
         if (building.type === BuildingTypes.BARRACKS) {
             building.activated = unitSpawningActive;
+            this._applyBarracksSpawnData(building, { spawnTimeRemaining, spawnInterval });
             if (building.activated && isClient) {
                 this.core.gameManager.increaseActiveBarracks(1);
             }
@@ -1069,6 +1096,16 @@ export default class NetworkManager {
         const barracks = base.getBuilding(buildingID);
         if (!barracks) return;
         barracks.activated = isActivated;
+
+        if (isActivated) {
+            if (typeof barracks.spawnInterval === "number") {
+                barracks.spawnTimeRemaining = barracks.spawnInterval;
+                barracks.spawnLastUpdatedAt = performance.now();
+            }
+        } else {
+            barracks.spawnTimeRemaining = 0;
+            barracks.spawnLastUpdatedAt = performance.now();
+        }
     }
 
     handleSpawnBullet (payload) {
