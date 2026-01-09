@@ -229,5 +229,11 @@ export default class Message {
         return new Message(MessageTypes.CLIENT_ACTIVITY, payload);
     }
 
+    static createToggleGroupUnitsMessage(isGrouped) {
+        const payload = new Uint8Array(1);
+        payload[0] = isGrouped ? 1 : 0;
+        return new Message(MessageTypes.TOGGLE_GROUP_UNITS, payload);
+    }
+
 
 }

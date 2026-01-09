@@ -46,6 +46,7 @@ export default class UIManager {
         this.addSkinLibraryButtonListener();
         this.addSettingsPanelListener();
         this.addChatButtonElementListener();
+        this.addUnitControlsListener();
     }
 
     // Initialize skins from localStorage cache immediately (no async wait)
@@ -154,6 +155,10 @@ export default class UIManager {
                     timer: "inactivity-timer",
                 },
                 toolbar: "toolbar-container",
+                unitControls: {
+                    container: "unit-controls-container",
+                    groupUnitsButton: "group-units-button",
+                },
                 upgrades: {
                     container: "upgrade-container",
                     list: "upgrade-list",
@@ -1457,6 +1462,26 @@ export default class UIManager {
         this.core.camera.setPosition(player.position, true);
     }
 
+    addUnitControlsListener() {
+        if (!this.DOM.game.unitControls.groupUnitsButton) return;
+
+        this.groupUnitsActive = false;
+        this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Off";
+
+        this.DOM.game.unitControls.groupUnitsButton.addEventListener("click", () => {
+            this.groupUnitsActive = !this.groupUnitsActive;
+            if (this.groupUnitsActive) {
+                this.DOM.game.unitControls.groupUnitsButton.classList.add("active");
+                this.DOM.game.unitControls.groupUnitsButton.innerText = "Group On";
+            } else {
+                this.DOM.game.unitControls.groupUnitsButton.classList.remove("active");
+                this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Off";
+            }
+    
+            this.core.networkManager.sendToggleGroupUnits(this.groupUnitsActive);
+        });
+    }
+
     addChatButtonElementListener () {
         if (!this.DOM.chat.button || !this.DOM.chat.input) return;
 
@@ -1631,6 +1656,12 @@ export default class UIManager {
         this.DOM.chat.container.style.display = show ? "flex" : "none";
     }
 
+    showUnitControls (show) {
+        if (this.DOM.game.unitControls.container) {
+            this.DOM.game.unitControls.container.style.display = show ? "flex" : "none";
+        }
+    }
+
     showToolbar (show) {
         this.DOM.game.toolbar.style.display = show ? "flex" : "none";
     }
@@ -1698,6 +1729,7 @@ export default class UIManager {
         this.menuOpen = !show;
         this.showLeaderboard(show);
         this.showToolbar(show);
+        this.showUnitControls(show);
         this.showResource(show);
         this.showChat(show);
         this.showMetrics(show);

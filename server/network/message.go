@@ -52,6 +52,7 @@ const (
 	MessageTypePlayerInactiveWarning    byte = 42
 	MessageTypePlayerActive             byte = 43
 	MessageTypeClientActivity           byte = 44
+	MessageTypeToggleGroupUnits       byte = 45
 	MessageTypeHeartbeat                byte = 69
 	MessageTypeServerVersion            byte = 98
 	MessageTypeRebootAlertMessage       byte = 99

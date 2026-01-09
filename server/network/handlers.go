@@ -58,6 +58,8 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleClientNewChatMessage(conn, payload)
 	case MessageTypeClientActivity:
 		handleClientActivity(conn, payload)
+	case MessageTypeToggleGroupUnits:
+		handleToggleGroupUnitsMessage(conn, payload)
 
 	default:
 		log.Printf("Received unsupported message type: %d", messageType)
@@ -758,7 +760,7 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 		game.State.RUnlock()
 	}
 
-	if isClickOnBase || isClickOnBush {
+	if player.GroupUnits || isClickOnBase || isClickOnBush {
 		// Target is inside the base radius or on a bush, group all units at the exact target position.
 		floatTargetPosition := game.IntToFloat(targetPosition)
 		for _, unit := range unitsToUpdate {
@@ -1133,6 +1135,23 @@ func handleClientActivity(conn *websocket.Conn, payload []byte) {
 	player.SetLastActivity()
 	player.LastActivityWarningSent = time.Now()
 	SendPlayerActive(player)
+}
+
+func handleToggleGroupUnitsMessage(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 1 {
+		log.Println("Invalid payload length for toggle group units message")
+		return
+	}
+
+	player, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		log.Println("Player not found for connection")
+		return
+	}
+
+	isGrouped := payload[0] == 1
+
+	player.SetGroupUnits(isGrouped)
 }
 
 func removePlayerMessageState(playerID game.ID) {

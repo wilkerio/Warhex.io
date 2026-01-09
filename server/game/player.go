@@ -48,9 +48,10 @@ type Player struct {
 	UnitSpawning       []*UnitSpawning
 	UnitBulletSpawning []*BulletSpawning
 	UnitSpawningLimit  Capacity
-	HasCommander       bool
-
-	// Script prevention
+		HasCommander       bool
+		GroupUnits         bool
+	
+		// Script prevention
 	LastBuildingAction  time.Time // Timestamp of the last building upgraded/placed
 	BuildingActionCount uint32    // Counter to track the number of building actions
 	LastMovementPackage MovementPackage
@@ -503,4 +504,10 @@ func (p *Player) GetObjectPointer() interface{} {
 
 func (p *Player) GetID() ID {
 	return p.ID
+}
+
+func (p *Player) SetGroupUnits(isGrouped bool) {
+	p.Lock()
+	defer p.Unlock()
+	p.GroupUnits = isGrouped
 }

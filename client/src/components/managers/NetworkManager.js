@@ -1212,6 +1212,11 @@ export default class NetworkManager {
         this.sendMessage(message);
     }
 
+    sendToggleGroupUnits(isGrouped) {
+        const message = Message.createToggleGroupUnitsMessage(isGrouped);
+        this.sendMessage(message);
+    }
+
     handlePlayerInactiveWarning() {
         this.core.uiManager.showInactivityWarning();
     }
