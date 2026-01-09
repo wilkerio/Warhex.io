@@ -141,7 +141,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		skinData = game.SkinData{
 			ID:           equippedSkin,
 			Name:         "external",
-			BaseColor:    game.NonSkinColors[byte(rand.Intn(len(game.NonSkinColors)))],
+			BaseColor:    game.NonSkinColors[byte(rand.IntN(len(game.NonSkinColors)))],
 			BaseColorHex: "#ffffff",
 		}
 		ok = true
@@ -150,7 +150,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	// If skinData is uninitialized, provide a default value
 	if len(skinData.BaseColor) == 0 || skinData.BaseColorHex == "" || skinData.BaseColorHex == "transparent" {
 		// Assign a random color for the base
-		color = game.NonSkinColors[byte(rand.Intn(len(game.NonSkinColors)))]
+		color = game.NonSkinColors[byte(rand.IntN(len(game.NonSkinColors)))]
 	} else {
 		// Use the base color from skinData
 		color = skinData.BaseColor
