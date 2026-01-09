@@ -2471,7 +2471,7 @@ button:hover {
   flex: 1;
   padding: 10px 15px;
   border-radius: 12px;
-  font-size: 1.0em;
+  font-size: 1.5em;
   font-weight: bold;
   cursor: pointer;
   transition: background 0.3s ease, transform 0.2s ease;

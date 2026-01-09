@@ -48,6 +48,8 @@ export default class UIManager {
         this.addSettingsPanelListener();
         this.addChatButtonElementListener();
         this.addUnitControlsListener();
+        this.addDiscordButtonListener();
+        this.addShopButtonListener();
     }
 
     // Initialize skins from localStorage cache immediately (no async wait)
@@ -213,6 +215,8 @@ export default class UIManager {
                 signinDialog: "signin-dialog",
                 handle: "account-handle",
                 statsContainer: "stats-container",
+                discordButton: "discord-button",
+                shopButton: "shop-button",
                 // Signup dialog inputs
                 signupEmail: "signup-email",
                 signupNickname: "signup-nickname",
@@ -2108,5 +2112,20 @@ export default class UIManager {
             clearInterval(this.inactivityTimerInterval);
             this.inactivityTimerInterval = null;
         }
+    }
+
+    addDiscordButtonListener() {
+        if (!this.DOM.account.discordButton) return;
+        this.DOM.account.discordButton.addEventListener("click", () => {
+            window.open("https://discord.gg/Q337spAqR7", "_blank");
+        });
+    }
+
+    addShopButtonListener() {
+        if (!this.DOM.account.shopButton) return;
+        this.DOM.account.shopButton.addEventListener("click", () => {
+            // Placeholder for shop link, replace with actual shop URL
+            window.open("https://example.com/shop", "_blank");
+        });
     }
 }
