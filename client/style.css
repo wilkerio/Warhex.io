@@ -319,21 +319,26 @@ img {
 
 
 #current-skin-img {
+  position: absolute;
   width: 80%;
   height: 80%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   object-fit: contain;
+  z-index: 1;
 }
 
 #skin-name-display {
-  font-size: 11px;
+  font-size: 14px;
+  font-weight: 600;
   color: white;
   text-align: center;
-  margin: 0;
-  padding: 2px;
+  margin: 8px 0 5px 0;
+  padding: 3px 10px;
   background: rgba(0, 0, 0, 0.5);
-  width: 100%;
-  position: absolute;
-  bottom: 0;
+  border-radius: 8px;
+  display: block;
 }
 
 .skin-nav-btn {
@@ -347,6 +352,8 @@ img {
   color: white;
   cursor: pointer;
   transition: all 0.3s ease;
+  z-index: 10;
+  position: relative;
 }
 
 .skin-nav-btn:hover:not(:disabled) {
