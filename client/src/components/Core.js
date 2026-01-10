@@ -161,6 +161,7 @@ export default class Core {
     initializeProperties () {
         this.viewport = new Viewport();
         this.camera = new Camera();
+        this._mapViewState = null; // used to store camera state when toggling map view
     }
 
     initializeToolbar () {
@@ -222,9 +223,52 @@ export default class Core {
     }
 
     handleZoom (event) {
-        const direction = event.deltaY > 0 ? 1 : -1;
-        direction === 1 ? this.camera.zoomOut() : this.camera.zoomIn();
-        this.eventManager.updateMousePosition(this.eventManager.lastMouseEvent);
+        // Update mouse position based on this wheel event
+        this.eventManager.updateMousePosition(event);
+
+        // Smooth multiplicative zoom factor (exponential) for continuous zoom
+        const sensitivity = 0.0015; // tweak to taste
+        const factor = Math.exp(-event.deltaY * sensitivity);
+
+        // Adjust camera so the point under cursor stays stable
+        this.camera.adjustZoomWithFocus(
+            factor,
+            (clientX, clientY) => this.eventManager.mousePosition,
+            event.clientX,
+            event.clientY,
+            this.canvas
+        );
+
+        // Let building placement logic update positions
         this.buildingManager.updateBuildingPosition();
+    }
+
+    // Toggle a zoomed-out map overview centered on the player; restores previous camera state when toggled back
+    toggleMapView () {
+        const player = this.gameManager.player;
+        if (!player) return;
+
+        if (!this._mapViewState) {
+            // Enter map view: save current camera state
+            this._mapViewState = {
+                zoom: this.camera.zoom,
+                targetZoom: this.camera.targetZoom,
+                x: this.camera.x,
+                y: this.camera.y,
+                targetPosition: { x: this.camera.targetPosition.x, y: this.camera.targetPosition.y }
+            };
+
+            const mapZoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, 0.25));
+            this.camera.targetZoom = mapZoom;
+            // Center on player
+            this.camera.targetPosition.x = player.position.x / 2;
+            this.camera.targetPosition.y = player.position.y / 2;
+        } else {
+            // Restore previous camera state
+            this.camera.targetZoom = this._mapViewState.targetZoom ?? this._mapViewState.zoom;
+            this.camera.targetPosition.x = this._mapViewState.targetPosition.x;
+            this.camera.targetPosition.y = this._mapViewState.targetPosition.y;
+            this._mapViewState = null;
+        }
     }
 }

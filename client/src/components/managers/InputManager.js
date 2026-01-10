@@ -66,7 +66,12 @@ export default class InputManager {
                 if (this.core.uiManager.isChatInputFocused) {
                     return
                 }
-                this.core.miniMap.toggleFullScreen();
+                // Toggle map overview (zoomed out) for better visualization
+                if (typeof this.core.toggleMapView === 'function') {
+                    this.core.toggleMapView();
+                } else {
+                    this.core.miniMap.toggleFullScreen();
+                }
             }
             if(event.key == 'g'){
                 if (this.core.uiManager.isChatInputFocused) {
