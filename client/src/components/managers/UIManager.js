@@ -33,6 +33,7 @@ export default class UIManager {
         // Skin navigation properties
         this.currentSkinIndex = 0;
         this.availableSkins = [];
+        this._preloadedSkinImages = new Map();
 
         this.initializeUIElements();
         this.initializeSkinsFromCache(); // First: load from localStorage cache
@@ -41,9 +42,13 @@ export default class UIManager {
         this.addPlayButtonListener();
         this.addContinueButtonListener();
         this.addMenuDialogButtonListener();
-        this.addSkinNavigationListeners(); // New: skin navigation
-        this.addSkinUseButtonListener(); // New: Use button
-        this.addSkinCircleClickListener(); // New: click on circle to open library
+        // Schedule skin listeners after DOM is fully ready
+        setTimeout(() => {
+            this.addSkinNavigationListeners();
+            this.addSkinUseButtonListener();
+            this.addSkinCircleClickListener();
+            this.updateSkinCircle(); // Force update after listeners are ready
+        }, 100);
         this.addSkinLibraryButtonListener();
         this.addSettingsPanelListener();
         this.addChatButtonElementListener();
@@ -74,7 +79,9 @@ export default class UIManager {
                         { name: 'Default', id: 0, numericId: 0, url: null },
                         ...skins
                     ];
-                    console.log('Skins loaded from localStorage cache:', skins.length);
+
+                    // Warm cache so skin switching feels instant.
+                    this._preloadSkins();
                     
                     // Restore selected skin index by name
                     if (cachedName && cachedName !== 'null') {
@@ -84,9 +91,11 @@ export default class UIManager {
                         }
                     }
                     
-                    // Update UI immediately
-                    this.updateSkinCircle();
-                    this.updateUseButton();
+                    // Schedule UI update for next frame to ensure DOM is ready
+                    requestAnimationFrame(() => {
+                        this.updateSkinCircle();
+                        this.updateUseButton();
+                    });
                     return;
                 }
             }
@@ -97,8 +106,11 @@ export default class UIManager {
         // Initialize with default skin if no cache
         this.availableSkins = [{ name: 'Default', id: 0, numericId: 0, url: null }];
         this.currentSkinIndex = 0;
-        this.updateSkinCircle();
-        this.updateUseButton();
+        this._preloadSkins();
+        requestAnimationFrame(() => {
+            this.updateSkinCircle();
+            this.updateUseButton();
+        });
     }
 
     async loadSupabaseSkins() {
@@ -114,6 +126,9 @@ export default class UIManager {
                     { name: 'Default', id: 0, numericId: 0, url: null },
                     ...skins
                 ];
+
+                // Warm cache for snappy switching.
+                this._preloadSkins();
                 
                 // Get currently equipped skin
                 const equippedSkinName = localStorage.getItem('equippedSkinName') || null;
@@ -138,6 +153,38 @@ export default class UIManager {
             console.error('Error loading Supabase skins:', error);
             // Keep whatever we have from cache
         }
+    }
+
+    _preloadSkins(radius = 4) {
+        // Preload nearby skins around current index + a small batch from start.
+        // This makes the first few prev/next clicks feel instant.
+        if (!Array.isArray(this.availableSkins) || this.availableSkins.length === 0) return;
+
+        const urlsToPreload = new Set();
+
+        const addIndex = (idx) => {
+            const skin = this.availableSkins[idx];
+            if (skin?.url) urlsToPreload.add(skin.url);
+        };
+
+        // Around current index
+        for (let i = this.currentSkinIndex - radius; i <= this.currentSkinIndex + radius; i++) {
+            if (i >= 0 && i < this.availableSkins.length) addIndex(i);
+        }
+
+        // A few from the start (useful right after initial load)
+        for (let i = 0; i < Math.min(6, this.availableSkins.length); i++) {
+            addIndex(i);
+        }
+
+        urlsToPreload.forEach((url) => {
+            if (!url || this._preloadedSkinImages.has(url)) return;
+            const image = new Image();
+            image.decoding = 'async';
+            image.loading = 'eager';
+            image.src = url;
+            this._preloadedSkinImages.set(url, image);
+        });
     }
 
     initializeUIElements () {
@@ -699,35 +746,25 @@ export default class UIManager {
         this.DOM.account.progression.progressBar.style.width = `${progressPercentage}%`;
         this.DOM.account.progression.progressBar.style.backgroundColor = progressBarColor;
 
-        // Fetch the equipped skin from SkinCache
+        // Sync equipped skin -> menu preview selector.
+        // IMPORTANT: do NOT replace previewButton.innerHTML here.
+        // The menu skin selector relies on static elements (#current-skin-img, arrows, etc).
+        // Replacing innerHTML breaks live updates and makes it look like the preview only
+        // changes after a full page reload.
         const previewButton = this.DOM?.skins?.previewButton;
-        const equipped = userData.selected_skin
-            ?? userData.skins?.equipped
-            ?? localStorage.getItem('equippedSkin')
-            ?? null;
+        if (previewButton) {
+            const equippedName = (userData.selected_skin ?? userData.skins?.equipped ?? localStorage.getItem('equippedSkinName') ?? '') || '';
 
-        if (previewButton && equipped) {
-            // Load either Supabase (string) or legacy (numeric) skins
-            const skinImageData = typeof equipped === 'string'
-                ? await SkinCache.getSkinByName(equipped)
-                : await SkinCache.getSkin(equipped);
-
-            if (skinImageData && skinImageData.image) {
-                const img = document.createElement('img');
-                img.src = skinImageData.image.src;
-
-                previewButton.innerHTML = '';
-                previewButton.appendChild(img);
-
-                const plusDiv = document.createElement('div');
-                plusDiv.textContent = '+';
-                previewButton.appendChild(plusDiv);
+            if (equippedName) {
+                const equippedIndex = this.availableSkins.findIndex(s => (s?.name || '') === equippedName);
+                if (equippedIndex >= 0) {
+                    this.currentSkinIndex = equippedIndex;
+                }
+            } else {
+                this.currentSkinIndex = 0;
             }
-        } else if (previewButton) {
-            previewButton.innerHTML = '<p>Skins</p>';
-            const plusDiv = document.createElement('div');
-            plusDiv.textContent = '+';
-            previewButton.appendChild(plusDiv);
+
+            this.updateSkinCircle();
         }
 
         // Clear previous stats
@@ -797,35 +834,46 @@ export default class UIManager {
     }
 
     updateSkinCircle() {
-        const circle = document.getElementById('skin-preview-circle');
         const img = document.getElementById('current-skin-img');
         const nameDisplay = document.getElementById('skin-name-display');
         const prevBtn = document.getElementById('skin-carousel-prev-menu');
         const nextBtn = document.getElementById('skin-carousel-next-menu');
         
-        if (!circle || !img || !nameDisplay) {
-            return; // Elements not ready yet
-        }
-        
         const currentSkin = this.availableSkins[this.currentSkinIndex];
         
-        if (currentSkin) {
+        console.log('updateSkinCircle - currentSkin:', currentSkin);
+        
+        // Update name display if element exists
+        if (nameDisplay && currentSkin) {
             nameDisplay.textContent = currentSkin.name || 'Default';
-            
+        }
+
+        // Preload nearby skins so next/prev feels instant.
+        this._preloadSkins(4);
+        
+        // Update image if element exists
+        if (img && currentSkin) {
             if (currentSkin.url) {
+                // IMPORTANT: do not cache-bust. That forces a network download on every click.
+                // Rely on browser cache + our preloading for instant switching.
                 img.src = currentSkin.url;
                 img.style.display = 'block';
+                console.log('Setting skin image to:', img.src);
             } else {
+                img.src = '';
                 img.style.display = 'none';
+                console.log('Hiding skin image (no URL)');
             }
         }
         
         // Update button states
         if (prevBtn) {
             prevBtn.disabled = this.currentSkinIndex === 0;
+            prevBtn.style.opacity = this.currentSkinIndex === 0 ? '0.5' : '1';
         }
         if (nextBtn) {
             nextBtn.disabled = this.currentSkinIndex >= this.availableSkins.length - 1;
+            nextBtn.style.opacity = this.currentSkinIndex >= this.availableSkins.length - 1 ? '0.5' : '1';
         }
         
         // Update Use button state
@@ -857,22 +905,43 @@ export default class UIManager {
         const prevBtn = document.getElementById('skin-carousel-prev-menu');
         const nextBtn = document.getElementById('skin-carousel-next-menu');
         
+        console.log('addSkinNavigationListeners - prevBtn:', prevBtn, 'nextBtn:', nextBtn);
+        console.log('Available skins:', this.availableSkins);
+        
         if (prevBtn) {
-            prevBtn.addEventListener('click', () => {
+            // Remove any existing listeners
+            prevBtn.replaceWith(prevBtn.cloneNode(true));
+            const newPrevBtn = document.getElementById('skin-carousel-prev-menu');
+            
+            newPrevBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('PREV clicked! Current index:', this.currentSkinIndex);
                 if (this.currentSkinIndex > 0) {
                     this.currentSkinIndex--;
+                    console.log('New index:', this.currentSkinIndex);
                     this.updateSkinCircle();
                 }
             });
+            console.log('Prev button listener added');
         }
         
         if (nextBtn) {
-            nextBtn.addEventListener('click', () => {
+            // Remove any existing listeners
+            nextBtn.replaceWith(nextBtn.cloneNode(true));
+            const newNextBtn = document.getElementById('skin-carousel-next-menu');
+            
+            newNextBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('NEXT clicked! Current index:', this.currentSkinIndex, 'Total:', this.availableSkins.length);
                 if (this.currentSkinIndex < this.availableSkins.length - 1) {
                     this.currentSkinIndex++;
+                    console.log('New index:', this.currentSkinIndex);
                     this.updateSkinCircle();
                 }
             });
+            console.log('Next button listener added');
         }
     }
     
@@ -898,7 +967,8 @@ export default class UIManager {
         
         console.log('Skin equipped:', skinName);
         
-        // Update Use button immediately
+        // Update UI immediately
+        this.updateSkinCircle();
         this.updateUseButton();
         
         // If logged in, save to database
@@ -918,8 +988,11 @@ export default class UIManager {
             }
         }
         
-        // Update library if open
-        this.populateSkinLibrary();
+        // Update library only if dialog is open (avoids blocking UI on equip)
+        const dialog = this.DOM?.skins?.libraryDialog;
+        if (dialog && dialog.style.display !== 'none') {
+            this.populateSkinLibrary();
+        }
     }
     
     addSkinCircleClickListener() {
