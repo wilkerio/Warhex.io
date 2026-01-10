@@ -270,6 +270,12 @@ func (p *Player) AddCommander() (*Unit, bool) {
 		ExplosionRadius: int(unitStats.ExplosionRadius),
 		LastDamageTime:  time.Now(),
 	}
+
+	// For commanders, push the initial target position 200px down so clients can't override spawn offset
+	if unit.Type == COMMANDER {
+		// Use SetTargetPosition to ensure rotation and timestamps are correctly updated
+		unit.SetTargetPosition(PositionFloat{X: unit.TargetPosition.X, Y: unit.TargetPosition.Y + 200})
+	}
 	p.Lock()
 	// Add the unit to the player's list of units
 	p.Units[unitID] = unit

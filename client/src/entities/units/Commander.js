@@ -23,6 +23,8 @@ export default class Commander extends Unit {
         this.points = Shapes.generateSpikePoints(this.size, 12);
 
         this._updateBulletDetails();
+        // Ao nascer, empurra o comandante um pouco para baixo (200px) para sair das barracas
+        this.setTargetPosition({ x: this.position.x, y: this.position.y + 200 });
     }
 
     _updateBulletDetails () {
@@ -73,10 +75,11 @@ export default class Commander extends Unit {
 
     renderCannonBarrel (context, deltaTime) {
         if (this.lastCannonTargetUpdate < this.targetUpdateThreshold) {
-            // Rotate the context to point towards the target point
+            // Rotate the context so the final orientation equals the absolute target angle
             context.rotate(this.cannonAngleToTarget - this.rotation);
         } else {
-            context.rotate(this.cannonRotationOffset);
+            // Rotate so the final absolute orientation equals cannonRotationOffset (down)
+            context.rotate(this.cannonRotationOffset - this.rotation);
         }
         const recoilOffset = this.recoil;
         const cannonWidth = this.size * 0.6;
