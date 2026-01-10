@@ -1194,6 +1194,34 @@ export default class UIManager {
             });
             this.DOM.game.upgrades.destroyButton.innerHTML = `<p>Destroy</p><p class="refund-amount">+${totalRefund} Power</p>`;
             this._clearUpgradeTabsElement();
+
+            // Show a summary of the multiple selection: total count and counts per building type
+            if (this.DOM.game.upgrades.list) {
+                this.DOM.game.upgrades.list.innerHTML = "";
+
+                const countsByType = new Map();
+                building.buildings.forEach(b => {
+                    const details = getBuildingDetails(b.type, b.variant);
+                    const name = details ? details.name : (Object.keys(BuildingTypes).find(k => BuildingTypes[k] === b.type) || "Unknown");
+                    countsByType.set(name, (countsByType.get(name) || 0) + 1);
+                });
+
+                const summary = document.createElement("div");
+                summary.classList.add("multiple-selection-summary");
+                const totalEl = document.createElement("p");
+                totalEl.classList.add("summary-total");
+                totalEl.textContent = `Total selected: ${building.count}`;
+                summary.appendChild(totalEl);
+
+                countsByType.forEach((count, name) => {
+                    const line = document.createElement("p");
+                    line.classList.add("summary-line");
+                    line.textContent = `${name}: ${count}`;
+                    summary.appendChild(line);
+                });
+
+                this.DOM.game.upgrades.list.appendChild(summary);
+            }
         } else {
             // SINGLE BUILDING TYPE
             const isArmory = BuildingTypes.ARMORY === building.type;
