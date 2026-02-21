@@ -74,53 +74,32 @@ export default class Barracks extends Building {
     }
 
     renderBasic (context) {
-        // Draw unit cannon
-        context.fillStyle = "#a8a8a8";
-        context.beginPath();
-        context.moveTo(-this.size / 1.5, -this.size / 2.5); // Top left corner
-        context.lineTo(-this.size + this.size / 2, -this.size / 3);  // Top right corner
-        context.lineTo(-this.size + this.size / 2, this.size / 3);       // Bottom right corner
-        context.lineTo(-this.size / 1.5, this.size / 2.5);      // Bottom left corner
-        context.closePath();
-        context.fill();
-        context.strokeStyle = "#666666";
-        context.lineWidth = 4;
-        context.stroke();
+        // Exact pink-square design.
+        const outerSize = this.size;
+        const outerHalf = outerSize / 2;
 
-        // Draw square
-        context.fillStyle = this.activated ? this.color : "#a8a8a8";
-        context.fillRect(-this.size / 2, -this.size / 2, this.size, this.size); // Draw square centered at (0, 0)
-        context.strokeStyle = "#666666";
-        context.strokeRect(-this.size / 2, -this.size / 2, this.size, this.size); // Stroke square
+        // Outer square uses player's/base color
+        context.fillStyle = this.activated ? this.color : "#8a8a8a";
+        context.fillRect(-outerHalf, -outerHalf, outerSize, outerSize);
+        context.strokeStyle = "#2a2a2a";
+        context.lineWidth = 3;
+        context.strokeRect(-outerHalf, -outerHalf, outerSize, outerSize);
+
+        // Inner gray square
+        const innerSize = outerSize * 0.5;
+        const innerHalf = innerSize / 2;
+        context.fillStyle = "#8a8a8a";
+        context.fillRect(-innerHalf, -innerHalf, innerSize, innerSize);
+
+        // Inner square border
+        context.strokeStyle = "#2a2a2a";
+        context.lineWidth = 2.5;
+        context.strokeRect(-innerHalf, -innerHalf, innerSize, innerSize);
     }
 
     renderBarracks (context) {
+        // Basic barracks should use only the clean framed-square design.
         this.renderBasic(context);
-
-        context.rotate(this.rotationOffset); // Align with the barracks' rotation
-        context.translate(-1, 0);
-
-        context.beginPath();
-        const unitSize = 15;
-        const outerPoints = [];
-        for (let i = 0; i < 3; i++) {
-            const angle = (Math.PI * 2 / 3) * i;
-            const x = unitSize * Math.cos(angle);
-            const y = unitSize * Math.sin(angle);
-            outerPoints.push({ x, y });
-        }
-
-        context.moveTo(outerPoints[0].x, outerPoints[0].y);
-        for (let i = 1; i < outerPoints.length; i++) {
-            context.lineTo(outerPoints[i].x, outerPoints[i].y);
-        }
-        context.closePath();
-
-        context.fillStyle = "#a8a8a8"; // Gray color
-        context.fill();
-        context.strokeStyle = "#666666"; // Darker outline
-        context.lineWidth = 4;
-        context.stroke();
     }
     renderGreaterBarracks(context) {
         this.renderBasic(context);

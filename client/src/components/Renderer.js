@@ -292,6 +292,9 @@ export class Renderer {
         const clientPlayer = this.queues.player.find(player => player.isClient);
         if (!clientPlayer) return;
 
+        // Only connect to cardinal neighbors that are axis-aligned with the client base.
+        // This prevents diagonal links (e.g. bottom base linking to top-left base).
+        const axisTolerance = 250;
         const nearestByDirection = {
             up: null,
             down: null,
@@ -304,18 +307,25 @@ export class Renderer {
 
             const dx = otherPlayer.position.x - clientPlayer.position.x;
             const dy = otherPlayer.position.y - clientPlayer.position.y;
-            const distance = Math.hypot(dx, dy);
+            const absDx = Math.abs(dx);
+            const absDy = Math.abs(dy);
 
-            let direction;
-            if (Math.abs(dx) >= Math.abs(dy)) {
-                direction = dx >= 0 ? "right" : "left";
-            } else {
-                direction = dy >= 0 ? "up" : "down";
+            // Vertical neighbors (same X line)
+            if (absDx <= axisTolerance && absDy > 0) {
+                const direction = dy >= 0 ? "up" : "down";
+                const current = nearestByDirection[direction];
+                if (!current || absDy < current.distance) {
+                    nearestByDirection[direction] = { player: otherPlayer, distance: absDy };
+                }
             }
 
-            const current = nearestByDirection[direction];
-            if (!current || distance < current.distance) {
-                nearestByDirection[direction] = { player: otherPlayer, distance };
+            // Horizontal neighbors (same Y line)
+            if (absDy <= axisTolerance && absDx > 0) {
+                const direction = dx >= 0 ? "right" : "left";
+                const current = nearestByDirection[direction];
+                if (!current || absDx < current.distance) {
+                    nearestByDirection[direction] = { player: otherPlayer, distance: absDx };
+                }
             }
         }
 

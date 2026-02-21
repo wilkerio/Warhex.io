@@ -52,6 +52,7 @@ export default class UnitManager {
 
         if (this.hasSelectedUnits()) {
             const targetPosition = { ...mousePosition };
+            this.updateSelectedUnitsCannonTarget(targetPosition);
 
             this.selectedUnits.forEach((unit) => {
                 if (!this.core.inputManager.shiftPressed) {
@@ -76,6 +77,14 @@ export default class UnitManager {
             /* Seperate the selection circle mechanisim from this class, 
                and move this code here out of the UnitManager...*/
         }
+    }
+
+    updateSelectedUnitsCannonTarget (targetPosition) {
+        this.selectedUnits.forEach((unit) => {
+            if (typeof unit.setCannonTargetPoint === "function") {
+                unit.setCannonTargetPoint(targetPosition);
+            }
+        });
     }
 
     handleMouseUp (mousePosition, button) {

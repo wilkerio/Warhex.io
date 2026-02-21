@@ -23,6 +23,8 @@ export default class Commander extends Unit {
         this.points = Shapes.generateSpikePoints(this.size, 12);
 
         this._updateBulletDetails();
+        // Spawn facing down by default.
+        this.rotation = Math.PI / 2;
         // Ao nascer, empurra o comandante um pouco para baixo (200px) para sair das barracas
         this.setTargetPosition({ x: this.position.x, y: this.position.y + 200 });
     }
@@ -78,8 +80,8 @@ export default class Commander extends Unit {
             // Rotate the context so the final orientation equals the absolute target angle
             context.rotate(this.cannonAngleToTarget - this.rotation);
         } else {
-            // Rotate so the final absolute orientation equals cannonRotationOffset (down)
-            context.rotate(this.cannonRotationOffset - this.rotation);
+            // Keep idle cannon pointing down.
+            context.rotate(Math.PI - this.rotation);
         }
         const recoilOffset = this.recoil;
         const cannonWidth = this.size * 0.6;
