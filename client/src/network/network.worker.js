@@ -340,8 +340,20 @@ function decodeRebootAlert (payload) {
 }
 
 function decodeError (payload) {
-    //! Skip payload for now
-    return {};
+    const dataView = new DataView(payload);
+    if (dataView.byteLength === 0) {
+        return {};
+    }
+
+    const code = dataView.getUint8(0);
+    const decoded = { code };
+
+    // Relocate cooldown error includes remaining time in seconds (uint16).
+    if (code === 1 && dataView.byteLength >= 3) {
+        decoded.remainingSeconds = dataView.getUint16(1, false);
+    }
+
+    return decoded;
 }
 
 function decodeX1ChallengeReceived (payload) {

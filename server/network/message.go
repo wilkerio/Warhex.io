@@ -2,7 +2,8 @@ package network
 
 // Define error codes for communication errors
 const (
-	ErrorCodeServerFull byte = 0
+	ErrorCodeServerFull       byte = 0
+	ErrorCodeRelocateCooldown byte = 1
 )
 
 // Define message types for communication between client and server
@@ -58,6 +59,7 @@ const (
 	MessageTypeX1ChallengeReceived      byte = 48
 	MessageTypeX1ChallengeResult        byte = 49
 	MessageTypeX1DuelArenaUpdate        byte = 50
+	MessageTypeClientBuyRelocateBase    byte = 51
 	MessageTypeHeartbeat                byte = 69
 	MessageTypeServerVersion            byte = 98
 	MessageTypeRebootAlertMessage       byte = 99

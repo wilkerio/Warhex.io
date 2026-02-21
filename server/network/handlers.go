@@ -49,6 +49,8 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleBuyCommander(conn, payload)
 	case MessageTypeClientBuyRepair:
 		handleBuyRepair(conn, payload)
+	case MessageTypeClientBuyRelocateBase:
+		handleBuyRelocateBase(conn, payload)
 	case MessageTypeClientCameraUpdate:
 		handleCameraUpdate(conn, payload)
 	case MessageTypeClientRequestResync:
@@ -1072,6 +1074,77 @@ func handleBuyRepair(conn *websocket.Conn, payload []byte) {
 
 	player.Base.Repair()
 	broadcastBaseHealthUpdate(player.Base)
+}
+
+func handleBuyRelocateBase(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 0 && len(payload) != 4 {
+		log.Println("Invalid payload length for buying base relocation (expected 0 or 4)")
+		return
+	}
+
+	player, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		log.Println("Player not found for connection")
+		return
+	}
+
+	// Avoid relocation during protected duel to prevent arena desync and abuse.
+	if player.InDuel {
+		return
+	}
+
+	now := time.Now()
+	canRelocate, remaining := player.CanRelocateNow(now)
+	if !canRelocate {
+		remainingSecondsFloat := math.Ceil(remaining.Seconds())
+		if remainingSecondsFloat < 1 {
+			remainingSecondsFloat = 1
+		}
+		if remainingSecondsFloat > 65535 {
+			remainingSecondsFloat = 65535
+		}
+		sendRelocateCooldownError(conn, uint16(remainingSecondsFloat))
+		return
+	}
+
+	cost := uint16(game.RELOCATE_BASE_COST)
+	ok = player.Resources.Power.Decrement(cost)
+	if !ok {
+		log.Println("Could not subtract costs for base relocation")
+		return
+	}
+
+	var targetPosition *game.PositionInt
+	if len(payload) == 4 {
+		pos := getPositionIntFromPayload(payload)
+		targetPosition = &pos
+	}
+
+	ok = game.RelocatePlayerBaseTo(player, targetPosition)
+	if !ok {
+		player.Resources.Power.Increment(cost)
+		return
+	}
+
+	player.RecordRelocation(now)
+
+	sendResourceUpdate(player)
+
+	// Full resync to all players so everyone sees the new base/building/unit positions.
+	game.State.RLock()
+	players := make([]*game.Player, 0, len(game.State.Players))
+	for _, p := range game.State.Players {
+		players = append(players, p)
+	}
+	game.State.RUnlock()
+
+	for _, p := range players {
+		if p.IsMarkedForRemoval() {
+			continue
+		}
+		sendGameState(p, nil)
+		sendActiveDuelArenas(p)
+	}
 }
 
 func handleCameraUpdate(conn *websocket.Conn, payload []byte) {

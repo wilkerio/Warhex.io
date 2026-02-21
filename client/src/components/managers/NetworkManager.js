@@ -1,6 +1,6 @@
 import Network from "../../network/Network.js";
 import Message from "../../network/Message.js";
-import { BuildingTypes, BuildingVariantTypes, MessageTypes, UnitTypes, UnitVariantTypes, getBulletDetails } from "../../network/constants.js";
+import { BuildingTypes, BuildingVariantTypes, ErrorCodes, MessageTypes, UnitTypes, UnitVariantTypes, getBulletDetails } from "../../network/constants.js";
 import Player from "../../entities/Player.js";
 import NeutralBase from "../../entities/objective/NeutralBase.js";
 import { QueueType } from "../Renderer.js";
@@ -487,6 +487,22 @@ export default class NetworkManager {
     }
 
     handleError (payload) {
+        if (payload?.code === ErrorCodes.RELOCATE_COOLDOWN) {
+            const remaining = Number.isFinite(payload.remainingSeconds) ? payload.remainingSeconds : 0;
+            const minutes = Math.floor(remaining / 60);
+            const seconds = remaining % 60;
+            const formatted = minutes > 0
+                ? `${minutes}m ${String(seconds).padStart(2, "0")}s`
+                : `${seconds}s`;
+
+            this.core.uiManager.addChatMessage(
+                "System",
+                `Base relocation cooldown active. Wait ${formatted}.`,
+                "#ffcc66"
+            );
+            return;
+        }
+
         this.core.uiManager.showMenuDialog(
             "Connection Issue",
             "Oops! We couldn't connect to the server.",
@@ -1276,6 +1292,11 @@ export default class NetworkManager {
 
     sendBuyRepair () {
         const message = Message.createBuyRepairMessage();
+        this.sendMessage(message);
+    }
+
+    sendBuyRelocateBase (position = null) {
+        const message = Message.createBuyRelocateBaseMessage(position);
         this.sendMessage(message);
     }
 

@@ -41,6 +41,8 @@ type Player struct {
 	Base                   *Base
 	SpawnProtectionEndTime time.Time
 	HasSpawnProtection     bool
+	RelocateCount          uint32
+	NextRelocateAllowedAt  time.Time
 
 	// Unit
 	AvailableUnitIDs   *AvailableIDs
@@ -226,6 +228,26 @@ func (p *Player) RemoveProtection() {
 		p.SpawnProtectionEndTime = time.Time{}
 		TriggerRemoveSpawnProtectionEvent(p)
 	}
+}
+
+func (p *Player) CanRelocateNow(now time.Time) (bool, time.Duration) {
+	p.RLock()
+	defer p.RUnlock()
+
+	if p.NextRelocateAllowedAt.IsZero() || !now.Before(p.NextRelocateAllowedAt) {
+		return true, 0
+	}
+
+	return false, p.NextRelocateAllowedAt.Sub(now)
+}
+
+func (p *Player) RecordRelocation(now time.Time) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.RelocateCount++
+	cooldown := time.Duration(p.RelocateCount) * 15 * time.Minute
+	p.NextRelocateAllowedAt = now.Add(cooldown)
 }
 
 func (p *Player) IncrementScore(value uint32) {

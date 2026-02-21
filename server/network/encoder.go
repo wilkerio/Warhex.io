@@ -105,7 +105,7 @@ func writePlayerData(buffer *bytes.Buffer, player *game.Player) error {
 	buffer.WriteByte(byte(player.ID))
 
 	// Write spawn protection status
-	if player.HasSpawnProtection {
+	if player.HasProtection() {
 		buffer.WriteByte(byte(1))
 	} else {
 		buffer.WriteByte(byte(0))

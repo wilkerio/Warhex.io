@@ -144,7 +144,9 @@ func CanPlayersInteract(a *Player, b *Player) bool {
 	defer second.RUnlock()
 	defer first.RUnlock()
 
-	areOpponents := (a.DuelOpponentID == b.ID || b.DuelOpponentID == a.ID)
+	areOpponents := a.InDuel && b.InDuel &&
+		a.DuelOpponentID == b.ID &&
+		b.DuelOpponentID == a.ID
 	if areOpponents {
 		// Duel opponents can always interact immediately once duel starts.
 		return true
@@ -176,5 +178,7 @@ func AreDuelOpponents(a *Player, b *Player) bool {
 	defer second.RUnlock()
 	defer first.RUnlock()
 
-	return a.DuelOpponentID == b.ID || b.DuelOpponentID == a.ID
+	return a.InDuel && b.InDuel &&
+		a.DuelOpponentID == b.ID &&
+		b.DuelOpponentID == a.ID
 }

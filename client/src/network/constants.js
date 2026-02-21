@@ -76,10 +76,16 @@ export const MessageTypes = {
     X1_CHALLENGE_RECEIVED: 48,
     X1_CHALLENGE_RESULT: 49,
     X1_DUEL_ARENA_UPDATE: 50,
+    BUY_RELOCATE_BASE: 51,
     HEARTBEAT: 69,
     SERVER_VERSION: 98,
     REBOOT_ALERT: 99,
     ERROR: 100
+};
+
+export const ErrorCodes = {
+    SERVER_FULL: 0,
+    RELOCATE_COOLDOWN: 1
 };
 
 export const BuildingSizes = {

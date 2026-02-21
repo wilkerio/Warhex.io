@@ -199,6 +199,72 @@ func FindFreePosition() PositionInt {
 	return PositionInt{X: 0, Y: 0}
 }
 
+// FindFreeRelocationPosition finds an empty spawn-grid slot for relocating a player base.
+// Callers should hold State lock when invoking this function.
+func FindFreeRelocationPosition(excludePlayerID ID) (PositionInt, bool) {
+	occupiedPositions := make([]PositionInt, 0, len(State.Players)+len(State.NeutralBases))
+	for id, player := range State.Players {
+		if id == excludePlayerID {
+			continue
+		}
+		occupiedPositions = append(occupiedPositions, player.Base.GetPosition())
+	}
+
+	for _, neutralBase := range State.NeutralBases {
+		occupiedPositions = append(occupiedPositions, neutralBase.Base.GetPosition())
+	}
+
+	mapRadius := calculateMapRadius(len(State.Players))
+	step := int(MIN_PLAYER_SPAWN_DISTANCE)
+
+	maxCandidates := len(State.Players) + len(State.NeutralBases) + 64
+	for i := 0; i < maxCandidates; i++ {
+		gridX, gridY := getSpawnGridCell(i)
+		pos := PositionInt{
+			X: int16(gridX * step),
+			Y: int16(gridY * step),
+		}
+
+		if !isWithinMapBounds(pos, mapRadius) {
+			continue
+		}
+		if isFarEnoughFromAll(pos, occupiedPositions, MIN_PLAYER_SPAWN_DISTANCE) {
+			return pos, true
+		}
+	}
+
+	return PositionInt{}, false
+}
+
+func IsRelocationSlotAvailable(pos PositionInt, excludePlayerID ID) bool {
+	mapRadius := calculateMapRadius(len(State.Players))
+	if !isWithinMapBounds(pos, mapRadius) {
+		return false
+	}
+
+	step := int16(MIN_PLAYER_SPAWN_DISTANCE)
+	if step <= 0 {
+		return false
+	}
+	if pos.X%step != 0 || pos.Y%step != 0 {
+		return false
+	}
+
+	occupiedPositions := make([]PositionInt, 0, len(State.Players)+len(State.NeutralBases))
+	for id, player := range State.Players {
+		if id == excludePlayerID {
+			continue
+		}
+		occupiedPositions = append(occupiedPositions, player.Base.GetPosition())
+	}
+
+	for _, neutralBase := range State.NeutralBases {
+		occupiedPositions = append(occupiedPositions, neutralBase.Base.GetPosition())
+	}
+
+	return isFarEnoughFromAll(pos, occupiedPositions, MIN_PLAYER_SPAWN_DISTANCE)
+}
+
 // Helper function to check if a position is far enough from all occupied positions
 func isFarEnoughFromAll(pos PositionInt, occupiedPositions []PositionInt, minDistance int16) bool {
 	for _, occupied := range occupiedPositions {

@@ -1691,6 +1691,92 @@ func RemovePlayer(conn *websocket.Conn) (ID, uint32, uint32, time.Duration, bool
 	return playerID, playerScore, kills, playtime, true // Player successfully removed
 }
 
+// RelocatePlayerBaseTo moves a player's base to a selected free slot (or first free slot when target is nil).
+func RelocatePlayerBaseTo(player *Player, target *PositionInt) bool {
+	if player == nil {
+		return false
+	}
+
+	State.Lock()
+	defer State.Unlock()
+
+	var (
+		newPos PositionInt
+		ok     bool
+	)
+
+	if target != nil {
+		if !IsRelocationSlotAvailable(*target, player.ID) {
+			return false
+		}
+		newPos = *target
+		ok = true
+	} else {
+		newPos, ok = FindFreeRelocationPosition(player.ID)
+		if !ok {
+			return false
+		}
+	}
+
+	oldPos := player.Base.Position
+	if oldPos == newPos {
+		return false
+	}
+
+	dx := float32(newPos.X - oldPos.X)
+	dy := float32(newPos.Y - oldPos.Y)
+
+	player.Base.Lock()
+	player.Base.Position = newPos
+
+	for _, building := range player.Base.Buildings {
+		building.Position.X += dx
+		building.Position.Y += dy
+		building.Polygon.SetCenter(building.Position)
+	}
+
+	for _, bullet := range player.Base.Bullets {
+		bullet.Position.X += dx
+		bullet.Position.Y += dy
+		bullet.TargetPosition.X += dx
+		bullet.TargetPosition.Y += dy
+		bullet.Polygon.SetCenter(bullet.Position)
+	}
+	player.Base.Unlock()
+
+	player.Lock()
+	for _, unit := range player.Units {
+		unit.Position.X += dx
+		unit.Position.Y += dy
+		unit.TargetPosition.X += dx
+		unit.TargetPosition.Y += dy
+		unit.Polygon.SetCenter(unit.Position)
+	}
+	player.Camera.Position = newPos
+	player.Camera.UpdateBounds()
+	player.Unlock()
+
+	MarkPositionAvailable(oldPos)
+	clearSpawnArea(newPos, PLAYER_SPAWN_CLEAR_RADIUS)
+
+	// If player is currently in duel, rebuild arena bounds to include new base position.
+	if player.InDuel {
+		opponent := State.Players[player.DuelOpponentID]
+		if opponent != nil {
+			arena := buildDuelArena(player, opponent)
+			player.DuelArena = arena
+			opponent.DuelArena = arena
+		}
+	}
+
+	return true
+}
+
+// RelocatePlayerBase keeps compatibility and relocates to the first available slot.
+func RelocatePlayerBase(player *Player) bool {
+	return RelocatePlayerBaseTo(player, nil)
+}
+
 func GetPlayerByConn(conn *websocket.Conn) (*Player, bool) {
 	State.RLock()
 	defer State.RUnlock()

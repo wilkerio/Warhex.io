@@ -134,6 +134,7 @@ const (
 	KICK_REASON_SCRIPTING = 1
 
 	COMMANDER_COST = 1500
+	RELOCATE_BASE_COST = 4000
 
 	// Spawn settings
 	MIN_PLAYER_SPAWN_DISTANCE = 1500 // Minimum distance between player spawns

@@ -7,7 +7,7 @@ import SniperTurret from "../../entities/building/SniperTurret.js";
 import Armory from "../../entities/building/Armory.js";
 import BuildingPreview from "../../entities/BuildingPreview.js";
 import { BuildingTypes, BuildingVariantTypes, UnitTypes, UnitVariantTypes, getBuildingDetails } from "../../network/constants.js";
-import { QueueType } from "../Renderer.js";
+import { QueueType, Renderer } from "../Renderer.js";
 import { SelectionState } from "../../entities/Building.js";
 
 // Define a namespace/module for buildings
@@ -34,6 +34,7 @@ export class BuildingManager {
 
         this.selectionCircleActive = false;
         this.lastX1ChallengeSentAt = 0;
+        this.relocateBaseMode = false;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -74,6 +75,12 @@ export class BuildingManager {
     }
 
     selectBuildings (selectionCircle) {
+        // During relocation mode, ignore selection-circle flow completely.
+        // Relocation is handled only by direct left-click + confirmation.
+        if (this.relocateBaseMode) {
+            return;
+        }
+
         const startX = selectionCircle.position.x;
         const startY = selectionCircle.position.y;
         const endX = startX + selectionCircle.width;
@@ -271,6 +278,32 @@ export class BuildingManager {
                 }, null, onDestroyClicked);
             }
         } else {
+            if (checkForBuildingClicked) {
+                const clickedEmptyBaseSlot = this.getClickedRelocationSlot(mousePosition);
+                if (clickedEmptyBaseSlot) {
+                    const relocateCost = 4000;
+                    this.core.uiManager.showRelocateBasePrompt(
+                        relocateCost,
+                        () => {
+                            const currentPower = this.core.gameManager.resources.power.current;
+                            if (currentPower < relocateCost) {
+                                this.core.uiManager.addChatMessage(
+                                    "System",
+                                    "Not enough power to relocate base.",
+                                    "#ffcc66"
+                                );
+                                return;
+                            }
+                            this.relocateBaseMode = false;
+                            this.core.uiManager.hideUpgrades();
+                            this.core.networkManager.sendBuyRelocateBase(clickedEmptyBaseSlot);
+                        },
+                        () => { }
+                    );
+                    return;
+                }
+            }
+
             const minBuildingRadius = player.buildingRadius.min;
             const isWithinCoreRadius = Math.sqrt(
                 Math.pow(mousePosition.x - player.position.x, 2) +
@@ -548,6 +581,31 @@ export class BuildingManager {
 
     // Handle clicks on buildings
     handleLeftClick (mousePosition) {
+        if (this.relocateBaseMode) {
+            const clickedEmptyBaseSlot = this.getClickedRelocationSlot(mousePosition);
+            if (clickedEmptyBaseSlot) {
+                const relocateCost = 4000;
+                this.core.uiManager.showRelocateBasePrompt(
+                    relocateCost,
+                    () => {
+                        const currentPower = this.core.gameManager.resources.power.current;
+                        if (currentPower < relocateCost) {
+                            this.core.uiManager.addChatMessage(
+                                "System",
+                                "Not enough power to relocate base.",
+                                "#ffcc66"
+                            );
+                            return;
+                        }
+                        this.core.networkManager.sendBuyRelocateBase(clickedEmptyBaseSlot);
+                        this.relocateBaseMode = false;
+                    },
+                    () => { }
+                );
+            }
+            return;
+        }
+
         if (this.buildingToPlace) {
             this.placeBuilding()
             return;
@@ -555,6 +613,17 @@ export class BuildingManager {
     }
 
     handleRightClick (mousePosition) { // Called on rightClick -> contextMenu
+        if (this.relocateBaseMode) {
+            this.relocateBaseMode = false;
+            this.core.uiManager.hideRelocateBasePrompt();
+            this.core.uiManager.addChatMessage(
+                "System",
+                "Base relocation canceled.",
+                "#ffcc66"
+            );
+            return;
+        }
+
         if (this.buildingToPlace) {
             this.removeBuildingToPlace();
         } else {
@@ -566,6 +635,32 @@ export class BuildingManager {
     showCoreUpgradePanel () {
         const onUpgradeClicked = (data) => {
             const currentPower = this.core.gameManager.resources.power.current;
+
+            if (data.name === "Relocate Base") {
+                if (currentPower < data.cost) {
+                    console.error("Not enough power to build!");
+                    return;
+                }
+                this.core.uiManager.showRelocateBasePrompt(
+                    4000,
+                    () => {
+                        const latestPower = this.core.gameManager.resources.power.current;
+                        if (latestPower < 4000) {
+                            this.core.uiManager.addChatMessage(
+                                "System",
+                                "Not enough power to relocate base.",
+                                "#ffcc66"
+                            );
+                            return;
+                        }
+                        this.relocateBaseMode = false;
+                        this.core.uiManager.hideUpgrades();
+                        this.core.networkManager.sendBuyRelocateBase();
+                    },
+                    () => { }
+                );
+                return;
+            }
 
             // Check if sufficient power is available
             if (currentPower < data.cost) {
@@ -585,6 +680,65 @@ export class BuildingManager {
         }
 
         this.core.uiManager.showCoreUpgrades(onUpgradeClicked)
+    }
+
+    getClickedRelocationSlot (worldPosition) {
+        const gameManager = this.core.gameManager;
+        const occupied = [];
+        if (gameManager.player) occupied.push(gameManager.player.position);
+        gameManager.players.forEach(p => occupied.push(p.position));
+        gameManager.neutrals.forEach(n => occupied.push(n.position));
+
+        const step = 1500;
+        const halfMap = this.core.renderer.mapSize / 2;
+        const borderDistance = 500;
+        const minBound = -halfMap + borderDistance;
+        const maxBound = halfMap - borderDistance;
+        const maxAxis = Math.max(Math.abs(minBound), Math.abs(maxBound));
+        const maxRing = Math.max(1, Math.ceil(maxAxis / step));
+        const candidateCount = 1 + 4 * maxRing * (maxRing + 1);
+        const occupancyRadiusSq = 180 * 180;
+        const clickRadiusSq = 180 * 180;
+
+        for (let i = 0; i < candidateCount; i++) {
+            const cell = Renderer.getSpawnGridCell(i);
+            const x = cell.x * step;
+            const y = cell.y * step;
+
+            if (x < minBound || x > maxBound || y < minBound || y > maxBound) {
+                continue;
+            }
+
+            let isOccupied = false;
+            for (const pos of occupied) {
+                const dx = pos.x - x;
+                const dy = pos.y - y;
+                if (dx * dx + dy * dy <= occupancyRadiusSq) {
+                    isOccupied = true;
+                    break;
+                }
+            }
+            if (isOccupied) continue;
+
+            const dx = worldPosition.x - x;
+            const dy = worldPosition.y - y;
+            if (dx * dx + dy * dy <= clickRadiusSq) {
+                return { x, y };
+            }
+
+            const labelWidthHalf = 220;
+            const labelTop = y - 190;
+            const labelBottom = y - 130;
+            const isLabelClicked = worldPosition.x >= (x - labelWidthHalf) &&
+                worldPosition.x <= (x + labelWidthHalf) &&
+                worldPosition.y >= labelTop &&
+                worldPosition.y <= labelBottom;
+            if (isLabelClicked) {
+                return { x, y };
+            }
+        }
+
+        return null;
     }
 
     // Check if a building is clicked

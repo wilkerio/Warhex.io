@@ -337,6 +337,82 @@ export class Renderer {
         }
     }
 
+    renderRelocationSlots () {
+        const gameManager = this.core?.gameManager;
+        if (!gameManager) return;
+
+        const occupied = [];
+        if (gameManager.player) occupied.push(gameManager.player.position);
+        for (const p of gameManager.players) occupied.push(p.position);
+        for (const n of gameManager.neutrals) occupied.push(n.position);
+
+        const step = 1500;
+        const halfMap = this.mapSize / 2;
+        const borderDistance = 500;
+        const minBound = -halfMap + borderDistance;
+        const maxBound = halfMap - borderDistance;
+        const maxAxis = Math.max(Math.abs(minBound), Math.abs(maxBound));
+        const maxRing = Math.max(1, Math.ceil(maxAxis / step));
+        const candidateCount = 1 + 4 * maxRing * (maxRing + 1);
+        const occupancyRadiusSq = 180 * 180;
+
+        const context = this.context;
+        context.save();
+        context.lineWidth = 2;
+        context.setLineDash([14, 12]);
+        context.strokeStyle = "rgba(160, 220, 255, 0.45)";
+        context.fillStyle = "rgba(120, 200, 255, 0.08)";
+
+        for (let i = 0; i < candidateCount; i++) {
+            const cell = Renderer.getSpawnGridCell(i);
+            const x = cell.x * step;
+            const y = cell.y * step;
+
+            if (x < minBound || x > maxBound || y < minBound || y > maxBound) {
+                continue;
+            }
+
+            let isOccupied = false;
+            for (const pos of occupied) {
+                const dx = pos.x - x;
+                const dy = pos.y - y;
+                if (dx * dx + dy * dy <= occupancyRadiusSq) {
+                    isOccupied = true;
+                    break;
+                }
+            }
+            if (isOccupied) continue;
+
+            const slotX = x - this.camera.x;
+            const slotY = y - this.camera.y;
+
+            context.beginPath();
+            context.arc(slotX, slotY, 130, 0, Math.PI * 2);
+            context.fill();
+            context.stroke();
+
+            context.setLineDash([]);
+            context.beginPath();
+            context.arc(slotX, slotY, 18, 0, Math.PI * 2);
+            context.strokeStyle = "rgba(160, 220, 255, 0.7)";
+            context.stroke();
+
+            context.font = "700 28px 'Ubuntu', sans-serif";
+            context.textAlign = "center";
+            context.textBaseline = "bottom";
+            context.lineWidth = 3;
+            context.strokeStyle = "rgba(20, 32, 52, 0.95)";
+            context.fillStyle = "rgba(190, 235, 255, 0.95)";
+            context.strokeText("Empty base - relocate", slotX, slotY - 150);
+            context.fillText("Empty base - relocate", slotX, slotY - 150);
+
+            context.setLineDash([14, 12]);
+            context.strokeStyle = "rgba(160, 220, 255, 0.45)";
+        }
+
+        context.restore();
+    }
+
     updatePlayerConnections () {
         this.connectionLines = [];
         const clientPlayer = this.queues.player.find(player => player.isClient);
@@ -548,6 +624,7 @@ export class Renderer {
         this.renderBorder();
         this._renderPlayerConnections();
         this.renderBackground();
+        this.renderRelocationSlots();
         this.context.lineJoin = "round";
         this.context.lineCap = "round";
         this._renderQueues(this.context, this.camera, deltaTime);

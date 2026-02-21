@@ -219,6 +219,17 @@ export default class Message {
         return new Message(MessageTypes.BUY_REPAIR, payload);
     }
 
+    static createBuyRelocateBaseMessage (position = null) {
+        let payload = new Uint8Array(0);
+        if (position) {
+            payload = new Uint8Array(4);
+            const dataView = new DataView(payload.buffer);
+            dataView.setInt16(0, position.x);
+            dataView.setInt16(2, position.y);
+        }
+        return new Message(MessageTypes.BUY_RELOCATE_BASE, payload);
+    }
+
     static createPlayerActivityMessage() {
         const payload = new Uint8Array(0);
         return new Message(MessageTypes.CLIENT_ACTIVITY, payload);

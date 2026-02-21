@@ -30,6 +30,7 @@ export default class UIManager {
         this.inactivityTimeout = 600; // 10 minutes in seconds
         this.x1PromptElement = null;
         this.x1SendPromptElement = null;
+        this.relocatePromptElement = null;
         this.x1StatusElement = null;
         this.x1StatusInterval = null;
         
@@ -1267,6 +1268,12 @@ export default class UIManager {
                     cost: 6000,
                     unitType: null // No unit type associated
                 },
+                {
+                    name: "Relocate Base",
+                    description: "Move your whole base to an empty slot.",
+                    cost: 4000,
+                    unitType: null
+                },
             ];
 
             // Filter options based on the gameManager"s state
@@ -2482,6 +2489,108 @@ export default class UIManager {
             this.x1SendPromptElement.parentNode.removeChild(this.x1SendPromptElement);
         }
         this.x1SendPromptElement = null;
+    }
+
+    showRelocateBasePrompt(cost, onConfirm, onCancel) {
+        this.hideRelocateBasePrompt();
+
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.background = "rgba(0, 0, 0, 0.45)";
+        overlay.style.zIndex = "19999";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.pointerEvents = "all";
+
+        const card = document.createElement("div");
+        card.style.width = "min(500px, 90vw)";
+        card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.96), rgba(16,30,58,0.96))";
+        card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
+        card.style.borderRadius = "14px";
+        card.style.padding = "22px 24px";
+        card.style.boxShadow = "0 16px 45px rgba(0,0,0,0.55), 0 0 22px rgba(96,193,255,0.23)";
+        card.style.color = "#eaf6ff";
+        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "RELOCATE BASE";
+        title.style.fontSize = "22px";
+        title.style.fontWeight = "900";
+        title.style.letterSpacing = "1px";
+        title.style.color = "#9fe8ff";
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = `Confirm relocation for ${cost} power?`;
+        subtitle.style.marginTop = "10px";
+        subtitle.style.fontSize = "18px";
+        subtitle.style.fontWeight = "700";
+        subtitle.style.color = "#ffffff";
+
+        const description = document.createElement("div");
+        description.textContent = "Your base and owned entities will move to the selected empty slot.";
+        description.style.marginTop = "8px";
+        description.style.fontSize = "14px";
+        description.style.opacity = "0.92";
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "20px";
+        actions.style.display = "flex";
+        actions.style.gap = "12px";
+        actions.style.justifyContent = "flex-end";
+
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.textContent = "Cancel";
+        cancelButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+        cancelButton.style.background = "rgba(120, 36, 36, 0.25)";
+        cancelButton.style.color = "#ffd6d6";
+        cancelButton.style.fontSize = "14px";
+        cancelButton.style.fontWeight = "700";
+        cancelButton.style.padding = "10px 16px";
+        cancelButton.style.borderRadius = "10px";
+        cancelButton.style.cursor = "pointer";
+
+        const confirmButton = document.createElement("button");
+        confirmButton.type = "button";
+        confirmButton.textContent = "Relocate";
+        confirmButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+        confirmButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+        confirmButton.style.color = "#e8ffef";
+        confirmButton.style.fontSize = "14px";
+        confirmButton.style.fontWeight = "800";
+        confirmButton.style.padding = "10px 18px";
+        confirmButton.style.borderRadius = "10px";
+        confirmButton.style.cursor = "pointer";
+
+        cancelButton.addEventListener("click", () => {
+            this.hideRelocateBasePrompt();
+            if (typeof onCancel === "function") onCancel();
+        });
+
+        confirmButton.addEventListener("click", () => {
+            this.hideRelocateBasePrompt();
+            if (typeof onConfirm === "function") onConfirm();
+        });
+
+        actions.appendChild(cancelButton);
+        actions.appendChild(confirmButton);
+        card.appendChild(title);
+        card.appendChild(subtitle);
+        card.appendChild(description);
+        card.appendChild(actions);
+        overlay.appendChild(card);
+
+        document.body.appendChild(overlay);
+        this.relocatePromptElement = overlay;
+    }
+
+    hideRelocateBasePrompt() {
+        if (this.relocatePromptElement && this.relocatePromptElement.parentNode) {
+            this.relocatePromptElement.parentNode.removeChild(this.relocatePromptElement);
+        }
+        this.relocatePromptElement = null;
     }
 
     showX1DuelStatus(opponentName, prepSeconds = 0) {
