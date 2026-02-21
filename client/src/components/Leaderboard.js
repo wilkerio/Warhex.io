@@ -4,6 +4,7 @@ export default class Leaderboard {
     constructor(core) {
         this.core = core;
         this.players = [];
+        this.currentPlayerScore = 0;
         this.container = document.getElementById("leaderboard-container");
         if (!this.container) {
             console.error("Leaderboard container not found!");
@@ -39,6 +40,7 @@ export default class Leaderboard {
 
     clear() {
         this.players = [];
+        this.currentPlayerScore = 0;
 
         this.eventListeners.forEach(({
             element,
@@ -93,12 +95,17 @@ export default class Leaderboard {
 
     updateEntries(changes) {
         let needsUpdate = false;
+        const currentPlayerId = this.core.gameManager.getCurrentPlayerId();
 
         // Update or add players based on changes
         changes.forEach(change => {
             const existingPlayer = this.players.find(player => player.id === change.playerId);
             const newScoreValue = this.parseScore(change.score);
             const formattedScore = this.formatScoreString(change.score);
+
+            if (change.playerId === currentPlayerId) {
+                this.currentPlayerScore = newScoreValue;
+            }
 
             if (!existingPlayer || existingPlayer.parsedScore !== newScoreValue) {
                 needsUpdate = true;
@@ -125,6 +132,10 @@ export default class Leaderboard {
             this.players = this.players.slice(0, 10); // Keep only the top 10 players
             this.renderEntries();
         }
+    }
+
+    getCurrentPlayerScore() {
+        return this.currentPlayerScore || 0;
     }
 
     renderEntries() {

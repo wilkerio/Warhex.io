@@ -22,6 +22,7 @@ import SkinCache from "./SkinCache.js";
 import Tank from "../entities/units/Tank.js";
 import SiegeTank from "../entities/units/SiegeTank.js";
 import Soldier from "../entities/units/Soldier.js";
+import ExitPromptManager from "./managers/ExitPromptManager.js";
 
 export default class Core {
     constructor (loadBalancerAddress, requiredServerVersion) {
@@ -34,6 +35,7 @@ export default class Core {
         this.initializeToolbar();
         this.initLeaderboard();
         this.initMinimap();
+        this.exitPromptManager = new ExitPromptManager(this);
         this.networkManager.connect();
         this.launchGame();
         this.initMenuBackground();
