@@ -53,6 +53,10 @@ type Player struct {
 	HasTankCannon      bool
 	HasTankCloak       bool
 	GroupUnits         bool
+	InDuel             bool
+	DuelOpponentID     ID
+	DuelArena          DuelArena
+	DuelPrepEndsAt     time.Time
 
 	// Script prevention
 	LastBuildingAction  time.Time // Timestamp of the last building upgraded/placed
@@ -165,6 +169,8 @@ func (p *Player) GetLastActivity() time.Time {
 }
 
 func (p *Player) HasProtection() bool {
+	p.RLock()
+	defer p.RUnlock()
 	return p.HasSpawnProtection
 }
 

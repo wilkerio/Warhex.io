@@ -291,6 +291,52 @@ export class Renderer {
         context.restore();
     }
 
+    renderDuelArena () {
+        const { context } = this;
+        const gameManager = this.core?.gameManager;
+        if (!gameManager) return;
+
+        const arenas = Array.isArray(gameManager.globalDuelArenas) ? [...gameManager.globalDuelArenas] : [];
+        // Fallback for local player arena in case global update is delayed.
+        if (arenas.length === 0 && gameManager.duelArena) {
+            arenas.push(gameManager.duelArena);
+        }
+        if (arenas.length === 0) return;
+
+        for (const arena of arenas) {
+            // Keep the arena fixed in world space using the same camera conversion as entities.
+            const x = arena.minX - this.camera.x;
+            const y = arena.minY - this.camera.y;
+            const width = arena.maxX - arena.minX;
+            const height = arena.maxY - arena.minY;
+
+            context.save();
+            context.fillStyle = "rgba(180, 185, 210, 0.22)";
+            context.fillRect(x, y, width, height);
+
+            context.setLineDash([24, 16]);
+            context.lineWidth = 4;
+            context.strokeStyle = "rgba(210, 215, 240, 0.85)";
+            context.strokeRect(x, y, width, height);
+
+            context.beginPath();
+            context.setLineDash([8, 8]);
+            context.lineWidth = 2;
+            context.strokeStyle = "rgba(235, 240, 255, 0.7)";
+            if (width >= height) {
+                const midY = y + height / 2;
+                context.moveTo(x, midY);
+                context.lineTo(x + width, midY);
+            } else {
+                const midX = x + width / 2;
+                context.moveTo(midX, y);
+                context.lineTo(midX, y + height);
+            }
+            context.stroke();
+            context.restore();
+        }
+    }
+
     updatePlayerConnections () {
         this.connectionLines = [];
         const clientPlayer = this.queues.player.find(player => player.isClient);
@@ -505,6 +551,7 @@ export class Renderer {
         this.context.lineJoin = "round";
         this.context.lineCap = "round";
         this._renderQueues(this.context, this.camera, deltaTime);
+        this.renderDuelArena();
 
         this.context.restore();
 

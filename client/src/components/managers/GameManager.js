@@ -46,6 +46,10 @@ class GameManager {
             latency: "?",
             bandwidthReceived: "?",
         }
+
+        this.duelArena = null;
+        this.duelOpponentID = null;
+        this.globalDuelArenas = [];
     }
 
     updateDynamicMapSize () {
@@ -78,6 +82,10 @@ class GameManager {
             current: 0,
             max: 4
         }
+
+        this.duelArena = null;
+        this.duelOpponentID = null;
+        this.globalDuelArenas = [];
 
         this.updateDynamicMapSize();
         this.core.miniMap.update();
@@ -318,6 +326,33 @@ class GameManager {
 
     applyUnitUpgrade (unitType, unitVariant) {
         this.unitUpgrades[unitType] = unitVariant;
+    }
+
+    setDuelArena(arena, opponentID = null) {
+        this.duelArena = arena || null;
+        this.duelOpponentID = opponentID ?? null;
+    }
+
+    clearDuelArena() {
+        this.duelArena = null;
+        this.duelOpponentID = null;
+    }
+
+    upsertGlobalDuelArena(playerAID, playerBID, arena) {
+        if (!arena) return;
+        const a = Math.min(playerAID, playerBID);
+        const b = Math.max(playerAID, playerBID);
+        const existingIndex = this.globalDuelArenas.findIndex(item => item.playerAID === a && item.playerBID === b);
+        const next = { playerAID: a, playerBID: b, ...arena };
+        if (existingIndex >= 0) {
+            this.globalDuelArenas[existingIndex] = next;
+            return;
+        }
+        this.globalDuelArenas.push(next);
+    }
+
+    removeGlobalDuelArenasByPlayer(playerID) {
+        this.globalDuelArenas = this.globalDuelArenas.filter(item => item.playerAID !== playerID && item.playerBID !== playerID);
     }
 }
 

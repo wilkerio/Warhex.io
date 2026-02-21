@@ -132,6 +132,111 @@ func broadcastChatMessage(playerID game.ID, text []byte) {
 	broadcastToAll(EncodeMessage(message))
 }
 
+func sendX1ChallengeReceived(target *game.Player, challenger *game.Player) {
+	message := Message{
+		Type: MessageTypeX1ChallengeReceived,
+	}
+
+	buffer := new(bytes.Buffer)
+	buffer.WriteByte(byte(challenger.ID))
+	buffer.Write(challenger.Name[:])
+
+	message.Payload = buffer.Bytes()
+	sendToClient(target.Conn, EncodeMessage(message), nil)
+}
+
+func sendX1ChallengeResult(target *game.Player, status byte, other *game.Player) {
+	message := Message{
+		Type: MessageTypeX1ChallengeResult,
+	}
+
+	buffer := new(bytes.Buffer)
+	buffer.WriteByte(status)
+
+	if other != nil {
+		buffer.WriteByte(byte(other.ID))
+		buffer.Write(other.Name[:])
+	} else {
+		buffer.WriteByte(byte(0))
+		var emptyName [12]byte
+		buffer.Write(emptyName[:])
+	}
+
+	// For accepted duels, append arena bounds so clients can render the protected rectangle.
+	if status == 1 && target != nil {
+		target.RLock()
+		arena := target.DuelArena
+		target.RUnlock()
+		binary.Write(buffer, binary.BigEndian, arena.MinX)
+		binary.Write(buffer, binary.BigEndian, arena.MinY)
+		binary.Write(buffer, binary.BigEndian, arena.MaxX)
+		binary.Write(buffer, binary.BigEndian, arena.MaxY)
+		buffer.WriteByte(game.DuelPreparationSeconds())
+	}
+
+	message.Payload = buffer.Bytes()
+	sendToClient(target.Conn, EncodeMessage(message), nil)
+}
+
+func broadcastX1DuelArenaUpdate(playerAID game.ID, playerBID game.ID, arena game.DuelArena) {
+	message := buildX1DuelArenaMessage(playerAID, playerBID, arena)
+	broadcastToAll(EncodeMessage(message))
+}
+
+func sendX1DuelArenaUpdateToClient(conn *websocket.Conn, playerAID game.ID, playerBID game.ID, arena game.DuelArena) {
+	message := buildX1DuelArenaMessage(playerAID, playerBID, arena)
+	sendToClient(conn, EncodeMessage(message), nil)
+}
+
+func buildX1DuelArenaMessage(playerAID game.ID, playerBID game.ID, arena game.DuelArena) Message {
+	message := Message{
+		Type: MessageTypeX1DuelArenaUpdate,
+	}
+
+	buffer := new(bytes.Buffer)
+	buffer.WriteByte(byte(playerAID))
+	buffer.WriteByte(byte(playerBID))
+	binary.Write(buffer, binary.BigEndian, arena.MinX)
+	binary.Write(buffer, binary.BigEndian, arena.MinY)
+	binary.Write(buffer, binary.BigEndian, arena.MaxX)
+	binary.Write(buffer, binary.BigEndian, arena.MaxY)
+
+	message.Payload = buffer.Bytes()
+	return message
+}
+
+func sendActiveDuelArenas(player *game.Player) {
+	if player == nil || player.Conn == nil {
+		return
+	}
+
+	game.State.RLock()
+	for _, p := range game.State.Players {
+		if p == nil || p.IsMarkedForRemoval() {
+			continue
+		}
+
+		p.RLock()
+		inDuel := p.InDuel
+		opponentID := p.DuelOpponentID
+		arena := p.DuelArena
+		pid := p.ID
+		p.RUnlock()
+
+		if !inDuel || pid >= opponentID {
+			continue
+		}
+
+		opponent := game.State.Players[opponentID]
+		if opponent == nil || opponent.IsMarkedForRemoval() {
+			continue
+		}
+
+		sendX1DuelArenaUpdateToClient(player.Conn, pid, opponentID, arena)
+	}
+	game.State.RUnlock()
+}
+
 func broadcastPlayerJoined(player *game.Player) {
 	message := Message{
 		Type: MessageTypePlayerJoined,

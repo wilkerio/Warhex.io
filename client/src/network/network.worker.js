@@ -165,6 +165,9 @@ function decodePayload (messageType, payload) {
         [MessageTypes.SKIN_DATA]: decodeSkinData,
         [MessageTypes.SERVER_VERSION]: decodeServerVersion,
         [MessageTypes.REBOOT_ALERT]: decodeRebootAlert,
+        [MessageTypes.X1_CHALLENGE_RECEIVED]: decodeX1ChallengeReceived,
+        [MessageTypes.X1_CHALLENGE_RESULT]: decodeX1ChallengeResult,
+        [MessageTypes.X1_DUEL_ARENA_UPDATE]: decodeX1DuelArenaUpdate,
         [MessageTypes.ERROR]: decodeError,
     };
 
@@ -339,6 +342,66 @@ function decodeRebootAlert (payload) {
 function decodeError (payload) {
     //! Skip payload for now
     return {};
+}
+
+function decodeX1ChallengeReceived (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const challengerID = dataView.getUint8(offset++);
+    const nameResult = readString(dataView, offset, 12);
+    return {
+        challengerID,
+        challengerName: nameResult.str
+    };
+}
+
+function decodeX1ChallengeResult (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const status = dataView.getUint8(offset++);
+    const playerID = dataView.getUint8(offset++);
+    const nameResult = readString(dataView, offset, 12);
+    offset = nameResult.offset;
+
+    let arena = null;
+    let prepSeconds = 0;
+    if (dataView.byteLength >= offset + 16) {
+        arena = {
+            minX: dataView.getFloat32(offset, false),
+            minY: dataView.getFloat32(offset + 4, false),
+            maxX: dataView.getFloat32(offset + 8, false),
+            maxY: dataView.getFloat32(offset + 12, false)
+        };
+        offset += 16;
+    }
+
+    if (dataView.byteLength >= offset + 1) {
+        prepSeconds = dataView.getUint8(offset);
+    }
+
+    return {
+        status,
+        playerID,
+        playerName: nameResult.str,
+        arena,
+        prepSeconds
+    };
+}
+
+function decodeX1DuelArenaUpdate (payload) {
+    const dataView = new DataView(payload);
+    const playerAID = dataView.getUint8(0);
+    const playerBID = dataView.getUint8(1);
+    return {
+        playerAID,
+        playerBID,
+        arena: {
+            minX: dataView.getFloat32(2, false),
+            minY: dataView.getFloat32(6, false),
+            maxX: dataView.getFloat32(10, false),
+            maxY: dataView.getFloat32(14, false)
+        }
+    };
 }
 
 function decodeChatMessage (payload) {

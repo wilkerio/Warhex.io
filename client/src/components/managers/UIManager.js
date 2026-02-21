@@ -28,6 +28,10 @@ export default class UIManager {
         this.upgradePanelOpen = false;
         this.inactivityTimerInterval = null;
         this.inactivityTimeout = 600; // 10 minutes in seconds
+        this.x1PromptElement = null;
+        this.x1SendPromptElement = null;
+        this.x1StatusElement = null;
+        this.x1StatusInterval = null;
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -2272,6 +2276,266 @@ export default class UIManager {
         if (!this.DOM.chat.suggestions) return;
         this.DOM.chat.suggestions.style.display = "none";
         this.DOM.chat.suggestions.innerHTML = "";
+    }
+
+    showX1ChallengePrompt(challengerName, onAccept, onDecline) {
+        this.hideX1SendPrompt();
+        this.hideX1ChallengePrompt();
+
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.background = "rgba(0, 0, 0, 0.55)";
+        overlay.style.zIndex = "20000";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.pointerEvents = "all";
+
+        const card = document.createElement("div");
+        card.style.width = "min(520px, 92vw)";
+        card.style.background = "linear-gradient(145deg, rgba(8,18,40,0.96), rgba(20,40,80,0.96))";
+        card.style.border = "2px solid rgba(100, 190, 255, 0.65)";
+        card.style.borderRadius = "14px";
+        card.style.padding = "22px 24px";
+        card.style.boxShadow = "0 18px 55px rgba(0,0,0,0.55), 0 0 25px rgba(96,193,255,0.25)";
+        card.style.color = "#eaf6ff";
+        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "1v1 CHALLENGE";
+        title.style.fontSize = "22px";
+        title.style.fontWeight = "900";
+        title.style.letterSpacing = "1.1px";
+        title.style.color = "#9fe8ff";
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = `${challengerName} has challenged you to a 1v1.`;
+        subtitle.style.marginTop = "10px";
+        subtitle.style.fontSize = "18px";
+        subtitle.style.fontWeight = "700";
+        subtitle.style.color = "#ffffff";
+
+        const description = document.createElement("div");
+        description.textContent = "Do you want to accept this duel now?";
+        description.style.marginTop = "8px";
+        description.style.fontSize = "14px";
+        description.style.opacity = "0.92";
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "20px";
+        actions.style.display = "flex";
+        actions.style.gap = "12px";
+        actions.style.justifyContent = "flex-end";
+
+        const declineButton = document.createElement("button");
+        declineButton.type = "button";
+        declineButton.textContent = "Decline";
+        declineButton.style.border = "1px solid rgba(255, 120, 120, 0.65)";
+        declineButton.style.background = "rgba(150, 30, 30, 0.25)";
+        declineButton.style.color = "#ffd6d6";
+        declineButton.style.fontSize = "14px";
+        declineButton.style.fontWeight = "700";
+        declineButton.style.padding = "10px 16px";
+        declineButton.style.borderRadius = "10px";
+        declineButton.style.cursor = "pointer";
+
+        const acceptButton = document.createElement("button");
+        acceptButton.type = "button";
+        acceptButton.textContent = "Accept";
+        acceptButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+        acceptButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+        acceptButton.style.color = "#e8ffef";
+        acceptButton.style.fontSize = "14px";
+        acceptButton.style.fontWeight = "800";
+        acceptButton.style.padding = "10px 18px";
+        acceptButton.style.borderRadius = "10px";
+        acceptButton.style.cursor = "pointer";
+
+        declineButton.addEventListener("click", () => {
+            this.hideX1ChallengePrompt();
+            if (typeof onDecline === "function") onDecline();
+        });
+
+        acceptButton.addEventListener("click", () => {
+            this.hideX1ChallengePrompt();
+            if (typeof onAccept === "function") onAccept();
+        });
+
+        actions.appendChild(declineButton);
+        actions.appendChild(acceptButton);
+        card.appendChild(title);
+        card.appendChild(subtitle);
+        card.appendChild(description);
+        card.appendChild(actions);
+        overlay.appendChild(card);
+
+        document.body.appendChild(overlay);
+        this.x1PromptElement = overlay;
+    }
+
+    hideX1ChallengePrompt() {
+        if (this.x1PromptElement && this.x1PromptElement.parentNode) {
+            this.x1PromptElement.parentNode.removeChild(this.x1PromptElement);
+        }
+        this.x1PromptElement = null;
+    }
+
+    showX1SendPrompt(targetName, onConfirm, onCancel) {
+        this.hideX1ChallengePrompt();
+        this.hideX1SendPrompt();
+
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.background = "rgba(0, 0, 0, 0.45)";
+        overlay.style.zIndex = "19999";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.pointerEvents = "all";
+
+        const card = document.createElement("div");
+        card.style.width = "min(500px, 90vw)";
+        card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.96), rgba(16,30,58,0.96))";
+        card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
+        card.style.borderRadius = "14px";
+        card.style.padding = "22px 24px";
+        card.style.boxShadow = "0 16px 45px rgba(0,0,0,0.55), 0 0 22px rgba(96,193,255,0.23)";
+        card.style.color = "#eaf6ff";
+        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "CALL TO X1";
+        title.style.fontSize = "22px";
+        title.style.fontWeight = "900";
+        title.style.letterSpacing = "1px";
+        title.style.color = "#9fe8ff";
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = `Challenge ${targetName} to a protected 1v1?`;
+        subtitle.style.marginTop = "10px";
+        subtitle.style.fontSize = "18px";
+        subtitle.style.fontWeight = "700";
+        subtitle.style.color = "#ffffff";
+
+        const description = document.createElement("div");
+        description.textContent = "If accepted, a protected arena appears for both players.";
+        description.style.marginTop = "8px";
+        description.style.fontSize = "14px";
+        description.style.opacity = "0.92";
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "20px";
+        actions.style.display = "flex";
+        actions.style.gap = "12px";
+        actions.style.justifyContent = "flex-end";
+
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.textContent = "Cancel";
+        cancelButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+        cancelButton.style.background = "rgba(120, 36, 36, 0.25)";
+        cancelButton.style.color = "#ffd6d6";
+        cancelButton.style.fontSize = "14px";
+        cancelButton.style.fontWeight = "700";
+        cancelButton.style.padding = "10px 16px";
+        cancelButton.style.borderRadius = "10px";
+        cancelButton.style.cursor = "pointer";
+
+        const confirmButton = document.createElement("button");
+        confirmButton.type = "button";
+        confirmButton.textContent = "Call X1";
+        confirmButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+        confirmButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+        confirmButton.style.color = "#e8ffef";
+        confirmButton.style.fontSize = "14px";
+        confirmButton.style.fontWeight = "800";
+        confirmButton.style.padding = "10px 18px";
+        confirmButton.style.borderRadius = "10px";
+        confirmButton.style.cursor = "pointer";
+
+        cancelButton.addEventListener("click", () => {
+            this.hideX1SendPrompt();
+            if (typeof onCancel === "function") onCancel();
+        });
+
+        confirmButton.addEventListener("click", () => {
+            this.hideX1SendPrompt();
+            if (typeof onConfirm === "function") onConfirm();
+        });
+
+        actions.appendChild(cancelButton);
+        actions.appendChild(confirmButton);
+        card.appendChild(title);
+        card.appendChild(subtitle);
+        card.appendChild(description);
+        card.appendChild(actions);
+        overlay.appendChild(card);
+
+        document.body.appendChild(overlay);
+        this.x1SendPromptElement = overlay;
+    }
+
+    hideX1SendPrompt() {
+        if (this.x1SendPromptElement && this.x1SendPromptElement.parentNode) {
+            this.x1SendPromptElement.parentNode.removeChild(this.x1SendPromptElement);
+        }
+        this.x1SendPromptElement = null;
+    }
+
+    showX1DuelStatus(opponentName, prepSeconds = 0) {
+        this.hideX1DuelStatus();
+
+        const badge = document.createElement("div");
+        badge.style.position = "fixed";
+        badge.style.left = "50%";
+        badge.style.top = "22px";
+        badge.style.transform = "translateX(-50%)";
+        badge.style.zIndex = "20010";
+        badge.style.padding = "12px 16px";
+        badge.style.borderRadius = "12px";
+        badge.style.border = "2px solid rgba(102, 255, 189, 0.75)";
+        badge.style.background = "linear-gradient(135deg, rgba(16, 35, 27, 0.92), rgba(12, 54, 39, 0.92))";
+        badge.style.color = "#e8ffef";
+        badge.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        badge.style.boxShadow = "0 8px 25px rgba(0,0,0,0.45), 0 0 18px rgba(80,255,167,0.2)";
+        badge.style.pointerEvents = "none";
+        badge.style.textAlign = "center";
+
+        const title = document.createElement("div");
+        title.style.fontWeight = "900";
+        title.style.fontSize = "16px";
+        title.style.letterSpacing = "0.4px";
+        title.textContent = `${opponentName} accepted your X1`;
+
+        const subtitle = document.createElement("div");
+        subtitle.style.marginTop = "4px";
+        subtitle.style.fontSize = "13px";
+        subtitle.style.color = "#c7ffe0";
+
+        const updateText = () => {
+            subtitle.textContent = "Protected duel started. Fight now.";
+        };
+
+        updateText();
+        badge.appendChild(title);
+        badge.appendChild(subtitle);
+        document.body.appendChild(badge);
+        this.x1StatusElement = badge;
+
+        setTimeout(() => this.hideX1DuelStatus(), 3500);
+    }
+
+    hideX1DuelStatus() {
+        if (this.x1StatusInterval) {
+            clearInterval(this.x1StatusInterval);
+            this.x1StatusInterval = null;
+        }
+        if (this.x1StatusElement && this.x1StatusElement.parentNode) {
+            this.x1StatusElement.parentNode.removeChild(this.x1StatusElement);
+        }
+        this.x1StatusElement = null;
     }
 
     showInactivityWarning() {

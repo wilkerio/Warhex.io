@@ -33,6 +33,7 @@ export class BuildingManager {
         this.blockBuildingSelection = false;
 
         this.selectionCircleActive = false;
+        this.lastX1ChallengeSentAt = 0;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -279,6 +280,86 @@ export class BuildingManager {
             if (isWithinCoreRadius) {
                 this.showCoreUpgradePanel();
                 return;
+            }
+
+            // Click on an enemy core to send a 1v1 challenge.
+            if (checkForBuildingClicked) {
+                const clickX = worldStartX + selectionCircle.width / 2;
+                const clickY = worldStartY + selectionCircle.height / 2;
+                const enemy = this.core.gameManager.players.find(p => {
+                    const dx = clickX - p.position.x;
+                    const dy = clickY - p.position.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    return distance <= p.buildingRadius.min;
+                });
+
+                if (enemy) {
+                    const localPlayer = this.core.gameManager.player;
+                    const localPlayerID = localPlayer?.id;
+                    if (localPlayer?.hasSpawnProtection) {
+                        this.core.uiManager.addChatMessage(
+                            "System",
+                            "Leave your base protection area before sending an X1 challenge.",
+                            "#ffcc66"
+                        );
+                        return;
+                    }
+
+                    const enemyInProtectedX1 = (this.core.gameManager.globalDuelArenas || [])
+                        .some(arena => {
+                            const enemyInArena = arena.playerAID === enemy.id || arena.playerBID === enemy.id;
+                            const includesLocalPlayer = localPlayerID && (arena.playerAID === localPlayerID || arena.playerBID === localPlayerID);
+                            return enemyInArena && !includesLocalPlayer;
+                        });
+                    if (enemyInProtectedX1) {
+                        this.core.uiManager.addChatMessage(
+                            "System",
+                            "This player is already in a protected X1 duel.",
+                            "#ffcc66"
+                        );
+                        return;
+                    }
+
+                    if (this.core.gameManager.duelArena) {
+                        if (this.core.gameManager.duelOpponentID === enemy.id) {
+                            this.core.uiManager.addChatMessage(
+                                "System",
+                                "You are already in a protected X1 with this player.",
+                                "#ffcc66"
+                            );
+                            return;
+                        }
+                        this.core.uiManager.addChatMessage(
+                            "System",
+                            "You are already in a protected X1 duel.",
+                            "#ffcc66"
+                        );
+                        return;
+                    }
+
+                    const dx = enemy.position.x - localPlayer.position.x;
+                    const dy = enemy.position.y - localPlayer.position.y;
+                    const isLeftOrRight = Math.abs(dx) >= Math.abs(dy);
+
+                    if (!isLeftOrRight) {
+                        this.core.uiManager.addChatMessage(
+                            "System",
+                            "You can challenge only players on your left or right.",
+                            "#ffcc66"
+                        );
+                        return;
+                    }
+
+                    const now = Date.now();
+                    if (now - this.lastX1ChallengeSentAt < 2000) {
+                        return;
+                    }
+                    this.core.uiManager.showX1SendPrompt(enemy.name || "Player", () => {
+                        this.lastX1ChallengeSentAt = Date.now();
+                        this.core.networkManager.sendX1Challenge(enemy.id);
+                    });
+                    return;
+                }
             }
         }
     }

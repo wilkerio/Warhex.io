@@ -61,6 +61,10 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleClientActivity(conn, payload)
 	case MessageTypeToggleGroupUnits:
 		handleToggleGroupUnitsMessage(conn, payload)
+	case MessageTypeClientSendX1Challenge:
+		handleClientSendX1Challenge(conn, payload)
+	case MessageTypeClientX1ChallengeReply:
+		handleClientX1ChallengeReply(conn, payload)
 
 	default:
 		log.Printf("Received unsupported message type: %d", messageType)
@@ -176,6 +180,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	sendUnitsRotations(player)
 	collectAndSendTrapperBullets(player)
 	sendInitialPlayerData(player)
+	sendActiveDuelArenas(player)
 	broadcastPlayerJoined(player)
 
 	changes, changed := game.State.Leaderboard.Update(game.State.Players)
@@ -208,6 +213,7 @@ func handleClientRequestResync(conn *websocket.Conn) {
 	sendUnitsRotations(player)
 	collectAndSendTrapperBullets(player)
 	sendInitialLeaderboardUpdate(player)
+	sendActiveDuelArenas(player)
 }
 
 func handleClientRequestSkinData(conn *websocket.Conn) {
@@ -753,6 +759,8 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 	targetPosition := getPositionIntFromPayload(payload[offset:])
 	const mapEdgeSafetyMargin int16 = 120
 	targetPosition = game.ClampPositionIntToMap(targetPosition, mapEdgeSafetyMargin)
+	targetPositionFloat := clampTargetToDuelArena(player, game.IntToFloat(targetPosition))
+	targetPosition = game.FloatToInt(targetPositionFloat)
 	offset += 4
 
 	unitIDs := payload[offset:]
@@ -841,14 +849,13 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 
 	if player.GroupUnits || isClickOnBase || isClickOnBush {
 		// Target is inside the base radius or on a bush, group all units at the exact target position.
-		floatTargetPosition := game.IntToFloat(targetPosition)
 		for _, unit := range unitsToUpdate {
-			unit.SetTargetPosition(floatTargetPosition)
+			unit.SetTargetPosition(targetPositionFloat)
 		}
 	} else {
 		// Target is outside the base radius, use formation logic.
 		if validUnitCount == 1 {
-			unitsToUpdate[0].SetTargetPosition(game.IntToFloat(targetPosition))
+			unitsToUpdate[0].SetTargetPosition(targetPositionFloat)
 		} else {
 			// Set the spacing between units
 			const spacing = 50.0 // Space between units
@@ -886,8 +893,9 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 					targetY += offsetY
 
 					// Set the target position for the unit
-					clampedTarget := game.ClampPositionFloatToMap(game.PositionFloat{X: targetX, Y: targetY}, float32(mapEdgeSafetyMargin))
-					unitsToUpdate[totalUnits].SetTargetPosition(clampedTarget)
+						clampedTarget := game.ClampPositionFloatToMap(game.PositionFloat{X: targetX, Y: targetY}, float32(mapEdgeSafetyMargin))
+						clampedTarget = clampTargetToDuelArena(player, clampedTarget)
+						unitsToUpdate[totalUnits].SetTargetPosition(clampedTarget)
 
 					// Get the current position of the unit
 					currentPosition := unitsToUpdate[totalUnits].Position
@@ -906,7 +914,7 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 				radius += spacing // Increase the radius for the next layer
 			}
 			// Set the nearest unit's target position to the exact targetPosition if it’s not already set
-			unitsToUpdate[nearestUnitIndex].SetTargetPosition(game.IntToFloat(targetPosition))
+			unitsToUpdate[nearestUnitIndex].SetTargetPosition(targetPositionFloat)
 		}
 	}
 	BroadcastUnitsRotationUpdate(player.ID, unitsToUpdate)
@@ -1141,6 +1149,8 @@ type PlayerMessageState struct {
 var (
 	messageState = make(map[game.ID]*PlayerMessageState)
 	messageMx    sync.Mutex
+	x1ChallengeRequests = make(map[game.ID]game.ID) // target -> challenger
+	x1ChallengeMx       sync.Mutex
 )
 
 func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
@@ -1234,11 +1244,206 @@ func handleToggleGroupUnitsMessage(conn *websocket.Conn, payload []byte) {
 	player.SetGroupUnits(isGrouped)
 }
 
+const (
+	x1ResultSent        byte = 0
+	x1ResultAccepted    byte = 1
+	x1ResultDeclined    byte = 2
+	x1ResultInvalidSide byte = 3
+	x1ResultUnavailable byte = 4
+	x1ResultNoPending   byte = 5
+	x1ResultLeaveBase   byte = 6
+)
+
+func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
+	dx := float64(target.Base.Position.X - challenger.Base.Position.X)
+	dy := float64(target.Base.Position.Y - challenger.Base.Position.Y)
+	return math.Abs(dx) >= math.Abs(dy)
+}
+
+func hasPendingX1ForPlayerUnsafe(playerID game.ID) bool {
+	for targetID, challengerID := range x1ChallengeRequests {
+		if targetID == playerID || challengerID == playerID {
+			return true
+		}
+	}
+	return false
+}
+
+func isInProtectedX1(player *game.Player) bool {
+	if player == nil {
+		return false
+	}
+	player.RLock()
+	inDuel := player.InDuel
+	player.RUnlock()
+	return inDuel
+}
+
+func clampTargetToDuelArena(player *game.Player, target game.PositionFloat) game.PositionFloat {
+	if player == nil {
+		return target
+	}
+
+	player.RLock()
+	inDuel := player.InDuel
+	arena := player.DuelArena
+	player.RUnlock()
+
+	if !inDuel {
+		return target
+	}
+
+	const edgePadding float32 = 18
+	minX := arena.MinX + edgePadding
+	maxX := arena.MaxX - edgePadding
+	minY := arena.MinY + edgePadding
+	maxY := arena.MaxY - edgePadding
+
+	if minX > maxX || minY > maxY {
+		return target
+	}
+
+	if target.X < minX {
+		target.X = minX
+	} else if target.X > maxX {
+		target.X = maxX
+	}
+
+	if target.Y < minY {
+		target.Y = minY
+	} else if target.Y > maxY {
+		target.Y = maxY
+	}
+
+	return target
+}
+
+func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 1 {
+		return
+	}
+
+	challenger, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		return
+	}
+	challenger.SetLastActivity()
+
+	targetID := game.ID(payload[0])
+	if targetID == challenger.ID {
+		sendX1ChallengeResult(challenger, x1ResultUnavailable, challenger)
+		return
+	}
+
+	game.State.RLock()
+	target, targetExists := game.State.Players[targetID]
+	game.State.RUnlock()
+
+	if !targetExists || target == nil || target.IsMarkedForRemoval() {
+		sendX1ChallengeResult(challenger, x1ResultUnavailable, nil)
+		return
+	}
+	if challenger.HasProtection() {
+		sendX1ChallengeResult(challenger, x1ResultLeaveBase, target)
+		return
+	}
+	if target.HasProtection() {
+		sendX1ChallengeResult(challenger, x1ResultUnavailable, target)
+		return
+	}
+	if isInProtectedX1(challenger) || isInProtectedX1(target) {
+		sendX1ChallengeResult(challenger, x1ResultUnavailable, target)
+		return
+	}
+
+	if !isLeftOrRightNeighbor(challenger, target) {
+		sendX1ChallengeResult(challenger, x1ResultInvalidSide, target)
+		return
+	}
+
+	x1ChallengeMx.Lock()
+	if hasPendingX1ForPlayerUnsafe(challenger.ID) || hasPendingX1ForPlayerUnsafe(target.ID) {
+		x1ChallengeMx.Unlock()
+		sendX1ChallengeResult(challenger, x1ResultUnavailable, target)
+		return
+	}
+	x1ChallengeRequests[target.ID] = challenger.ID
+	x1ChallengeMx.Unlock()
+
+	sendX1ChallengeReceived(target, challenger)
+	sendX1ChallengeResult(challenger, x1ResultSent, target)
+}
+
+func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 2 {
+		return
+	}
+
+	targetPlayer, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		return
+	}
+	targetPlayer.SetLastActivity()
+
+	challengerID := game.ID(payload[0])
+	accepted := payload[1] == 1
+
+	x1ChallengeMx.Lock()
+	expectedChallengerID, exists := x1ChallengeRequests[targetPlayer.ID]
+	if !exists || expectedChallengerID != challengerID {
+		x1ChallengeMx.Unlock()
+		sendX1ChallengeResult(targetPlayer, x1ResultNoPending, nil)
+		return
+	}
+	delete(x1ChallengeRequests, targetPlayer.ID)
+	x1ChallengeMx.Unlock()
+
+	game.State.RLock()
+	challenger, challengerExists := game.State.Players[challengerID]
+	game.State.RUnlock()
+
+	if !challengerExists || challenger == nil || challenger.IsMarkedForRemoval() {
+		sendX1ChallengeResult(targetPlayer, x1ResultUnavailable, nil)
+		return
+	}
+	if targetPlayer.HasProtection() || challenger.HasProtection() {
+		sendX1ChallengeResult(targetPlayer, x1ResultLeaveBase, challenger)
+		sendX1ChallengeResult(challenger, x1ResultLeaveBase, targetPlayer)
+		return
+	}
+	if isInProtectedX1(challenger) || isInProtectedX1(targetPlayer) {
+		sendX1ChallengeResult(targetPlayer, x1ResultUnavailable, challenger)
+		sendX1ChallengeResult(challenger, x1ResultUnavailable, targetPlayer)
+		return
+	}
+
+	if accepted {
+		arena := game.StartProtectedDuel(challenger, targetPlayer)
+		sendX1ChallengeResult(challenger, x1ResultAccepted, targetPlayer)
+		sendX1ChallengeResult(targetPlayer, x1ResultAccepted, challenger)
+		broadcastX1DuelArenaUpdate(challenger.ID, targetPlayer.ID, arena)
+		return
+	}
+
+	sendX1ChallengeResult(challenger, x1ResultDeclined, targetPlayer)
+	sendX1ChallengeResult(targetPlayer, x1ResultDeclined, challenger)
+}
+
 func removePlayerMessageState(playerID game.ID) {
 	messageMx.Lock()
 	defer messageMx.Unlock()
 
 	delete(messageState, playerID)
+
+	x1ChallengeMx.Lock()
+	defer x1ChallengeMx.Unlock()
+
+	delete(x1ChallengeRequests, playerID)
+	for targetID, challengerID := range x1ChallengeRequests {
+		if challengerID == playerID {
+			delete(x1ChallengeRequests, targetID)
+		}
+	}
 }
 
 func getPositionIntFromPayload(payload []byte) game.PositionInt {

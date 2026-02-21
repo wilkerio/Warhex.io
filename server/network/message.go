@@ -52,7 +52,12 @@ const (
 	MessageTypePlayerInactiveWarning    byte = 42
 	MessageTypePlayerActive             byte = 43
 	MessageTypeClientActivity           byte = 44
-	MessageTypeToggleGroupUnits       byte = 45
+	MessageTypeToggleGroupUnits         byte = 45
+	MessageTypeClientSendX1Challenge    byte = 46
+	MessageTypeClientX1ChallengeReply   byte = 47
+	MessageTypeX1ChallengeReceived      byte = 48
+	MessageTypeX1ChallengeResult        byte = 49
+	MessageTypeX1DuelArenaUpdate        byte = 50
 	MessageTypeHeartbeat                byte = 69
 	MessageTypeServerVersion            byte = 98
 	MessageTypeRebootAlertMessage       byte = 99

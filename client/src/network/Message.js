@@ -230,5 +230,18 @@ export default class Message {
         return new Message(MessageTypes.TOGGLE_GROUP_UNITS, payload);
     }
 
+    static createSendX1ChallengeMessage (targetPlayerID) {
+        const payload = new Uint8Array(1);
+        payload[0] = targetPlayerID;
+        return new Message(MessageTypes.CLIENT_SEND_X1_CHALLENGE, payload);
+    }
+
+    static createX1ChallengeResponseMessage (challengerPlayerID, accepted) {
+        const payload = new Uint8Array(2);
+        payload[0] = challengerPlayerID;
+        payload[1] = accepted ? 1 : 0;
+        return new Message(MessageTypes.CLIENT_X1_CHALLENGE_RESPONSE, payload);
+    }
+
 
 }

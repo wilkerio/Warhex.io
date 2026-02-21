@@ -454,7 +454,13 @@ func findClosestUnitInRange(spawning *BulletSpawning, players []*Player, exclude
 	_, shooterIsTower := spawning.Shooter.GetObjectPointer().(*Building)
 
 	for _, otherPlayer := range players {
-		if excludePlayer == otherPlayer || otherPlayer.IsMarkedForRemoval() || otherPlayer.HasProtection() {
+		if excludePlayer == otherPlayer || otherPlayer.IsMarkedForRemoval() {
+			continue
+		}
+		if excludePlayer != nil && !CanPlayersInteract(excludePlayer, otherPlayer) {
+			continue
+		}
+		if otherPlayer.HasProtection() && !AreDuelOpponents(excludePlayer, otherPlayer) {
 			continue
 		}
 
@@ -493,7 +499,13 @@ func findClosestBuildingInRange(spawning *BulletSpawning, player *Player, player
 	minDistance := float32(math.MaxFloat32)
 
 	for _, otherPlayer := range players {
-		if player == otherPlayer || otherPlayer.IsMarkedForRemoval() || otherPlayer.HasProtection() {
+		if player == otherPlayer || otherPlayer.IsMarkedForRemoval() {
+			continue
+		}
+		if !CanPlayersInteract(player, otherPlayer) {
+			continue
+		}
+		if otherPlayer.HasProtection() && !AreDuelOpponents(player, otherPlayer) {
 			continue
 		}
 
@@ -746,6 +758,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 		if otherPlayer.ID == player.ID || otherPlayer.IsMarkedForRemoval() {
 			continue
 		}
+		if !CanPlayersInteract(player, otherPlayer) {
+			continue
+		}
 
 		otherPlayer.Base.RLock()
 		bullets := make([]*Bullet, 0, len(otherPlayer.Base.Bullets))
@@ -971,7 +986,7 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 			continue
 		}
 
-		hasSpawnProtection := otherPlayer.HasSpawnProtection
+		hasSpawnProtection := otherPlayer.HasProtection()
 		basePosition := otherPlayer.Base.Position
 
 		// Same player checks own units if left spawn protection
@@ -985,6 +1000,22 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 				}
 			}
 			continue
+		}
+		if !CanPlayersInteract(player, otherPlayer) {
+			continue
+		}
+		if AreDuelOpponents(player, otherPlayer) {
+			// Safety: if any stale spawn-protection flag remains on duelists,
+			// clear it so the X1 pair can fight normally.
+			if player.HasProtection() {
+				player.RemoveProtection()
+			}
+			if otherPlayer.HasProtection() {
+				otherPlayer.RemoveProtection()
+			}
+		}
+		if hasSpawnProtection && AreDuelOpponents(player, otherPlayer) {
+			hasSpawnProtection = false
 		}
 
 		// Lock the player to access buildings
@@ -1185,6 +1216,9 @@ func applyExplosionDamage(unit *Unit) {
 		if player.ID == unit.Player.ID {
 			continue
 		}
+		if !CanPlayersInteract(unit.Player, player) {
+			continue
+		}
 
 		// Lock the player to access units
 		player.RLock()
@@ -1263,6 +1297,9 @@ func checkUnitCollisions(player *Player, players []*Player, units []*Unit) {
 	for _, otherPlayer := range players {
 		// Skip self or players marked for removal
 		if otherPlayer.ID == player.ID || otherPlayer.IsMarkedForRemoval() {
+			continue
+		}
+		if !CanPlayersInteract(player, otherPlayer) {
 			continue
 		}
 		// Lock the player to access units
@@ -1599,6 +1636,19 @@ func RemovePlayer(conn *websocket.Conn) (ID, uint32, uint32, time.Duration, bool
 	}
 
 	player.MarkForRemoval() // ! Just to be sure
+	if player.InDuel {
+		opponent := State.Players[player.DuelOpponentID]
+		if opponent != nil && opponent.DuelOpponentID == player.ID {
+			opponent.InDuel = false
+			opponent.DuelOpponentID = 0
+			opponent.DuelArena = DuelArena{}
+			opponent.DuelPrepEndsAt = time.Time{}
+		}
+		player.InDuel = false
+		player.DuelOpponentID = 0
+		player.DuelArena = DuelArena{}
+		player.DuelPrepEndsAt = time.Time{}
+	}
 
 	playerBasePosition := player.Base.Position
 	MarkPositionAvailable(playerBasePosition)

@@ -72,6 +72,10 @@ export default class NetworkManager {
             this.core.uiManager.updateAccount();
             return;
         }
+        if (!this.userId) {
+            console.warn("getUserData called without userId");
+            return;
+        }
         try {
             console.log('Starting supabase select for id:', this.userId);
             const selectPromise = supabase
@@ -79,17 +83,28 @@ export default class NetworkManager {
                 .select('*')
                 .eq('id', this.userId);
 
-            // Timeout helper to detect hangs (shorter for faster fallback)
-            const timeoutMs = 2500; // 2.5s
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error(`Supabase select timeout after ${timeoutMs}ms`)), timeoutMs));
+            // Timeout helper: fallback gracefully if the network is slow.
+            const timeoutMs = 8000;
+            const timeoutToken = Symbol("supabase_timeout");
+            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(timeoutToken), timeoutMs));
 
-            let res;
-            try {
-                res = await Promise.race([selectPromise, timeoutPromise]);
-            } catch (e) {
-                console.error('Supabase select failed or timed out:', e);
-                throw e;
+            const raceResult = await Promise.race([selectPromise, timeoutPromise]);
+            if (raceResult === timeoutToken) {
+                console.warn(`Supabase select timeout after ${timeoutMs}ms; using cached/local data fallback.`);
+
+                const user = await getCurrentUser();
+                if (user && user.user_metadata && user.user_metadata.nickname) {
+                    if (!this.userData) this.userData = {};
+                    if (!this.userData.nickname) {
+                        this.userData.nickname = user.user_metadata.nickname;
+                    }
+                }
+
+                this.core.uiManager.updateAccount();
+                return;
             }
+
+            const res = raceResult;
 
             console.log('Supabase response for users select:', res);
 
@@ -396,6 +411,9 @@ export default class NetworkManager {
             [MessageTypes.REBOOT_ALERT, () => this.handleRebootAlert(payload)],
             [MessageTypes.PLAYER_INACTIVE_WARNING, () => this.handlePlayerInactiveWarning()],
             [MessageTypes.PLAYER_ACTIVE, () => this.handlePlayerActive()],
+            [MessageTypes.X1_CHALLENGE_RECEIVED, () => this.handleX1ChallengeReceived(payload)],
+            [MessageTypes.X1_CHALLENGE_RESULT, () => this.handleX1ChallengeResult(payload)],
+            [MessageTypes.X1_DUEL_ARENA_UPDATE, () => this.handleX1DuelArenaUpdate(payload)],
             [MessageTypes.ERROR, () => this.handleError(payload)],
         ]);
 
@@ -830,6 +848,11 @@ export default class NetworkManager {
 
     handlePlayerLeft (payload) {
         const { playerID } = payload;
+        this.core.gameManager.removeGlobalDuelArenasByPlayer(playerID);
+        if (this.core.gameManager.duelOpponentID === playerID) {
+            this.core.gameManager.clearDuelArena();
+            this.core.uiManager.hideX1DuelStatus();
+        }
         this.core.gameManager.removePlayer(playerID);
         this.core.leaderboard.removePlayer(playerID);
     }
@@ -898,6 +921,8 @@ export default class NetworkManager {
         const { killerID, score, xp, kills, playtime } = payload;
         const killer = this.core.gameManager.getPlayerById(killerID);
         if (!killer) return;
+        this.core.gameManager.clearDuelArena();
+        this.core.uiManager.hideX1DuelStatus();
         this.core.gameManager.player = null; //? Invalidate the client player, to make GameState work correcly
         this.core.uiManager.gameOver(killer, score);
 
@@ -906,6 +931,8 @@ export default class NetworkManager {
 
     handleKickNotification (payload) {
         const { reason, score, xp, kills, playtime } = payload;
+        this.core.gameManager.clearDuelArena();
+        this.core.uiManager.hideX1DuelStatus();
         this.core.uiManager.kicked(reason, score);
         console.log(payload)
         this._updateUserDataLocally(score, xp, kills, playtime);
@@ -1267,12 +1294,81 @@ export default class NetworkManager {
         this.sendMessage(message);
     }
 
+    sendX1Challenge(targetPlayerID) {
+        const message = Message.createSendX1ChallengeMessage(targetPlayerID);
+        this.sendMessage(message);
+    }
+
+    sendX1ChallengeResponse(challengerPlayerID, accepted) {
+        const message = Message.createX1ChallengeResponseMessage(challengerPlayerID, accepted);
+        this.sendMessage(message);
+    }
+
     handlePlayerInactiveWarning() {
         this.core.uiManager.showInactivityWarning();
     }
 
     handlePlayerActive() {
         this.core.uiManager.hideInactivityWarning();
+    }
+
+    handleX1ChallengeReceived(payload) {
+        const { challengerID, challengerName } = payload;
+        this.core.uiManager.showX1ChallengePrompt(
+            challengerName,
+            () => this.sendX1ChallengeResponse(challengerID, true),
+            () => this.sendX1ChallengeResponse(challengerID, false)
+        );
+    }
+
+    handleX1ChallengeResult(payload) {
+        const { status, playerName, playerID, arena, prepSeconds } = payload;
+        const opponent = playerName || "Player";
+
+        switch (status) {
+            case 0:
+                this.core.uiManager.addChatMessage("System", `X1 challenge sent to ${opponent}.`, "#60c1ff");
+                break;
+            case 1:
+                this.core.uiManager.addChatMessage(
+                    "System",
+                    `X1 accepted by ${opponent}. Protected arena active${prepSeconds ? ` (${prepSeconds}s setup)` : ""}.`,
+                    "#7CFC00"
+                );
+                if (arena) {
+                    this.core.gameManager.setDuelArena(arena, playerID);
+                    const localID = this.core.gameManager.getCurrentPlayerId();
+                    if (localID) {
+                        this.core.gameManager.upsertGlobalDuelArena(localID, playerID, arena);
+                    }
+                }
+                this.core.uiManager.showX1DuelStatus(opponent, prepSeconds || 0);
+                break;
+            case 2:
+                this.core.uiManager.addChatMessage("System", `X1 challenge with ${opponent} was declined.`, "#ff7b7b");
+                break;
+            case 3:
+                this.core.uiManager.addChatMessage("System", "X1 challenge only works for players on your left or right.", "#ffcc66");
+                break;
+            case 4:
+                this.core.uiManager.addChatMessage("System", "This player is unavailable for X1 right now.", "#ffcc66");
+                break;
+            case 5:
+                this.core.uiManager.addChatMessage("System", "No pending X1 challenge found.", "#ffcc66");
+                break;
+            case 6:
+                this.core.uiManager.addChatMessage("System", "Leave your base protection area before sending an X1 challenge.", "#ffcc66");
+                break;
+            default:
+                this.core.uiManager.addChatMessage("System", "Could not process X1 challenge.", "#ffcc66");
+                break;
+        }
+    }
+
+    handleX1DuelArenaUpdate(payload) {
+        const { playerAID, playerBID, arena } = payload;
+        if (!arena) return;
+        this.core.gameManager.upsertGlobalDuelArena(playerAID, playerBID, arena);
     }
 
     sendResyncRequest () {

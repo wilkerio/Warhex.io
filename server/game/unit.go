@@ -141,6 +141,46 @@ func (u *Unit) UpdatePosition(deltaTime time.Duration, units []*Unit) bool {
 	// Update position
 	u.Position.X = float32(newX)
 	u.Position.Y = float32(newY)
+
+	// Keep duel units inside protected arena to avoid crossing into forbidden combat zones.
+	if u.Player != nil {
+		u.Player.RLock()
+		inDuel := u.Player.InDuel
+		arena := u.Player.DuelArena
+		u.Player.RUnlock()
+
+		if inDuel {
+			const edgePadding float32 = 18
+			minX := arena.MinX + edgePadding
+			maxX := arena.MaxX - edgePadding
+			minY := arena.MinY + edgePadding
+			maxY := arena.MaxY - edgePadding
+
+			if minX <= maxX && minY <= maxY {
+				if u.Position.X < minX {
+					u.Position.X = minX
+				} else if u.Position.X > maxX {
+					u.Position.X = maxX
+				}
+				if u.Position.Y < minY {
+					u.Position.Y = minY
+				} else if u.Position.Y > maxY {
+					u.Position.Y = maxY
+				}
+
+				if u.TargetPosition.X < minX {
+					u.TargetPosition.X = minX
+				} else if u.TargetPosition.X > maxX {
+					u.TargetPosition.X = maxX
+				}
+				if u.TargetPosition.Y < minY {
+					u.TargetPosition.Y = minY
+				} else if u.TargetPosition.Y > maxY {
+					u.TargetPosition.Y = maxY
+				}
+			}
+		}
+	}
 	return true
 }
 
