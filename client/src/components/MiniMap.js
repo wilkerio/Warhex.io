@@ -1,4 +1,5 @@
 import { darkenColor } from "../network/constants.js";
+import ThemeManager from "./managers/ThemeManager.js";
 
 export default class MiniMap {
     constructor(core) {
@@ -162,11 +163,28 @@ export default class MiniMap {
                 };
 
                 // White dashed building radius ring
-                drawDashedRing(radius * this.baseScale, "rgba(255,255,255,0.92)", 14, 80, 70);
+                drawDashedRing(
+                    radius * this.baseScale,
+                    ThemeManager.currentThemeProperties.indicatorColor || "rgba(255,255,255,0.92)",
+                    14,
+                    80,
+                    70
+                );
 
-                // Green dashed spawn-protection ring
+                // Spawn-protection ring: nostalgia = red, universe = green
                 if (hasSpawnProtection && spawnProtectionRadius > 0) {
-                    drawDashedRing(spawnProtectionRadius * this.baseScale, "rgba(57,255,20,0.9)", 10, 65, 60);
+                    const isNostalgia = ThemeManager.currentTheme === "nostalgia";
+                    const protectionColor = isNostalgia
+                        ? (ThemeManager.currentThemeProperties.redColor || "rgba(255, 0, 0, 0.25)")
+                        : "rgba(57,255,20,0.9)";
+
+                    drawDashedRing(
+                        spawnProtectionRadius * this.baseScale,
+                        protectionColor,
+                        10,
+                        65,
+                        60
+                    );
                 }
             }
         };

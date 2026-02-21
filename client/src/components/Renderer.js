@@ -254,6 +254,10 @@ export class Renderer {
     renderBorder () {
         const { context, camera } = this;
         const halfSize = this.mapSize / 2;
+        const theme = ThemeManager.currentThemeProperties || {};
+        const outlineWidth = theme.outlineWidth || 8;
+        const outerColor = theme.outerColor || 'rgba(0, 0, 0, 0.8)';
+        const redColor = theme.redColor || 'rgba(255, 0, 0, 0.6)';
 
         // Save the current transformation matrix
         context.save();
@@ -263,7 +267,7 @@ export class Renderer {
 
         // Draw dark overlay outside the map boundaries
         context.globalAlpha = 0.5;
-        context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        context.fillStyle = outerColor;
 
         // Draw four rectangles around the square map
         const largeSize = this.mapSize * 4;
@@ -279,8 +283,8 @@ export class Renderer {
 
         // Draw border line around the map
         context.globalAlpha = 1.0;
-        context.strokeStyle = 'rgba(255, 0, 0, 0.6)';
-        context.lineWidth = 8;
+        context.strokeStyle = redColor;
+        context.lineWidth = outlineWidth;
         context.strokeRect(-halfSize, -halfSize, this.mapSize, this.mapSize);
 
         // Restore the previous transformation matrix

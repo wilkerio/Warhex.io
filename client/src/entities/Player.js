@@ -446,13 +446,17 @@ export default class Player extends Renderable {
         this.borderRotation += deltaTime * 1 / 20000;
 
         if (this.hasSpawnProtection) {
-            const protectionColor = "#00ff00"; // Verde para a linha de protection
+            const isNostalgia = ThemeManager.currentTheme === "nostalgia";
+            const protectionColor = isNostalgia
+                ? (ThemeManager.currentThemeProperties.redColor || "rgba(255, 0, 0, 0.25)")
+                : "rgba(57,255,20,0.9)";
             circleBorder(this.spawnProtectionRadius, protectionColor, this.borderRotation);
         }
 
-        const borderColor = ThemeManager.currentThemeProperties.lineColor;
-        circleBorder(this.buildingRadius.min + 8, "#cccccc", this.borderRotation); // Cinza para a linha interna
-        circleBorder(this.buildingRadius.max, "#ffffff", this.borderRotation); // Branca para a linha do meio
+        const innerIndicatorColor = ThemeManager.currentThemeProperties.darkColor || "#666666";
+        const outerLimitColor = ThemeManager.currentThemeProperties.indicatorColor || "#d6d6d6";
+        circleBorder(this.buildingRadius.min + 8, innerIndicatorColor, this.borderRotation); // Linha interna
+        circleBorder(this.buildingRadius.max, outerLimitColor, this.borderRotation); // Limite (cinza)
         baseCore();
 
 

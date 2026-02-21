@@ -1,93 +1,72 @@
 export default class ThemeManager {
-    static currentTheme = 'default'; // Static property to hold the current theme
+    static currentTheme = 'universe'; // Static property to hold the current theme
     static currentThemeProperties = {}; // Static property to hold the current theme properties
 
     constructor() {
         this.themeProperties = {
-            default: {
-                background: "#fff",
-                lineColor: "#00000020",
-                protectionColor: "#ff000020",
-                selectionColor: "rgba(0, 0, 0, 0.1)",
-                selectionStroke:  "rgba(0, 0, 0, 0.2)",
-            },
-            dark: {
-                background: "#202020",
-                lineColor: "#ffffff20",
-                protectionColor: "#ff000020",
-                selectionColor: "rgba(255, 255, 255, 0.1)",
-                selectionStroke:  "rgba(255, 255, 255, 0.2)",
-            },
-            midnight: {
-                background: "radial-gradient(circle, rgba(11,75,107,1) 0%, rgba(7,12,20,1) 100%)",
-                lineColor: "#ffffff20",
-                protectionColor: "#ff00004d",
-                selectionColor: "rgba(255, 255, 255, 0.1)",
-                selectionStroke:  "rgba(255, 255, 255, 0.2)",
-            },
-            galactic: {
-                background: "radial-gradient(circle, rgb(107 11 81) 0%, rgb(7, 12, 20) 100%)",
-                lineColor: "#ffffff20",
-                protectionColor: "#ff00004d",
-                selectionColor: "rgba(255, 255, 255, 0.1)",
-                selectionStroke:  "rgba(255, 255, 255, 0.2)",
-            },
-            grassy: {
-                background: "#bce987",
-                lineColor: "#00000020",
-                protectionColor: "#ff000020",
-                selectionColor: "rgba(0, 0, 0, 0.1)",
-                selectionStroke:  "rgba(0, 0, 0, 0.2)",
-            },
-            sea: {
-                background: "#89cbff",
-                lineColor: "#00000020",
-                protectionColor: "#ff000020",
-                selectionColor: "rgba(0, 0, 0, 0.1)",
-                selectionStroke:  "rgba(0, 0, 0, 0.2)",
-            },
-            desert: {
-                background: "#ffe289",
-                lineColor: "#00000020",
-                protectionColor: "#ff000020",
-                selectionColor: "rgba(0, 0, 0, 0.1)",
-                selectionStroke:  "rgba(0, 0, 0, 0.2)",
-            }
-            ,
             universe: {
                 background: "#050010",
                 lineColor: "#ffffff30",
                 protectionColor: "#ff000040",
                 selectionColor: "rgba(255, 255, 255, 0.15)",
                 selectionStroke:  "rgba(255, 255, 255, 0.3)",
+                darkColor: "#666666",
+                outlineWidth: 8,
+                lanePad: 20,
+                backgroundColor: "#050010",
+                outerColor: "rgba(0, 0, 0, 0.8)",
+                indicatorColor: "rgba(255,255,255,0.65)",
+                turretColor: "#a8a8a8",
+                bulletColor: "#a8a8a8",
+                redColor: "rgba(255, 0, 0, 0.6)",
+                targetColor: "#b4b4b4",
+            },
+            nostalgia: {
+                background: "#ffffff",
+                lineColor: "#00000020",
+                protectionColor: "#ff000020",
+                selectionColor: "rgba(0, 0, 0, 0.1)",
+                selectionStroke: "rgba(0, 0, 0, 0.2)",
+                darkColor: "#666666",
+                outlineWidth: 7,
+                lanePad: 20,
+                backgroundColor: "#ebebeb",
+                outerColor: "#d6d6d6",
+                indicatorColor: "rgba(0,0,0,0.08)",
+                turretColor: "#A8A8A8",
+                bulletColor: "#A8A8A8",
+                redColor: "rgba(255, 0, 0, 0.1)",
+                targetColor: "#b4b4b4",
             }
         };
 
-        // Check for a saved theme in local storage
         const savedTheme = localStorage.getItem('theme');
-        if (savedTheme) {
-            ThemeManager.currentTheme = savedTheme; // Set the static theme property
-        }
-
-        this.applyTheme(ThemeManager.currentTheme); // Apply the current theme
+        const initialTheme = this.themeProperties[savedTheme] ? savedTheme : 'universe';
+        this.applyTheme(initialTheme);
     }
 
     applyTheme(savedTheme) {
-        ThemeManager.currentTheme = savedTheme || ThemeManager.currentTheme; // Use saved theme or current theme
+        ThemeManager.currentTheme = this.themeProperties[savedTheme] ? savedTheme : 'universe';
         localStorage.setItem('theme', ThemeManager.currentTheme);
 
         // Save the current theme properties
-        ThemeManager.currentThemeProperties = this.themeProperties[ThemeManager.currentTheme] || this.themeProperties.default;
+        ThemeManager.currentThemeProperties = this.themeProperties[ThemeManager.currentTheme];
 
         // Apply background style to root; body transparent when using canvas background
-        document.documentElement.style.background = ThemeManager.currentThemeProperties.background || this.themeProperties.default.background;
-        document.body.style.background = ThemeManager.currentTheme === 'universe' ? 'transparent' : ThemeManager.currentThemeProperties.background || this.themeProperties.default.background;
+        document.documentElement.style.background = ThemeManager.currentThemeProperties.background;
+        document.body.style.background = ThemeManager.currentTheme === 'universe' ? 'transparent' : ThemeManager.currentThemeProperties.background;
 
         // If universe theme, create animated canvas background; otherwise remove it
         if (ThemeManager.currentTheme === 'universe') {
             this._createUniverseBackground();
+            this._removeNostalgiaOverrides();
         } else {
             this._removeUniverseBackground();
+            if (ThemeManager.currentTheme === 'nostalgia') {
+                this._applyNostalgiaOverrides();
+            } else {
+                this._removeNostalgiaOverrides();
+            }
         }
 
         this._updateTextColors();
@@ -97,15 +76,14 @@ export default class ThemeManager {
         const changelogElement = document.getElementById('changelog');
         const metricsElement = document.getElementById('game-metrics');
 
-        if (changelogElement && metricsElement) {
-            if (ThemeManager.currentTheme === 'midnight' || ThemeManager.currentTheme === 'dark' || ThemeManager.currentTheme === 'galactic') {
-                changelogElement.style.color = 'white';
-                metricsElement.style.color = 'white';
-            } else {
-                changelogElement.style.color = 'black';
-                metricsElement.style.color = 'black';
-            }
+        if (!changelogElement || !metricsElement) return;
+        if (ThemeManager.currentTheme === 'nostalgia') {
+            changelogElement.style.color = '#000000';
+            metricsElement.style.color = '#000000';
+            return;
         }
+        changelogElement.style.color = 'white';
+        metricsElement.style.color = 'white';
     }
 
     _createUniverseBackground() {
@@ -188,5 +166,135 @@ export default class ThemeManager {
         if (existing) existing.remove();
         const oldStars = document.getElementById('universe-stars');
         if (oldStars) oldStars.remove();
+    }
+
+    _applyNostalgiaOverrides() {
+        this._removeNostalgiaOverrides();
+        const style = document.createElement('style');
+        style.id = 'nostalgia-theme-style';
+        style.textContent = `
+@font-face {
+    font-family: 'regularF';
+    src: url("/web/20230512025609im_/http://bloble.io/css/fonts/regular.ttf");
+}
+
+html, body {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #fff !important;
+    color: #000;
+    font-family: 'regularF', 'Ubuntu', 'Trebuchet MS', sans-serif;
+}
+
+canvas {
+    image-rendering: optimizeSpeed;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: -o-crisp-edges;
+    image-rendering: crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;
+}
+
+a:link, a:visited, .spanLink { color: #60c1ff; text-decoration: none; }
+a:hover, .spanLink:hover { color: #ff6060; }
+
+/* HUD panels */
+#leaderboard-container .leaderboard,
+#chat,
+#resource-container,
+#power,
+#shield,
+#upgrade-container,
+#upgrade-list,
+#upgrade-tabs,
+#game-metrics {
+    background-color: rgba(40, 40, 40, 0.5) !important;
+    color: #fff !important;
+    font-family: 'regularF', 'Ubuntu', 'Trebuchet MS', sans-serif !important;
+    border-radius: 4px !important;
+}
+
+/* Chat details */
+#chat .header,
+#chat-messages,
+#chat-message-input,
+#chat-button,
+#chat-suggestions-container,
+.chat-suggestion-item {
+    background-color: rgba(40, 40, 40, 0.5) !important;
+    color: #fff !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    font-family: 'regularF', 'Ubuntu', 'Trebuchet MS', sans-serif !important;
+}
+
+#chat-message-input::placeholder {
+    color: rgba(255, 255, 255, 0.65) !important;
+}
+
+/* Leaderboard rows */
+#leaderboard-container .title,
+#leaderboard-container .player,
+#leaderboard-container .name,
+#leaderboard-container .score {
+    color: #fff !important;
+    font-family: 'regularF', 'Ubuntu', 'Trebuchet MS', sans-serif !important;
+}
+
+/* Toolbar / controls */
+#toolbar-container,
+.toolbar-item,
+.toolbar-item.disabled,
+#destroy-button,
+#unit-controls-container,
+.unit-control-button {
+    background-color: rgba(40, 40, 40, 0.5) !important;
+    color: #fff !important;
+    border-radius: 4px !important;
+}
+
+/* Settings / menu buttons */
+#menu-button,
+#menu-settings-button,
+#game-settings-button,
+.global-settings-button,
+.settings,
+.settings button,
+.settings select,
+.settings input {
+    color: #fff !important;
+    font-family: 'regularF', 'Ubuntu', 'Trebuchet MS', sans-serif !important;
+}
+
+.settings,
+#menu-container .actions > button,
+#play-button,
+#guest-button {
+    background-color: rgba(40, 40, 40, 0.5) !important;
+    border-radius: 4px !important;
+}
+
+.toolbar-item,
+.toolbar-item-active,
+.toolbar-tab,
+.menu-button,
+.btn {
+    border-radius: 4px !important;
+}
+`;
+        document.head.appendChild(style);
+    }
+
+    _removeNostalgiaOverrides() {
+        const style = document.getElementById('nostalgia-theme-style');
+        if (style) style.remove();
     }
 }

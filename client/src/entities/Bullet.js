@@ -1,6 +1,7 @@
 import Renderable from "../components/Renderable.js";
 import { BulletTypes } from "../network/constants.js";
 import Shapes from "../components/Shapes.js";
+import ThemeManager from "../components/managers/ThemeManager.js";
 
 export default class Bullet extends Renderable {
     constructor (details, color, position = { x: 0, y: 0 }, id = -1) {
@@ -167,7 +168,7 @@ export default class Bullet extends Renderable {
     }
 
     _strokeShape (context, color) {
-        context.strokeStyle = "#666666";
+        context.strokeStyle = ThemeManager.currentThemeProperties.darkColor || "#666666";
         context.lineWidth = 3;
         context.stroke();
     }
