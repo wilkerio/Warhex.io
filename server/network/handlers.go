@@ -67,6 +67,12 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 }
 
 func handleJoinMessage(conn *websocket.Conn, payload []byte) {
+	if game.Status == game.Initializing {
+		sendGameNotReadyError(conn)
+		conn.Close()
+		return
+	}
+
 	if len(payload) < 5 || len(payload) > 17 {
 		log.Println("Invalid payload length for join message")
 		return

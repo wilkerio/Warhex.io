@@ -80,10 +80,26 @@ func GetSkinDataByID(id byte) (SkinData, bool) {
 }
 
 // LoadSkins reads the skin data from a JSON file and parses colors
-func loadSkins(filePath string) {
-	file, err := os.Open(filePath)
+func loadSkins() {
+	possiblePaths := []string{
+		"data/skins.json",
+		"main/data/skins.json",
+		"../main/data/skins.json",
+		"../data/skins.json",
+	}
+
+	var file *os.File
+	var err error
+
+	for _, path := range possiblePaths {
+		file, err = os.Open(path)
+		if err == nil {
+			break
+		}
+	}
+
 	if err != nil {
-		log.Fatal("Error opening skin data file:", err)
+		log.Fatal("Error opening skin data file, tried multiple paths: ", err)
 	}
 	defer file.Close()
 

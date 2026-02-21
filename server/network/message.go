@@ -57,6 +57,7 @@ const (
 	MessageTypeServerVersion            byte = 98
 	MessageTypeRebootAlertMessage       byte = 99
 	MessageTypeError                    byte = 100 // Error message type (ErrorCode: 1 byte)
+	MessageTypeGameNotReady             byte = 101 // Game not ready error
 )
 
 // Message represents a communication message.

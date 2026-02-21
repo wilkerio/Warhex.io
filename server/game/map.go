@@ -173,32 +173,15 @@ func generateRocks(centers []PositionInt, neutralBases []PositionInt, radius flo
 }
 
 func generateRectangularGameMap() (playerPositions, neutralPositions []PositionInt) {
-	spacing := int16(2500)
-	radius := int16(7500) // Reduced from 8000 to ensure bases fit within map bounds
-
-	// Generate player positions in a grid
-	for x := -radius; x <= radius; x += spacing {
-		for y := -radius; y <= radius; y += spacing {
-			playerPositions = append(playerPositions, PositionInt{X: x, Y: y})
-		}
-	}
-
-	// Neutral bases at the corners or something, but for now, keep center and maybe edges
-	neutralPositions = append(neutralPositions, PositionInt{X: 0, Y: 0})
-	// Add neutrals at edges if needed, but for simplicity, just center
-
-	return playerPositions, neutralPositions
+	// Pre-generated player positions are no longer needed with dynamic map size.
+	return nil, nil
 }
 
 // Helper function to initialize the game state with predefined positions
 func InitializeGameMap() {
-
-	playerPositions, neutralPositions := generateRectangularGameMap()
+	_, neutralPositions := generateRectangularGameMap()
 	// Initialize the map with all positions as available
 	State.AvailablePositions = make(map[PositionInt]bool)
-	for _, pos := range playerPositions {
-		State.AvailablePositions[pos] = true
-	}
 
 	// Populate NeutralBases with NeutralBase instances
 	State.NeutralBases = make([]*NeutralBase, len(neutralPositions))
@@ -227,7 +210,8 @@ func InitializeGameMap() {
 		PopulateNeutralBase(base)
 	}
 
-	// Generate bushes away from player and neutral base positions
-	State.Bushes = generateBushes(playerPositions, neutralPositions, 8000, 30, 800)
-	State.Rocks = generateRocks(playerPositions, neutralPositions, 8000, 20, 1000, ShapeHexagon)
+	// Generate bushes and rocks within the initial map radius
+	const initialRadius = 2000
+	State.Bushes = generateBushes(nil, neutralPositions, initialRadius, 5, 800)
+	State.Rocks = generateRocks(nil, neutralPositions, initialRadius, 3, 1000, ShapeHexagon)
 }

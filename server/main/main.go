@@ -167,7 +167,7 @@ func main() {
 		log.Printf("Port not specified. Defaulting to port %s\n", PORT)
 	}
 
-	game.Start()
+	go game.Start()
 
 	// Define WebSocket endpoint handlers with session checks
 	http.HandleFunc("/", wsEndpoint)

@@ -34,6 +34,12 @@ func MarkPositionAvailable(pos PositionInt) {
 	State.AvailablePositions[pos] = true
 }
 
+func calculateMapRadius(numPlayers int) int16 {
+	const baseRadius = 2000
+	const radiusPerPlayer = 500
+	return baseRadius + int16(numPlayers*radiusPerPlayer)
+}
+
 // Helper function to find a free position for a player with random spawning
 func FindFreePosition() PositionInt {
 	// Get all occupied positions from existing players
@@ -47,8 +53,9 @@ func FindFreePosition() PositionInt {
 		occupiedPositions = append(occupiedPositions, neutralBase.Base.GetPosition())
 	}
 
-	// Map boundaries (based on generateRectangularGameMap)
-	const mapRadius int16 = 7500
+	// Map boundaries
+	numPlayers := len(State.Players)
+	mapRadius := calculateMapRadius(numPlayers)
 	minX := -mapRadius + MIN_BORDER_DISTANCE
 	maxX := mapRadius - MIN_BORDER_DISTANCE
 	minY := -mapRadius + MIN_BORDER_DISTANCE

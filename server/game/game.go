@@ -26,9 +26,18 @@ var (
 		AvailablePositions: make(map[PositionInt]bool),
 	}
 	availablePlayerIDs *AvailableIDs
+	Status             GameStatus
+)
+
+type GameStatus int
+
+const (
+	Initializing GameStatus = iota
+	Running
 )
 
 func init() {
+	Status = Initializing
 	go StartEventDispatcher()
 
 	// Start the updates
@@ -73,7 +82,10 @@ func Start() {
 	State.Leaderboard = &Leaderboard{}
 
 	InitializeNonSkinColors()
-	loadSkins("data/skins.json")
+	loadSkins()
+
+	Status = Running
+	log.Println("Game is running")
 }
 
 func startRegenerationLoop() {
@@ -857,7 +869,7 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					}
 
 					damage := bulletHealth
-					if bullet.Behavior == AntiTankBullet && unit.Type == TANK && unit.Type == SIEGE_TANK {
+					if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
 						damage *= uint16(bullet.DamageMultiplier) // 150% damage to tanks
 					}
 

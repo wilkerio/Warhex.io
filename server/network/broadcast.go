@@ -769,6 +769,13 @@ func sendInitialLeaderboardUpdate(player *game.Player) {
 	}
 }
 
+func sendGameNotReadyError(conn *websocket.Conn) {
+	message := Message{
+		Type: MessageTypeGameNotReady,
+	}
+	sendToClient(conn, EncodeMessage(message), nil)
+}
+
 func sendError(conn *websocket.Conn) {
 	message := Message{
 		Type: MessageTypeError,
