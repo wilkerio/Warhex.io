@@ -108,11 +108,81 @@ export default class Toolbar {
         iconCanvas.width = 80;
         iconCanvas.height = 80;
         const iconContext = iconCanvas.getContext("2d");
+
+        const w = iconCanvas.width;
+        const h = iconCanvas.height;
+        const padding = 6;
+        const innerW = w - padding * 2;
+        const innerH = h - padding * 2;
+
+        // Futuristic panel background
+        const panelGradient = iconContext.createLinearGradient(0, 0, w, h);
+        panelGradient.addColorStop(0, "rgba(10, 18, 36, 0.95)");
+        panelGradient.addColorStop(1, "rgba(12, 34, 64, 0.95)");
+        iconContext.fillStyle = panelGradient;
+        this._roundedRect(iconContext, 2, 2, w - 4, h - 4, 12);
+        iconContext.fill();
+
+        // Neon border
+        iconContext.shadowBlur = 12;
+        iconContext.shadowColor = this.color;
+        iconContext.strokeStyle = "rgba(120, 220, 255, 0.85)";
+        iconContext.lineWidth = 2;
+        this._roundedRect(iconContext, 3, 3, w - 6, h - 6, 11);
+        iconContext.stroke();
+        iconContext.shadowBlur = 0;
+
+        // Scan lines
+        iconContext.strokeStyle = "rgba(120, 220, 255, 0.08)";
+        iconContext.lineWidth = 1;
+        for (let y = 10; y < h - 8; y += 4) {
+            iconContext.beginPath();
+            iconContext.moveTo(8, y);
+            iconContext.lineTo(w - 8, y);
+            iconContext.stroke();
+        }
+
+        // Corner accents
+        iconContext.strokeStyle = "rgba(80, 190, 255, 0.7)";
+        iconContext.lineWidth = 2;
+        const c = 8;
+        const e = 14;
+        this._drawCorner(iconContext, c, c, e, e);
+        this._drawCorner(iconContext, w - c, c, -e, e);
+        this._drawCorner(iconContext, c, h - c, e, -e);
+        this._drawCorner(iconContext, w - c, h - c, -e, -e);
+
+        // Render building icon in center area
+        iconContext.save();
+        this._roundedRect(iconContext, padding, padding, innerW, innerH, 8);
+        iconContext.clip();
+        iconContext.translate(w / 2, h / 2);
         iconContext.scale(scale, scale);
         iconContext.lineJoin = "round";
         iconContext.lineCap = "round";
-        item.render(iconContext, { x: -iconCanvas.width / (2 * scale), y: -iconCanvas.height / (2 * scale) }, 0);
+        item.render(iconContext, { x: 0, y: 0 }, 0);
+        iconContext.restore();
+
         return iconCanvas;
+    }
+
+    _roundedRect (ctx, x, y, width, height, radius) {
+        const r = Math.min(radius, width / 2, height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + width, y, x + width, y + height, r);
+        ctx.arcTo(x + width, y + height, x, y + height, r);
+        ctx.arcTo(x, y + height, x, y, r);
+        ctx.arcTo(x, y, x + width, y, r);
+        ctx.closePath();
+    }
+
+    _drawCorner (ctx, x, y, dx, dy) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + dy * 0.35);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + dx * 0.35, y);
+        ctx.stroke();
     }
 
     selectByIndex (index) {

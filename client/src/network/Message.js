@@ -254,5 +254,11 @@ export default class Message {
         return new Message(MessageTypes.CLIENT_X1_CHALLENGE_RESPONSE, payload);
     }
 
+    static createWatchLeaveBaseMessage (targetPlayerID) {
+        const payload = new Uint8Array(1);
+        payload[0] = targetPlayerID;
+        return new Message(MessageTypes.CLIENT_WATCH_LEAVE_BASE, payload);
+    }
+
 
 }

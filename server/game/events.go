@@ -25,11 +25,21 @@ const (
 	RemoveSpawnProtection
 	Kick
 	PlayerInactiveWarning
+	WildPortalsUpdate
 	// Add more event types as needed
 )
 
 type PlayerInactiveWarningEvent struct {
 	Player *Player
+}
+
+type WildPortalSnapshot struct {
+	ID       ID
+	Position PositionFloat
+}
+
+type WildPortalsUpdateEvent struct {
+	Portals []WildPortalSnapshot
 }
 
 type LeaderboardUpdateEvent struct {
@@ -300,4 +310,11 @@ func TriggerPlayerInactiveWarningEvent(player *Player) {
 		Player: player,
 	}
 	eventChan <- Event{Type: PlayerInactiveWarning, Payload: event}
+}
+
+func TriggerWildPortalsUpdateEvent(portals []WildPortalSnapshot) {
+	event := &WildPortalsUpdateEvent{
+		Portals: portals,
+	}
+	eventChan <- Event{Type: WildPortalsUpdate, Payload: event}
 }

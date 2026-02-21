@@ -26,7 +26,7 @@ export default class Player extends Renderable {
         this.springStiffness = 0.005;
         this.buildingRadius = {
             max: 306,
-            min: 130
+            min: 110
         }
         this.coreRadius = { max: this.buildingRadius.min };
         this.buildingCache = null;
@@ -50,7 +50,14 @@ export default class Player extends Renderable {
                 this.skinLoadAttempts++;
                 let result;
                 if (typeof skinID === 'string') {
-                    result = await SkinCache.getSkinByName(skinID);
+                    const trimmed = skinID.trim();
+                    // localStorage/network may provide numeric IDs as strings.
+                    // In this case, load by numeric ID instead of skin name.
+                    if (/^\d+$/.test(trimmed)) {
+                        result = await SkinCache.getSkinById(Number(trimmed));
+                    } else {
+                        result = await SkinCache.getSkinByName(trimmed);
+                    }
                 } else {
                     result = await SkinCache.getSkinById(skinID);
                 }
@@ -410,20 +417,14 @@ export default class Player extends Renderable {
             context.restore();
             context.closePath();
 
-            // Draw the player's name
-            let maxWidth = this.buildingRadius.min * 2; // Maximum width allowed for the text
-            // Calculate the font size based on the circle's radius and text length
-            let fontSize = Math.min(healthRadius * 0.5, 48);
+            // Draw the player's name smaller and outside the core to reduce visual competition.
+            let maxWidth = this.buildingRadius.min * 1.15;
+            let fontSize = Math.min(healthRadius * 0.40, 28);
+            fontSize = Math.max(fontSize, 15);
 
             context.font = `900 ${fontSize}px 'Ubuntu', sans-serif`;
 
-            if (!this.nameWidth) {
-                this.nameWidth = context.measureText(this.name).width;
-            }
-
-            const textWidth = this.nameWidth;
-
-            // If the text width exceeds the maximum width, reduce the font size
+            const textWidth = context.measureText(this.name).width;
             if (textWidth > maxWidth) {
                 fontSize *= maxWidth / textWidth;
                 context.font = `900 ${fontSize}px 'Ubuntu', sans-serif`;
@@ -432,14 +433,15 @@ export default class Player extends Renderable {
             context.fillStyle = "white";
             context.textAlign = "center";
             context.textBaseline = "middle";
-            context.fillText(this.name, screenX, screenY);
+            const nameY = screenY;
+            context.fillText(this.name, screenX, nameY);
 
             // Set stroke style and draw text border
             context.strokeStyle = "#666666";
-            context.lineWidth = Math.max(fontSize * 0.06);
+            context.lineWidth = Math.max(fontSize * 0.07);
 
 
-            context.strokeText(this.name, screenX, screenY);
+            context.strokeText(this.name, screenX, nameY);
         };
 
         // Update rotation angle

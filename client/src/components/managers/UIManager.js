@@ -30,6 +30,7 @@ export default class UIManager {
         this.inactivityTimeout = 600; // 10 minutes in seconds
         this.x1PromptElement = null;
         this.x1SendPromptElement = null;
+        this.enemyCoreActionsElement = null;
         this.relocatePromptElement = null;
         this.x1StatusElement = null;
         this.x1StatusInterval = null;
@@ -2391,6 +2392,7 @@ export default class UIManager {
     showX1SendPrompt(targetName, onConfirm, onCancel) {
         this.hideX1ChallengePrompt();
         this.hideX1SendPrompt();
+        this.hideEnemyCoreActions();
 
         const overlay = document.createElement("div");
         overlay.style.position = "fixed";
@@ -2413,7 +2415,7 @@ export default class UIManager {
         card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
 
         const title = document.createElement("div");
-        title.textContent = "CALL TO X1";
+        title.textContent = "CHALLENGE X1";
         title.style.fontSize = "22px";
         title.style.fontWeight = "900";
         title.style.letterSpacing = "1px";
@@ -2427,7 +2429,7 @@ export default class UIManager {
         subtitle.style.color = "#ffffff";
 
         const description = document.createElement("div");
-        description.textContent = "If accepted, a protected arena appears for both players.";
+        description.textContent = "If accepted, a protected arena will appear for both players.";
         description.style.marginTop = "8px";
         description.style.fontSize = "14px";
         description.style.opacity = "0.92";
@@ -2452,7 +2454,7 @@ export default class UIManager {
 
         const confirmButton = document.createElement("button");
         confirmButton.type = "button";
-        confirmButton.textContent = "Call X1";
+        confirmButton.textContent = "Challenge";
         confirmButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
         confirmButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
         confirmButton.style.color = "#e8ffef";
@@ -2489,6 +2491,146 @@ export default class UIManager {
             this.x1SendPromptElement.parentNode.removeChild(this.x1SendPromptElement);
         }
         this.x1SendPromptElement = null;
+    }
+
+    showEnemyCoreActions(targetName, onChallengeX1, onNotifyLeaveBase, onCancel) {
+        this.hideX1ChallengePrompt();
+        this.hideX1SendPrompt();
+        this.hideEnemyCoreActions();
+
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.background = "rgba(0, 0, 0, 0.45)";
+        overlay.style.zIndex = "19999";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.pointerEvents = "all";
+
+        const card = document.createElement("div");
+        card.style.width = "min(560px, 92vw)";
+        card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.96), rgba(16,30,58,0.96))";
+        card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
+        card.style.borderRadius = "14px";
+        card.style.padding = "22px 24px";
+        card.style.boxShadow = "0 16px 45px rgba(0,0,0,0.55), 0 0 22px rgba(96,193,255,0.23)";
+        card.style.color = "#eaf6ff";
+        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "Enemy Base";
+        title.style.fontSize = "22px";
+        title.style.fontWeight = "900";
+        title.style.letterSpacing = "1px";
+        title.style.color = "#9fe8ff";
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = targetName || "Player";
+        subtitle.style.marginTop = "8px";
+        subtitle.style.fontSize = "18px";
+        subtitle.style.fontWeight = "700";
+        subtitle.style.color = "#ffffff";
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "16px";
+        actions.style.display = "grid";
+        actions.style.gap = "10px";
+
+        const createActionButton = (label, description, clickHandler) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.style.width = "100%";
+            btn.style.textAlign = "left";
+            btn.style.border = "1px solid rgba(116, 212, 255, 0.55)";
+            btn.style.background = "rgba(20, 44, 82, 0.55)";
+            btn.style.color = "#eaf6ff";
+            btn.style.borderRadius = "10px";
+            btn.style.padding = "12px 14px";
+            btn.style.cursor = "pointer";
+            btn.style.display = "block";
+            btn.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+            const t = document.createElement("div");
+            t.textContent = label;
+            t.style.fontSize = "15px";
+            t.style.fontWeight = "800";
+
+            const d = document.createElement("div");
+            d.textContent = description;
+            d.style.marginTop = "4px";
+            d.style.fontSize = "13px";
+            d.style.opacity = "0.9";
+
+            btn.appendChild(t);
+            btn.appendChild(d);
+            btn.addEventListener("click", () => {
+                this.hideEnemyCoreActions();
+                if (typeof clickHandler === "function") clickHandler();
+            });
+            return btn;
+        };
+
+        if (typeof onChallengeX1 === "function") {
+            actions.appendChild(createActionButton(
+                "Challenge to X1",
+                "Send a protected X1 challenge to this player.",
+                onChallengeX1
+            ));
+        }
+        if (typeof onNotifyLeaveBase === "function") {
+            actions.appendChild(createActionButton(
+                "Notify When They Leave Base",
+                "Get a chat alert when this player loses spawn protection.",
+                onNotifyLeaveBase
+            ));
+        }
+
+        if (actions.children.length === 0) {
+            const empty = document.createElement("div");
+            empty.textContent = "No actions available right now.";
+            empty.style.fontSize = "13px";
+            empty.style.opacity = "0.9";
+            actions.appendChild(empty);
+        }
+
+        const cancelRow = document.createElement("div");
+        cancelRow.style.marginTop = "14px";
+        cancelRow.style.display = "flex";
+        cancelRow.style.justifyContent = "flex-end";
+
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.textContent = "Close";
+        cancelButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+        cancelButton.style.background = "rgba(120, 36, 36, 0.25)";
+        cancelButton.style.color = "#ffd6d6";
+        cancelButton.style.fontSize = "14px";
+        cancelButton.style.fontWeight = "700";
+        cancelButton.style.padding = "10px 16px";
+        cancelButton.style.borderRadius = "10px";
+        cancelButton.style.cursor = "pointer";
+        cancelButton.addEventListener("click", () => {
+            this.hideEnemyCoreActions();
+            if (typeof onCancel === "function") onCancel();
+        });
+        cancelRow.appendChild(cancelButton);
+
+        card.appendChild(title);
+        card.appendChild(subtitle);
+        card.appendChild(actions);
+        card.appendChild(cancelRow);
+        overlay.appendChild(card);
+
+        document.body.appendChild(overlay);
+        this.enemyCoreActionsElement = overlay;
+    }
+
+    hideEnemyCoreActions() {
+        if (this.enemyCoreActionsElement && this.enemyCoreActionsElement.parentNode) {
+            this.enemyCoreActionsElement.parentNode.removeChild(this.enemyCoreActionsElement);
+        }
+        this.enemyCoreActionsElement = null;
     }
 
     showRelocateBasePrompt(cost, onConfirm, onCancel) {

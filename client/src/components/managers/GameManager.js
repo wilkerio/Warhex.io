@@ -11,6 +11,7 @@ class GameManager {
         this.neutrals = [];
         this.bushes = [];
         this.rocks = [];
+        this.wildPortals = [];
         this.rallyPoints = [];
         this.hasCommander = false;
         this.activeBarracks = {
@@ -24,8 +25,8 @@ class GameManager {
                 generationRate: 0
             },
             protectionTime: {
-                current: 10, // This will store elapsed time in minutes
-                max: 10 // minutes
+                current: 2, // This will store elapsed time in minutes
+                max: 2 // minutes
             },
         }
 
@@ -50,6 +51,7 @@ class GameManager {
         this.duelArena = null;
         this.duelOpponentID = null;
         this.globalDuelArenas = [];
+        this.portalCooldownEndsAt = 0;
     }
 
     updateDynamicMapSize () {
@@ -74,6 +76,7 @@ class GameManager {
         this.neutrals = [];
         this.bushes = [];
         this.rocks = [];
+        this.wildPortals = [];
         this.player = null;
         this.capturedNeutrals = [];
         this.rallyPoints = [];
@@ -86,6 +89,7 @@ class GameManager {
         this.duelArena = null;
         this.duelOpponentID = null;
         this.globalDuelArenas = [];
+        this.portalCooldownEndsAt = 0;
 
         this.updateDynamicMapSize();
         this.core.miniMap.update();
@@ -262,6 +266,18 @@ class GameManager {
         this.rocks.push(rock);
         this.core.renderer.addToQueue(rock, QueueType.STATIC);
         this.core.miniMap.update();
+    }
+
+    setWildPortals (portals) {
+        this.wildPortals.forEach(portal => {
+            this.core.renderer.removeFromQueue(portal, QueueType.OVERLAY);
+        });
+        this.wildPortals = [];
+
+        portals.forEach(portal => {
+            this.wildPortals.push(portal);
+            this.core.renderer.addToQueue(portal, QueueType.OVERLAY);
+        });
     }
 
     addPlayer (player) {

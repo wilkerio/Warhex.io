@@ -168,6 +168,7 @@ function decodePayload (messageType, payload) {
         [MessageTypes.X1_CHALLENGE_RECEIVED]: decodeX1ChallengeReceived,
         [MessageTypes.X1_CHALLENGE_RESULT]: decodeX1ChallengeResult,
         [MessageTypes.X1_DUEL_ARENA_UPDATE]: decodeX1DuelArenaUpdate,
+        [MessageTypes.WILD_PORTALS_UPDATE]: decodeWildPortalsUpdate,
         [MessageTypes.ERROR]: decodeError,
     };
 
@@ -179,7 +180,9 @@ function decodePayload (messageType, payload) {
 function decodeBuildingPlacementFailed (payload) {
     const dataView = new DataView(payload);
     const buildingType = dataView.getUint8(0);
-    return { buildingType }
+    const reason = dataView.byteLength > 1 ? dataView.getUint8(1) : 0;
+    const cooldownSeconds = dataView.byteLength > 3 ? dataView.getUint16(2) : 0;
+    return { buildingType, reason, cooldownSeconds }
 }
 
 function decodeInitialBulletStates (payload) {
@@ -723,6 +726,20 @@ function decodeInitialGameState (payload) {
         return { position, size, rotation };
     };
 
+    const decodeWildPortals = () => {
+        if (offset >= dataView.byteLength) return [];
+        const numPortals = dataView.getUint8(offset++);
+        const wildPortals = [];
+        for (let i = 0; i < numPortals; i++) {
+            const id = dataView.getUint8(offset++);
+            const x = dataView.getFloat32(offset);
+            const y = dataView.getFloat32(offset + 4);
+            offset += 8;
+            wildPortals.push({ id, position: { x, y } });
+        }
+        return wildPortals;
+    };
+
     const numPlayers = dataView.getUint8(offset++);
     const players = [];
     for (let i = 0; i < numPlayers; i++) {
@@ -747,7 +764,24 @@ function decodeInitialGameState (payload) {
         rocks.push(decodeRock());
     }
 
-    return { players, neutralBases, bushes, rocks };
+    const wildPortals = decodeWildPortals();
+
+    return { players, neutralBases, bushes, rocks, wildPortals };
+}
+
+function decodeWildPortalsUpdate (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const numPortals = dataView.getUint8(offset++);
+    const wildPortals = [];
+    for (let i = 0; i < numPortals; i++) {
+        const id = dataView.getUint8(offset++);
+        const x = dataView.getFloat32(offset);
+        const y = dataView.getFloat32(offset + 4);
+        offset += 8;
+        wildPortals.push({ id, position: { x, y } });
+    }
+    return { wildPortals };
 }
 
 function decodeResourceUpdate (payload) {

@@ -16,6 +16,23 @@ import (
 var PORT = os.Getenv("PORT")
 var DISABLE_MULTIBOX_CHECK = true // Temporary: allow multiple clients from same IP/fingerprint/account
 
+func hasActiveUnits(player *game.Player) bool {
+	if player == nil {
+		return false
+	}
+
+	player.RLock()
+	defer player.RUnlock()
+
+	for _, unit := range player.Units {
+		if unit != nil && !unit.IsMarkedForRemoval() && unit.Health.Get() > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func handleMessage(conn *websocket.Conn, message []byte) {
 	if len(message) < 1 {
 		log.Println("Received empty binary message")
@@ -67,6 +84,8 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleClientSendX1Challenge(conn, payload)
 	case MessageTypeClientX1ChallengeReply:
 		handleClientX1ChallengeReply(conn, payload)
+	case MessageTypeClientWatchLeaveBase:
+		handleClientWatchLeaveBase(conn, payload)
 
 	default:
 		log.Printf("Received unsupported message type: %d", messageType)
@@ -310,11 +329,52 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 
 	buildingType := game.BuildingType(payload[0])
 	position := getPositionFloatFromPayload(payload[1:])
+	base := player.Base
 
 	// Validate building type
 	if !game.ValidateBuildingType(buildingType) {
 		log.Println("Invalid building type")
 		return
+	}
+
+	if buildingType == game.PORTAL {
+		// Portal can be placed anywhere inside map bounds.
+		padding := float32(game.GetBuildingSize(buildingType) + 8)
+		position = game.ClampPositionFloatToMap(position, padding)
+
+		const extraPortalBaseGap = float32(120)
+		portalSize := float32(game.GetBuildingSize(game.PORTAL))
+		playerForbiddenRadius := float32(game.PLAYER_MAX_BUILDING_RADIUS) + portalSize + extraPortalBaseGap
+		neutralForbiddenRadius := float32(game.NEUTRAL_BASE_MAX_BUILDING_RADIUS) + portalSize + extraPortalBaseGap
+
+		tooCloseToBase := func(basePos game.PositionInt, forbiddenRadius float32) bool {
+			dx := float64(position.X - float32(basePos.X))
+			dy := float64(position.Y - float32(basePos.Y))
+			return dx*dx+dy*dy <= float64(forbiddenRadius*forbiddenRadius)
+		}
+
+		game.State.RLock()
+		for _, p := range game.State.Players {
+			if p == nil || p.IsMarkedForRemoval() || p.Base == nil {
+				continue
+			}
+			if tooCloseToBase(p.Base.Position, playerForbiddenRadius) {
+				game.State.RUnlock()
+				SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
+				return
+			}
+		}
+		for _, n := range game.State.NeutralBases {
+			if n == nil || n.Base == nil {
+				continue
+			}
+			if tooCloseToBase(n.Base.Position, neutralForbiddenRadius) {
+				game.State.RUnlock()
+				SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
+				return
+			}
+		}
+		game.State.RUnlock()
 	}
 
 	basePosition := player.Base.Position
@@ -346,7 +406,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 			// Wall can be placed freely and a bit outside the ring.
 			maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 16
 			maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 16
-		case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.GENERATOR, game.HOUSE:
+		case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.PORTAL, game.GENERATOR, game.HOUSE:
 			// These must remain inside ring: building edge cannot cross max radius.
 			size := game.GetBuildingSize(buildingType)
 			minRadius += size
@@ -366,7 +426,6 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 			tolerance = 12
 		}
 
-	base := player.Base
 	// Validation for building placement
 	isPlayerRadiusValid := false
 
@@ -407,24 +466,73 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	// If neither the player nor the neutral base allow the placement, fail it
-	if !isPlayerRadiusValid && !isNeutralBaseValid {
+	if buildingType != game.PORTAL && !isPlayerRadiusValid && !isNeutralBaseValid {
 		log.Println("Building placement failed: position is not valid for either player or neutral base")
-		SendBuildingPlacementFailed(player, buildingType)
+		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
+	}
+
+	ownedPortalCount := 0
+	if buildingType == game.PORTAL {
+		player.Base.RLock()
+		for _, b := range player.Base.Buildings {
+			if b != nil && b.Type == game.PORTAL {
+				ownedPortalCount++
+			}
+		}
+		player.Base.RUnlock()
+
+		player.RLock()
+		capturedNeutralsForPortal := make([]*game.NeutralBase, 0, len(player.CapturedNeutralBases))
+		capturedNeutralsForPortal = append(capturedNeutralsForPortal, player.CapturedNeutralBases...)
+		player.RUnlock()
+
+		for _, neutral := range capturedNeutralsForPortal {
+			if neutral == nil || neutral.Base == nil {
+				continue
+			}
+			neutral.Base.RLock()
+			for _, b := range neutral.Base.Buildings {
+				if b != nil && b.Type == game.PORTAL {
+					ownedPortalCount++
+				}
+			}
+			neutral.Base.RUnlock()
+		}
+
+		if ownedPortalCount == 0 {
+			player.RLock()
+			nextPortalAllowedAt := player.NextPortalAllowedAt
+			player.RUnlock()
+
+			if !nextPortalAllowedAt.IsZero() && time.Now().Before(nextPortalAllowedAt) {
+				remaining := time.Until(nextPortalAllowedAt)
+				if remaining < 0 {
+					remaining = 0
+				}
+				cooldownSeconds := uint16(math.Ceil(remaining.Seconds()))
+				SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailPortalCooldown, cooldownSeconds)
+				return
+			}
+		}
 	}
 
 	// Subtract the cost from the power
 	costs, ok := game.GetBuildingCost(buildingType, game.BASIC_BUILDING)
 	if !ok {
 		log.Println("Costs not found for building:", buildingType)
-		SendBuildingPlacementFailed(player, buildingType)
+		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
+	}
+	if buildingType == game.PORTAL && ownedPortalCount >= 1 {
+		// Portal pair package: first costs 2500, second is free.
+		costs = 0
 	}
 
 	ok = player.Resources.Power.Decrement(costs)
 	if !ok {
 		log.Println("Could not subtract costs for building:", buildingType)
-		SendBuildingPlacementFailed(player, buildingType)
+		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
 	}
 
@@ -433,13 +541,13 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		log.Println("Building intersects with existing building")
 		// Restore resources if collision detected
 		player.Resources.Power.Increment(costs)
-		SendBuildingPlacementFailed(player, buildingType)
+		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
 	}
 
 	if game.CheckBuildingOverlapWithUnits(player, buildingType, position) {
 		player.Resources.Power.Increment(costs)
-		SendBuildingPlacementFailed(player, buildingType)
+		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
 	}
 
@@ -449,7 +557,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		log.Println("Failed to place building")
 		// Restore resources if building placement failed
 		player.Resources.Power.Increment(costs)
-		SendBuildingPlacementFailed(player, buildingType)
+		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
 	}
 
@@ -1092,6 +1200,9 @@ func handleBuyRelocateBase(conn *websocket.Conn, payload []byte) {
 	if player.InDuel {
 		return
 	}
+	if hasActiveUnits(player) {
+		return
+	}
 
 	now := time.Now()
 	canRelocate, remaining := player.CanRelocateNow(now)
@@ -1325,7 +1436,11 @@ const (
 	x1ResultUnavailable byte = 4
 	x1ResultNoPending   byte = 5
 	x1ResultLeaveBase   byte = 6
+	x1ResultUnderAttack byte = 7
+	x1ResultWatchNotice byte = 8
 )
+
+const x1TargetUnderAttackWindow = 5 * time.Minute
 
 func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
 	dx := float64(target.Base.Position.X - challenger.Base.Position.X)
@@ -1401,7 +1516,6 @@ func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
 		return
 	}
 	challenger.SetLastActivity()
-
 	targetID := game.ID(payload[0])
 	if targetID == challenger.ID {
 		sendX1ChallengeResult(challenger, x1ResultUnavailable, challenger)
@@ -1426,6 +1540,10 @@ func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
 	}
 	if isInProtectedX1(challenger) || isInProtectedX1(target) {
 		sendX1ChallengeResult(challenger, x1ResultUnavailable, target)
+		return
+	}
+	if target.WasBaseDamagedWithin(x1TargetUnderAttackWindow) {
+		sendX1ChallengeResult(challenger, x1ResultUnderAttack, target)
 		return
 	}
 
@@ -1489,6 +1607,11 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 		sendX1ChallengeResult(challenger, x1ResultUnavailable, targetPlayer)
 		return
 	}
+	if targetPlayer.WasBaseDamagedWithin(x1TargetUnderAttackWindow) {
+		sendX1ChallengeResult(targetPlayer, x1ResultUnderAttack, challenger)
+		sendX1ChallengeResult(challenger, x1ResultUnderAttack, targetPlayer)
+		return
+	}
 
 	if accepted {
 		arena := game.StartProtectedDuel(challenger, targetPlayer)
@@ -1500,6 +1623,36 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 
 	sendX1ChallengeResult(challenger, x1ResultDeclined, targetPlayer)
 	sendX1ChallengeResult(targetPlayer, x1ResultDeclined, challenger)
+}
+
+func handleClientWatchLeaveBase(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 1 {
+		return
+	}
+
+	watcher, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		return
+	}
+	watcher.SetLastActivity()
+
+	targetID := game.ID(payload[0])
+	if targetID == watcher.ID {
+		return
+	}
+
+	game.State.RLock()
+	target, targetExists := game.State.Players[targetID]
+	game.State.RUnlock()
+	if !targetExists || target == nil || target.IsMarkedForRemoval() {
+		return
+	}
+
+	if !target.HasProtection() {
+		return
+	}
+
+	sendX1ChallengeResult(target, x1ResultWatchNotice, watcher)
 }
 
 func removePlayerMessageState(playerID game.ID) {

@@ -43,6 +43,7 @@ type Player struct {
 	HasSpawnProtection     bool
 	RelocateCount          uint32
 	NextRelocateAllowedAt  time.Time
+	NextPortalAllowedAt    time.Time
 
 	// Unit
 	AvailableUnitIDs   *AvailableIDs
@@ -59,6 +60,7 @@ type Player struct {
 	DuelOpponentID     ID
 	DuelArena          DuelArena
 	DuelPrepEndsAt     time.Time
+	LastBaseDamageAt   time.Time
 
 	// Script prevention
 	LastBuildingAction  time.Time // Timestamp of the last building upgraded/placed
@@ -250,6 +252,22 @@ func (p *Player) RecordRelocation(now time.Time) {
 	p.NextRelocateAllowedAt = now.Add(cooldown)
 }
 
+func (p *Player) RecordBaseDamage(now time.Time) {
+	p.Lock()
+	defer p.Unlock()
+	p.LastBaseDamageAt = now
+}
+
+func (p *Player) WasBaseDamagedWithin(window time.Duration) bool {
+	p.RLock()
+	last := p.LastBaseDamageAt
+	p.RUnlock()
+	if last.IsZero() {
+		return false
+	}
+	return time.Since(last) < window
+}
+
 func (p *Player) IncrementScore(value uint32) {
 	p.Lock()
 	p.Score += uint32(value)
@@ -295,6 +313,7 @@ func (p *Player) AddCommander() (*Unit, bool) {
 		TargetPosition: IntToFloat(p.Base.Position),
 		TargetRotation: UnitTargetRotation{float32(0), false},
 		Health:         unitStats.Health,
+		Damage:         unitStats.Damage,
 		Size:           unitStats.Size,
 		Speed:          unitStats.Speed,
 

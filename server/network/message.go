@@ -6,6 +6,11 @@ const (
 	ErrorCodeRelocateCooldown byte = 1
 )
 
+const (
+	BuildingPlacementFailGeneric        byte = 0
+	BuildingPlacementFailPortalCooldown byte = 1
+)
+
 // Define message types for communication between client and server
 const (
 	MessageTypeJoin                   byte = 0 // Player joining message (PlayerID: 1 byte, Color: 1 byte)
@@ -60,6 +65,8 @@ const (
 	MessageTypeX1ChallengeResult        byte = 49
 	MessageTypeX1DuelArenaUpdate        byte = 50
 	MessageTypeClientBuyRelocateBase    byte = 51
+	MessageTypeWildPortalsUpdate        byte = 52
+	MessageTypeClientWatchLeaveBase     byte = 53
 	MessageTypeHeartbeat                byte = 69
 	MessageTypeServerVersion            byte = 98
 	MessageTypeRebootAlertMessage       byte = 99

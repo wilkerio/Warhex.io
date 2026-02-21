@@ -3,6 +3,7 @@ package game
 import (
 	"math"
 	"sync"
+	"time"
 )
 
 type Building struct {
@@ -11,6 +12,7 @@ type Building struct {
 	Type       BuildingType
 	Variant    BuildingVariant
 	Position   PositionFloat
+	PlacedAt   time.Time
 	Polygon    Polygon
 	Health     Health
 	RemoveFlag bool // Flag to mark unit for removal
@@ -243,6 +245,15 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 			Cost:    3000,
 		},
 	},
+	PORTAL: {
+		BASIC_BUILDING: {
+			Variant: BASIC_BUILDING,
+			Health:  Health{Current: 120, Max: 120},
+			Damage:  0,
+			Next:    []BuildingVariant{},
+			Cost:    2500,
+		},
+	},
 	GENERATOR: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
@@ -283,6 +294,7 @@ var buildingSizes = map[BuildingType]int{
 	SNIPER_TURRET: 32,
 	ARMORY:        40,
 	BARRACKS:      60,
+	PORTAL:        40,
 	GENERATOR:     32,
 	HOUSE:         30,
 }
@@ -343,6 +355,7 @@ var unitSpawningConfig = map[BuildingType]map[BuildingVariant]UnitSpawning{
 
 var buildingPolygons = map[BuildingType]Polygon{
 	BARRACKS:      GeneratePolygon(ShapeRectangle, GetBuildingSize(BARRACKS), math.Pi),
+	PORTAL:        GeneratePolygon(ShapeCircle, GetBuildingSize(PORTAL), math.Pi/2),
 	GENERATOR:     GeneratePolygon(ShapeHexagon, GetBuildingSize(GENERATOR), math.Pi/2),
 	HOUSE:         GeneratePolygon(ShapePentagon, GetBuildingSize(HOUSE), 0),
 	SIMPLE_TURRET: GeneratePolygon(ShapeCircle, GetBuildingSize(SIMPLE_TURRET), math.Pi/2),

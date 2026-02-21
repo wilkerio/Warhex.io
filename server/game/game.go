@@ -4,6 +4,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -15,6 +16,8 @@ type GameState struct {
 	NeutralBases       []*NeutralBase
 	Bushes             []PositionInt
 	Rocks              []Rock
+	WildPortals        map[ID]*WildPortal
+	AvailablePortalIDs *AvailableIDs
 	AvailablePositions map[PositionInt]bool
 	Leaderboard        *Leaderboard
 	sync.RWMutex
@@ -23,6 +26,8 @@ type GameState struct {
 var (
 	State = GameState{
 		Players:            make(map[ID]*Player),
+		WildPortals:        make(map[ID]*WildPortal),
+		AvailablePortalIDs: InitAvailableIDs(256),
 		AvailablePositions: make(map[PositionInt]bool),
 	}
 	availablePlayerIDs *AvailableIDs
@@ -49,6 +54,16 @@ func init() {
 	go startEntityUpdateLoop()
 	go startProtectionCheckLoop()
 	go startCommanderRegenerationLoop()
+	go startWildPortalLoop()
+	go startOwnedPortalLifecycleLoop()
+}
+
+type WildPortal struct {
+	ID           ID
+	Position     PositionFloat
+	ExpiresAt    time.Time
+	DestinationX float32
+	DestinationY float32
 }
 
 // clearSpawnArea removes bushes and rocks within a radius of the spawn position
@@ -150,6 +165,39 @@ func startProtectionCheckLoop() {
 			if player.HasProtection() && time.Now().After(player.GetProtectionEndTime()) {
 				player.RemoveProtection()
 			}
+
+			// Self-heal stale duel state to avoid combat lock.
+			player.RLock()
+			inDuel := player.InDuel
+			opponentID := player.DuelOpponentID
+			player.RUnlock()
+			if !inDuel {
+				continue
+			}
+
+			opponent := State.Players[opponentID]
+			if opponent == nil {
+				player.Lock()
+				player.InDuel = false
+				player.DuelOpponentID = 0
+				player.DuelArena = DuelArena{}
+				player.DuelPrepEndsAt = time.Time{}
+				player.Unlock()
+				continue
+			}
+
+			opponent.RLock()
+			oppInDuel := opponent.InDuel
+			oppOpponentID := opponent.DuelOpponentID
+			opponent.RUnlock()
+			if !oppInDuel || oppOpponentID != player.ID {
+				player.Lock()
+				player.InDuel = false
+				player.DuelOpponentID = 0
+				player.DuelArena = DuelArena{}
+				player.DuelPrepEndsAt = time.Time{}
+				player.Unlock()
+			}
 		}
 		State.RUnlock()
 	}
@@ -172,6 +220,226 @@ func startCommanderRegenerationLoop() {
 			}
 		}
 		State.RUnlock()
+	}
+}
+
+func snapshotWildPortalsLocked() []WildPortalSnapshot {
+	portals := make([]WildPortalSnapshot, 0, len(State.WildPortals))
+	for _, portal := range State.WildPortals {
+		if portal == nil {
+			continue
+		}
+		portals = append(portals, WildPortalSnapshot{
+			ID:       portal.ID,
+			Position: portal.Position,
+		})
+	}
+	return portals
+}
+
+func randomPortalPositionWithRadius(mapRadius int16, padding float32) PositionFloat {
+	radius := float32(mapRadius) - padding
+	if radius < 0 {
+		radius = 0
+	}
+
+	return PositionFloat{
+		X: (rand.Float32()*2 - 1) * radius,
+		Y: (rand.Float32()*2 - 1) * radius,
+	}
+}
+
+func startWildPortalLoop() {
+	// Disabled by gameplay rule: no random wild portals on map.
+	const wildPortalsEnabled = false
+	if !wildPortalsEnabled {
+		return
+	}
+
+	const (
+		portalTTL              = 35 * time.Second
+		portalTick             = 1 * time.Second
+		minSpawnEvery          = 12 * time.Second
+		maxSpawnEvery          = 22 * time.Second
+		maxConcurrentPortals   = 3
+		minDistanceToAnyPortal = 260.0
+	)
+
+	ticker := time.NewTicker(portalTick)
+	defer ticker.Stop()
+
+	nextSpawnAt := time.Now().Add(minSpawnEvery)
+
+	for range ticker.C {
+		now := time.Now()
+		changed := false
+		var snapshot []WildPortalSnapshot
+
+		State.Lock()
+
+		// Remove expired portals.
+		for id, portal := range State.WildPortals {
+			if portal == nil || now.After(portal.ExpiresAt) {
+				delete(State.WildPortals, id)
+				State.AvailablePortalIDs.returnID(id)
+				changed = true
+			}
+		}
+
+		// Spawn new portal occasionally.
+		if now.After(nextSpawnAt) && len(State.WildPortals) < maxConcurrentPortals {
+			if portalID, ok := State.AvailablePortalIDs.getNextAvailableID(); ok {
+				spawnPadding := float32(GetBuildingSize(PORTAL) + 14)
+				mapRadius := calculateMapRadius(len(State.Players))
+
+				spawnPos := randomPortalPositionWithRadius(mapRadius, spawnPadding)
+				attempts := 0
+				for attempts < 10 {
+					tooClose := false
+					for _, existing := range State.WildPortals {
+						if existing == nil {
+							continue
+						}
+						dx := float64(existing.Position.X - spawnPos.X)
+						dy := float64(existing.Position.Y - spawnPos.Y)
+						if dx*dx+dy*dy < minDistanceToAnyPortal*minDistanceToAnyPortal {
+							tooClose = true
+							break
+						}
+					}
+					if !tooClose {
+						break
+					}
+						spawnPos = randomPortalPositionWithRadius(mapRadius, spawnPadding)
+						attempts++
+					}
+
+					destination := randomPortalPositionWithRadius(mapRadius, spawnPadding+40)
+				State.WildPortals[portalID] = &WildPortal{
+					ID:           portalID,
+					Position:     spawnPos,
+					ExpiresAt:    now.Add(portalTTL),
+					DestinationX: destination.X,
+					DestinationY: destination.Y,
+				}
+				changed = true
+			}
+		}
+
+		if changed {
+			snapshot = snapshotWildPortalsLocked()
+		}
+
+		State.Unlock()
+
+		if changed {
+			TriggerWildPortalsUpdateEvent(snapshot)
+		}
+
+		// Recalculate next spawn schedule.
+		if now.After(nextSpawnAt) {
+			window := maxSpawnEvery - minSpawnEvery
+			nextSpawnAt = now.Add(minSpawnEvery + time.Duration(rand.Int63n(int64(window))))
+		}
+	}
+}
+
+func resolvePortalOwnerPlayer(building *Building) *Player {
+	if building == nil || building.Owner == nil {
+		return nil
+	}
+	if owner, ok := building.Owner.(*Player); ok {
+		return owner
+	}
+	if neutral, ok := building.Owner.(*NeutralBase); ok {
+		return neutral.CapturedBy
+	}
+	return nil
+}
+
+func startOwnedPortalLifecycleLoop() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	portalLifetime := time.Duration(PORTAL_LIFETIME_SECONDS) * time.Second
+	portalCooldown := time.Duration(PORTAL_COOLDOWN_SECONDS) * time.Second
+
+	for range ticker.C {
+		State.RLock()
+		players := make([]*Player, 0, len(State.Players))
+		for _, p := range State.Players {
+			if p != nil && !p.IsMarkedForRemoval() {
+				players = append(players, p)
+			}
+		}
+		State.RUnlock()
+
+		type portalEntry struct {
+			base     *Base
+			building *Building
+		}
+		expiredPortals := make([]portalEntry, 0)
+		now := time.Now()
+
+		for _, p := range players {
+			if p == nil || p.Base == nil {
+				continue
+			}
+
+			p.Base.RLock()
+			for _, b := range p.Base.Buildings {
+				if b == nil || b.Type != PORTAL || b.IsMarkedForRemoval() {
+					continue
+				}
+				if !b.PlacedAt.IsZero() && now.Sub(b.PlacedAt) >= portalLifetime {
+					expiredPortals = append(expiredPortals, portalEntry{base: p.Base, building: b})
+				}
+			}
+			p.Base.RUnlock()
+
+			p.RLock()
+			captured := make([]*NeutralBase, 0, len(p.CapturedNeutralBases))
+			captured = append(captured, p.CapturedNeutralBases...)
+			p.RUnlock()
+
+			for _, neutral := range captured {
+				if neutral == nil || neutral.Base == nil {
+					continue
+				}
+				neutral.Base.RLock()
+				for _, b := range neutral.Base.Buildings {
+					if b == nil || b.Type != PORTAL || b.IsMarkedForRemoval() {
+						continue
+					}
+					if !b.PlacedAt.IsZero() && now.Sub(b.PlacedAt) >= portalLifetime {
+						expiredPortals = append(expiredPortals, portalEntry{base: neutral.Base, building: b})
+					}
+				}
+				neutral.Base.RUnlock()
+			}
+		}
+
+		if len(expiredPortals) == 0 {
+			continue
+		}
+
+		for _, expired := range expiredPortals {
+			if expired.base == nil || expired.building == nil {
+				continue
+			}
+
+			owner := resolvePortalOwnerPlayer(expired.building)
+			if owner != nil {
+				next := now.Add(portalCooldown)
+				owner.Lock()
+				if owner.NextPortalAllowedAt.Before(next) {
+					owner.NextPortalAllowedAt = next
+				}
+				owner.Unlock()
+			}
+
+			handleBuildingDestroyed(expired.building, expired.base)
+		}
 	}
 }
 
@@ -663,6 +931,184 @@ func updateBullets(base *Base, duration time.Duration) {
 	}
 }
 
+type portalPair struct {
+	A *Building
+	B *Building
+}
+
+const unitPortalTeleportCooldown = 1200 * time.Millisecond
+
+func collectOwnedPortals(player *Player) []*Building {
+	portals := make([]*Building, 0, 2)
+	if player == nil {
+		return portals
+	}
+
+	player.Base.RLock()
+	for _, building := range player.Base.Buildings {
+		if building.Type == PORTAL && !building.IsMarkedForRemoval() {
+			portals = append(portals, building)
+		}
+	}
+	player.Base.RUnlock()
+
+	player.RLock()
+	capturedNeutrals := make([]*NeutralBase, 0, len(player.CapturedNeutralBases))
+	capturedNeutrals = append(capturedNeutrals, player.CapturedNeutralBases...)
+	player.RUnlock()
+
+	for _, neutral := range capturedNeutrals {
+		if neutral == nil || neutral.Base == nil {
+			continue
+		}
+		neutral.Base.RLock()
+		for _, building := range neutral.Base.Buildings {
+			if building.Type == PORTAL && !building.IsMarkedForRemoval() {
+				portals = append(portals, building)
+			}
+		}
+		neutral.Base.RUnlock()
+	}
+
+	sort.Slice(portals, func(i, j int) bool {
+		return portals[i].ID < portals[j].ID
+	})
+
+	return portals
+}
+
+func getPortalPairs(players []*Player) []portalPair {
+	pairs := make([]portalPair, 0, len(players))
+
+	for _, owner := range players {
+		portals := collectOwnedPortals(owner)
+		if len(portals) < 2 {
+			continue
+		}
+		pairs = append(pairs, portalPair{A: portals[0], B: portals[1]})
+	}
+
+	return pairs
+}
+
+func applyPortalTeleportForUnit(unit *Unit, portalPairs []portalPair) bool {
+	if unit == nil || len(portalPairs) == 0 {
+		return false
+	}
+	if !unit.LastPortalTeleportAt.IsZero() && time.Since(unit.LastPortalTeleportAt) < unitPortalTeleportCooldown {
+		return false
+	}
+
+	var (
+		closestSource     *Building
+		closestDestination *Building
+		minDistanceSq     = float64(math.MaxFloat64)
+	)
+
+	for _, pair := range portalPairs {
+		if pair.A == nil || pair.B == nil || pair.A.IsMarkedForRemoval() || pair.B.IsMarkedForRemoval() {
+			continue
+		}
+
+		checkEndpoint := func(source *Building, destination *Building) {
+			dx := float64(unit.Position.X - source.Position.X)
+			dy := float64(unit.Position.Y - source.Position.Y)
+			distanceSq := dx*dx + dy*dy
+			activationRadius := float64(GetBuildingSize(PORTAL) + unit.Size + 6)
+			if distanceSq <= activationRadius*activationRadius && distanceSq < minDistanceSq {
+				minDistanceSq = distanceSq
+				closestSource = source
+				closestDestination = destination
+			}
+		}
+
+		checkEndpoint(pair.A, pair.B)
+		checkEndpoint(pair.B, pair.A)
+	}
+
+	if closestSource == nil || closestDestination == nil {
+		return false
+	}
+
+	source := closestSource.Position
+	destination := closestDestination.Position
+
+	dirX := destination.X - source.X
+	dirY := destination.Y - source.Y
+	length := float32(math.Sqrt(float64(dirX*dirX + dirY*dirY)))
+	if length <= 0.0001 {
+		dirX, dirY = 1, 0
+		length = 1
+	}
+	normalX := dirX / length
+	normalY := dirY / length
+	exitDistance := float32(GetBuildingSize(PORTAL) + unit.Size + 8)
+
+	newPosition := PositionFloat{
+		X: destination.X + normalX*exitDistance,
+		Y: destination.Y + normalY*exitDistance,
+	}
+
+	deltaX := newPosition.X - unit.Position.X
+	deltaY := newPosition.Y - unit.Position.Y
+
+	unit.Lock()
+	unit.Position = newPosition
+	unit.TargetPosition.X += deltaX
+	unit.TargetPosition.Y += deltaY
+	unit.LastPortalTeleportAt = time.Now()
+	unit.Unlock()
+
+	return true
+}
+
+func applyWildPortalTeleportForUnit(unit *Unit, wildPortals []*WildPortal) bool {
+	if unit == nil || len(wildPortals) == 0 {
+		return false
+	}
+	if !unit.LastPortalTeleportAt.IsZero() && time.Since(unit.LastPortalTeleportAt) < unitPortalTeleportCooldown {
+		return false
+	}
+
+	var closest *WildPortal
+	minDistanceSq := float64(math.MaxFloat64)
+	activationRadius := float64(GetBuildingSize(PORTAL) + unit.Size + 8)
+
+	for _, portal := range wildPortals {
+		if portal == nil {
+			continue
+		}
+		dx := float64(unit.Position.X - portal.Position.X)
+		dy := float64(unit.Position.Y - portal.Position.Y)
+		distanceSq := dx*dx + dy*dy
+		if distanceSq <= activationRadius*activationRadius && distanceSq < minDistanceSq {
+			minDistanceSq = distanceSq
+			closest = portal
+		}
+	}
+
+	if closest == nil {
+		return false
+	}
+
+	newPosition := ClampPositionFloatToMap(PositionFloat{
+		X: closest.DestinationX,
+		Y: closest.DestinationY,
+	}, float32(unit.Size+8))
+
+	deltaX := newPosition.X - unit.Position.X
+	deltaY := newPosition.Y - unit.Position.Y
+
+	unit.Lock()
+	unit.Position = newPosition
+	unit.TargetPosition.X += deltaX
+	unit.TargetPosition.Y += deltaY
+	unit.LastPortalTeleportAt = time.Now()
+	unit.Unlock()
+
+	return true
+}
+
 func updateUnits(player *Player, duration time.Duration, players []*Player) {
 	// Lock the player to access units
 	player.RLock()
@@ -674,6 +1120,13 @@ func updateUnits(player *Player, duration time.Duration, players []*Player) {
 
 	// Slice to hold units that have been updated
 	updatedUnits := make([]*Unit, 0)
+	portalPairs := getPortalPairs(players)
+	State.RLock()
+	wildPortals := make([]*WildPortal, 0, len(State.WildPortals))
+	for _, portal := range State.WildPortals {
+		wildPortals = append(wildPortals, portal)
+	}
+	State.RUnlock()
 	mapRadius := float32(GetCurrentMapRadius())
 	for _, unit := range units {
 		if unit.IsMarkedForRemoval() {
@@ -690,6 +1143,9 @@ func updateUnits(player *Player, duration time.Duration, players []*Player) {
 
 		// Update unit position
 		if unit.UpdatePosition(duration, units) {
+			applyPortalTeleportForUnit(unit, portalPairs)
+			applyWildPortalTeleportForUnit(unit, wildPortals)
+
 			if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
 				math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
 				unit.MarkForRemoval()
@@ -809,11 +1265,11 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 			}
 		}
 
-		for _, building := range buildings {
-			// Skip units that are marked for removal
-			if building.IsMarkedForRemoval() {
-				continue
-			}
+			for _, building := range buildings {
+				// Skip units that are marked for removal
+				if building.IsMarkedForRemoval() {
+					continue
+				}
 
 			for _, bullet := range bullets {
 				// Skip bullets that are marked for removal
@@ -842,12 +1298,98 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 						handleBuildingDestroyed(building, player.Base)
 						break // Building destroyed no need for more bullet checks for that building
 					}
+					}
 				}
 			}
-		}
 
-		for _, rock := range State.Rocks {
+			// Unit-fired bullets can also damage the enemy core.
+			playerBasePosition := IntToFloat(player.Base.Position)
+			otherPlayer.RLock()
+			attackerUnits := make([]*Unit, 0, len(otherPlayer.Units))
+			for _, u := range otherPlayer.Units {
+				attackerUnits = append(attackerUnits, u)
+			}
+			otherPlayer.RUnlock()
+
 			for _, bullet := range bullets {
+				if bullet.isMarkedForRemoval() {
+					continue
+				}
+				if !bullet.IsFiredByUnit() {
+					continue
+				}
+
+				// Spawn protection blocks core damage unless they are duel opponents.
+				if player.HasProtection() && !AreDuelOpponents(player, otherPlayer) {
+					continue
+				}
+
+				coreRadius := (float32(player.Base.Health.Current)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS + float32(bullet.Size)
+				if !bullet.IsWithinRadius(playerBasePosition, coreRadius) {
+					continue
+				}
+
+				playerHealth := player.Base.Health.Current
+				bulletHealth := bullet.Health.Current
+
+				isBulletAlive := bullet.TakeDamage(playerHealth)
+				if !isBulletAlive {
+					TriggerBulletRemoveEvent(otherPlayer.Base.Owner, bullet.ID)
+					bullet.MarkForRemoval()
+					otherPlayer.Base.RemoveBullet(bullet.ID)
+				}
+
+				isBaseAlive := player.Base.TakeDamage(bulletHealth)
+				if !isBaseAlive {
+					if !player.IsMarkedForRemoval() {
+						scoreIncrement := (player.Score / 100) * 50
+						powerIncrement := math.Min((float64(player.Score)/100)*10, 6000)
+						otherPlayer.IncrementScore(scoreIncrement)
+						otherPlayer.IncrementKills(1)
+						otherPlayer.Resources.Power.Increment(uint16(powerIncrement))
+						player.MarkForRemoval()
+						TriggerPlayerKilledEvent(player, otherPlayer)
+					}
+				} else {
+					TriggerBaseHealthUpdateEvent(player.Base)
+				}
+
+					// Core retaliates: closest attacking unit also takes damage.
+					var (
+						closestAttacker   *Unit
+						closestDistanceSq = float64(math.MaxFloat64)
+					)
+					for _, attacker := range attackerUnits {
+						if attacker == nil || attacker.IsMarkedForRemoval() {
+							continue
+						}
+						dx := float64(attacker.Position.X - playerBasePosition.X)
+						dy := float64(attacker.Position.Y - playerBasePosition.Y)
+						distanceSq := dx*dx + dy*dy
+						if distanceSq < closestDistanceSq {
+							closestDistanceSq = distanceSq
+							closestAttacker = attacker
+						}
+					}
+
+					if closestAttacker != nil {
+						retaliationDamage := bulletHealth
+						if retaliationDamage < 80 {
+							retaliationDamage = 80
+						}
+
+						attackerAlive := closestAttacker.TakeDamage(retaliationDamage)
+						if !attackerAlive {
+							closestAttacker.MarkForRemoval()
+							handleUnitDestroyed(closestAttacker)
+						} else {
+							TriggerUnitHealthUpdateEvent(closestAttacker.Player, closestAttacker)
+					}
+				}
+			}
+
+			for _, rock := range State.Rocks {
+				for _, bullet := range bullets {
 				// Skip bullets that are marked for removal
 				if bullet.isMarkedForRemoval() {
 					continue
@@ -986,8 +1528,12 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 			continue
 		}
 
-		hasSpawnProtection := otherPlayer.HasProtection()
-		basePosition := otherPlayer.Base.Position
+			hasSpawnProtection := otherPlayer.HasProtection()
+			if hasSpawnProtection && time.Now().After(otherPlayer.GetProtectionEndTime()) {
+				otherPlayer.RemoveProtection()
+				hasSpawnProtection = false
+			}
+			basePosition := otherPlayer.Base.Position
 
 		// Same player checks own units if left spawn protection
 		if otherPlayer.ID == player.ID {
@@ -1577,6 +2123,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 			SNIPER_TURRET: {0, 9999},
 			ARMORY:        {0, 1},
 			BARRACKS:      {0, 4},
+			PORTAL:        {0, 2},
 			GENERATOR:     {0, 9999},
 			HOUSE:         {0, 9999}},
 		AvailableBuildingIDs: InitAvailableIDs(256),

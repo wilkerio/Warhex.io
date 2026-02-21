@@ -27,6 +27,7 @@ type Unit struct {
 	Size                      int
 	ExplosionRadius           int
 	LastTargetPositionUpdate  time.Time
+	LastPortalTeleportAt      time.Time
 	ExactTargetPositonRequest PositionInt
 	LastDamageTime            time.Time
 	RemoveFlag                bool // Flag to mark unit for removal

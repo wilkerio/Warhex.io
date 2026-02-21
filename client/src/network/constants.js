@@ -77,6 +77,8 @@ export const MessageTypes = {
     X1_CHALLENGE_RESULT: 49,
     X1_DUEL_ARENA_UPDATE: 50,
     BUY_RELOCATE_BASE: 51,
+    WILD_PORTALS_UPDATE: 52,
+    CLIENT_WATCH_LEAVE_BASE: 53,
     HEARTBEAT: 69,
     SERVER_VERSION: 98,
     REBOOT_ALERT: 99,
@@ -88,12 +90,18 @@ export const ErrorCodes = {
     RELOCATE_COOLDOWN: 1
 };
 
+export const BuildingPlacementFailReasons = {
+    GENERIC: 0,
+    PORTAL_COOLDOWN: 1
+};
+
 export const BuildingSizes = {
     WALL: { size: 30 },
     SIMPLE_TURRET: { size: 29 },
     SNIPER_TURRET: { size: 32 },
     ARMORY: { size: 40 },
     BARRACKS: { size: 60 },
+    PORTAL: { size: 40 },
     GENERATOR: { size: 32 },
     HOUSE: { size: 30 }
 };
@@ -104,6 +112,7 @@ export const BuildingLimits = {
     SNIPER_TURRET: 9999,
     ARMORY: 1,
     BARRACKS: 4,
+    PORTAL: 2,
     GENERATOR: 9999,
     HOUSE: 64
 }
@@ -114,8 +123,9 @@ export const BuildingTypes = {
     SNIPER_TURRET: 2,
     ARMORY: 3,
     BARRACKS: 4,
-    GENERATOR: 5,
-    HOUSE: 6
+    PORTAL: 5,
+    GENERATOR: 6,
+    HOUSE: 7
 }
 
 export const BuildingVariantTypes = {
@@ -164,6 +174,9 @@ export const BuildingVariantTypes = {
         CANNON_SIEGE_TANK_FACTORY: 11,
         HEAVY_BOOSTER_SIEGE_TANK_FACTORY: 12,
         BOOSTER_CANNON_SIEGE_TANK_FACTORY: 13,
+    },
+    PORTAL: {
+        BASIC: 0
     },
     GENERATOR: {
         BASIC: 0,
@@ -435,6 +448,16 @@ export const BuildingDetails = {
             size: BuildingSizes.BARRACKS.size,
             next: []
         },
+    },
+    PORTAL: {
+        BASIC: {
+            variant: BuildingVariantTypes.PORTAL.BASIC,
+            name: "Portal",
+            description: "Linked gate. Units of any player can teleport between your two portals.",
+            cost: 2500,
+            size: BuildingSizes.PORTAL.size,
+            next: []
+        }
     },
     GENERATOR: {
         BASIC: {
@@ -718,8 +741,9 @@ export function getUnitDetails (unitType, unitVariant) {
 export function getBulletDetails (buildingType, buildingVariant) {
     // Find the key corresponding to the buildingType
     const buildingKey = Object.keys(BuildingTypes).find(key => BuildingTypes[key] === buildingType);
-    const details = Object.values(BulletDetails[buildingKey])[buildingVariant];
-    return details;
+    const details = Object.values(BulletDetails[buildingKey] || {})
+        .find(detail => detail && detail.variant === buildingVariant);
+    return details || null;
 }
 
 export function getUnitBulletDetails (unitType, unitVariant) {
@@ -770,10 +794,16 @@ export function getAvailableBuildingUpgrades (buildingType, buildingVariant, pur
     }
 
     // Retrieve upgrade details for the buildingType
-    const details = Object.values(BuildingDetails[buildingKey])[buildingVariant];
+    const details = Object.values(BuildingDetails[buildingKey] || {})
+        .find(detail => detail && detail.variant === buildingVariant);
+    if (!details) return [];
     let availableUpgrades = [];
     details.next.forEach(building => {
-        availableUpgrades.push(Object.values(BuildingDetails[buildingKey])[building]);
+        const upgradeDetail = Object.values(BuildingDetails[buildingKey] || {})
+            .find(detail => detail && detail.variant === building);
+        if (upgradeDetail) {
+            availableUpgrades.push(upgradeDetail);
+        }
     });
 
     return availableUpgrades;
@@ -784,8 +814,9 @@ export function getBuildingDetails (buildingType, buildingVariant = 0) {
     const buildingKey = Object.keys(BuildingTypes).find(key => BuildingTypes[key] === buildingType);
 
     // Retrieve upgrade details for the buildingType and upgradeLevel
-    const details = Object.values(BuildingDetails[buildingKey])[buildingVariant];
-    return details;
+    const details = Object.values(BuildingDetails[buildingKey] || {})
+        .find(detail => detail && detail.variant === buildingVariant);
+    return details || null;
 }
 
 export function calculateRequiredXP(level, baseXP = 50){

@@ -1,6 +1,6 @@
 import Network from "../../network/Network.js";
 import Message from "../../network/Message.js";
-import { BuildingTypes, BuildingVariantTypes, ErrorCodes, MessageTypes, UnitTypes, UnitVariantTypes, getBulletDetails } from "../../network/constants.js";
+import { BuildingPlacementFailReasons, BuildingTypes, BuildingVariantTypes, ErrorCodes, MessageTypes, UnitTypes, UnitVariantTypes, getBulletDetails } from "../../network/constants.js";
 import Player from "../../entities/Player.js";
 import NeutralBase from "../../entities/objective/NeutralBase.js";
 import { QueueType } from "../Renderer.js";
@@ -11,6 +11,7 @@ import UnitManager from "./UnitManager.js";
 import Explosion from "../../entities/effects/Explosion.js";
 import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
+import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
 import { fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage } from "../../network/supabaseClient.js";
 
@@ -31,6 +32,7 @@ export default class NetworkManager {
         // Initialize login status and user data
         this.loggedIn = false;
         this.userData = null;
+        this.spawnLeaveWatchers = new Map(); // playerID -> playerName
 
         // Use async initialization for login status
         // this.initialize();
@@ -414,6 +416,7 @@ export default class NetworkManager {
             [MessageTypes.X1_CHALLENGE_RECEIVED, () => this.handleX1ChallengeReceived(payload)],
             [MessageTypes.X1_CHALLENGE_RESULT, () => this.handleX1ChallengeResult(payload)],
             [MessageTypes.X1_DUEL_ARENA_UPDATE, () => this.handleX1DuelArenaUpdate(payload)],
+            [MessageTypes.WILD_PORTALS_UPDATE, () => this.handleWildPortalsUpdate(payload)],
             [MessageTypes.ERROR, () => this.handleError(payload)],
         ]);
 
@@ -519,7 +522,7 @@ export default class NetworkManager {
     }
 
     handleGameState (payload) {
-        const { players, neutralBases, bushes, rocks } = payload;
+        const { players, neutralBases, bushes, rocks, wildPortals = [] } = payload;
         const clientPlayer = this.core.gameManager.player;
         // Reset game state and clear render queues
         this.core.gameManager.reset();
@@ -571,12 +574,16 @@ export default class NetworkManager {
         players.forEach(playerData => {
             const { id, name, color, skinID, position, health, hasSpawnProtection } = playerData;
             
-            // For the client player, use the skin from localStorage instead of server
+            // For the client player, prefer locally selected skin from cache/db.
             let playerSkinID = skinID;
             if (clientPlayer && clientPlayer.id === id) {
-                const localSkin = localStorage.getItem('equippedSkin') || null;
-                if (localSkin && localSkin !== '' && localSkin !== 'null') {
-                    playerSkinID = localSkin;
+                const localSkinName = localStorage.getItem('equippedSkinName') || null;
+                const localSkinNumeric = localStorage.getItem('equippedSkin') || null;
+                if (localSkinName && localSkinName !== '' && localSkinName !== 'null') {
+                    playerSkinID = localSkinName;
+                } else if (localSkinNumeric && localSkinNumeric !== '' && localSkinNumeric !== 'null') {
+                    const parsed = Number(localSkinNumeric);
+                    playerSkinID = Number.isNaN(parsed) ? localSkinNumeric : parsed;
                 }
             }
             
@@ -636,15 +643,26 @@ export default class NetworkManager {
             this.core.gameManager.addRock(new Rock(rock.position, rock.size, rock.rotation));
         });
 
+        this.core.gameManager.setWildPortals(
+            wildPortals.map(p => new WildPortal(p.id, p.position))
+        );
+
         // Hide the connecting overlay once game state is synced
         this.core.uiManager.showConnectingOverlay(false);
+    }
+
+    handleWildPortalsUpdate (payload) {
+        const { wildPortals = [] } = payload;
+        this.core.gameManager.setWildPortals(
+            wildPortals.map(p => new WildPortal(p.id, p.position))
+        );
     }
 
     handleInitialPlayerData (payload) {
         const { playerID, name, color, skinID, position } = payload;
         
         // Get the selected skin from localStorage (for both guests and logged in users)
-        let selectedSkin = localStorage.getItem('equippedSkin') || null;
+        let selectedSkin = localStorage.getItem('equippedSkinName') || localStorage.getItem('equippedSkin') || null;
         
         // If logged in, prefer userData's selected_skin
         if (this.loggedIn && this.userData && this.userData.selected_skin) {
@@ -654,6 +672,8 @@ export default class NetworkManager {
         // Normalize empty values
         if (selectedSkin === '' || selectedSkin === 'null' || selectedSkin === '0') {
             selectedSkin = null;
+        } else if (typeof selectedSkin === 'string' && /^\d+$/.test(selectedSkin)) {
+            selectedSkin = Number(selectedSkin);
         }
         
         console.log('Creating player with skin:', selectedSkin);
@@ -1043,8 +1063,18 @@ export default class NetworkManager {
     }
 
     handleBuildingPlacementFailed (payload) {
-        const { buildingType } = payload;
+        const { buildingType, reason, cooldownSeconds } = payload;
         this.core.gameManager.decreaseBuildingLimit(buildingType);
+
+        if (buildingType === BuildingTypes.PORTAL && reason === BuildingPlacementFailReasons.PORTAL_COOLDOWN) {
+            this.core.gameManager.portalCooldownEndsAt = Date.now() + cooldownSeconds * 1000;
+            const mins = Math.ceil(cooldownSeconds / 60);
+            this.core.uiManager.addChatMessage(
+                "System",
+                `Portal is on cooldown. Wait about ${mins} min to buy again.`,
+                "#ffcc66"
+            );
+        }
     }
 
     handleBuildingsUpgraded (payload) {
@@ -1233,9 +1263,44 @@ export default class NetworkManager {
         player.removeSpawnProtection();
         this.core.renderer.updatePlayerConnections();
 
+        if (this.spawnLeaveWatchers.has(playerID)) {
+            const watchedName = this.spawnLeaveWatchers.get(playerID) || player.name || "Player";
+            this.core.uiManager.addChatMessage(
+                "System",
+                `${watchedName} left their base.`,
+                "#60c1ff"
+            );
+            this.spawnLeaveWatchers.delete(playerID);
+        }
+
         if (player.isClient) {
             this.core.uiManager.showSpawnProtectionTimer(false);
         }
+    }
+
+    watchPlayerLeaveBase (playerID, playerName = "Player") {
+        const target = this.core.gameManager.getPlayerById(playerID);
+        if (!target) {
+            this.core.uiManager.addChatMessage("System", "Player not found.", "#ffcc66");
+            return;
+        }
+
+        if (!target.hasSpawnProtection) {
+            this.core.uiManager.addChatMessage(
+                "System",
+                `${target.name || playerName} has already left their base.`,
+                "#ffcc66"
+            );
+            return;
+        }
+
+        this.spawnLeaveWatchers.set(playerID, target.name || playerName);
+        this.core.uiManager.addChatMessage(
+            "System",
+            `Notification enabled: I'll alert you when ${target.name || playerName} leaves their base.`,
+            "#60c1ff"
+        );
+        this.sendWatchLeaveBase(playerID);
     }
 
     // Send a message to the server
@@ -1325,6 +1390,11 @@ export default class NetworkManager {
         this.sendMessage(message);
     }
 
+    sendWatchLeaveBase(targetPlayerID) {
+        const message = Message.createWatchLeaveBaseMessage(targetPlayerID);
+        this.sendMessage(message);
+    }
+
     handlePlayerInactiveWarning() {
         this.core.uiManager.showInactivityWarning();
     }
@@ -1379,6 +1449,12 @@ export default class NetworkManager {
                 break;
             case 6:
                 this.core.uiManager.addChatMessage("System", "Leave your base protection area before sending an X1 challenge.", "#ffcc66");
+                break;
+            case 7:
+                this.core.uiManager.addChatMessage("System", "This player was attacked recently. Try X1 again in a few minutes.", "#ffcc66");
+                break;
+            case 8:
+                this.core.uiManager.addChatMessage("System", `${opponent} enabled a notification for when you leave your base.`, "#60c1ff");
                 break;
             default:
                 this.core.uiManager.addChatMessage("System", "Could not process X1 challenge.", "#ffcc66");

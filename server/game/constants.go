@@ -12,8 +12,9 @@ const (
 	SNIPER_TURRET BuildingType = 2
 	ARMORY        BuildingType = 3
 	BARRACKS      BuildingType = 4
-	GENERATOR     BuildingType = 5
-	HOUSE         BuildingType = 6
+	PORTAL        BuildingType = 5
+	GENERATOR     BuildingType = 6
+	HOUSE         BuildingType = 7
 )
 
 const (
@@ -102,8 +103,10 @@ const (
 
 	// Player timeout and protection settings
 	PLAYER_TIMEOUT                 = 10 // Minutes
-	PLAYER_SPAWN_PROTECTION_TIME   = 10 // Minutes
+	PLAYER_SPAWN_PROTECTION_TIME   = 2 // Minutes
 	PLAYER_SPAWN_PROTECTION_RADIUS = 306 + 145
+	PORTAL_LIFETIME_SECONDS        = 30
+	PORTAL_COOLDOWN_SECONDS        = 300
 
 	// Player health regeneration settings
 	PLAYER_HEALTH_REGENERATION           = 30
@@ -111,7 +114,7 @@ const (
 
 	// Player building settings
 	PLAYER_MAX_BUILDING_RADIUS = 306
-	PLAYER_MIN_BUILDING_RADIUS = 130
+	PLAYER_MIN_BUILDING_RADIUS = 110
 	// Core stays slightly inside the inner ring.
 	PLAYER_MAX_CORE_RADIUS = PLAYER_MIN_BUILDING_RADIUS
 
@@ -121,7 +124,7 @@ const (
 	NEUTRAL_BASE_HEALTH_REGENERATION           = 50
 	NEUTRAL_BASE_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
 	NEUTRAL_BASE_MAX_BUILDING_RADIUS           = 260
-	NEUTRAL_BASE_MIN_BUILDING_RADIUS           = 82
+	NEUTRAL_BASE_MIN_BUILDING_RADIUS           = 70
 	NEUTRAL_BASE_MAX_CORE_RADIUS               = NEUTRAL_BASE_MIN_BUILDING_RADIUS
 	NEUTRAL_BASE_CAPTURE_SCORE                 = 10 // Per Second
 

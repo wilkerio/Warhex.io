@@ -100,6 +100,14 @@ func PrepareRockData(buffer *bytes.Buffer, rocks []game.Rock) {
 	}
 }
 
+func PrepareWildPortalData(buffer *bytes.Buffer, portals []game.WildPortalSnapshot) {
+	buffer.WriteByte(byte(len(portals)))
+	for _, portal := range portals {
+		buffer.WriteByte(byte(portal.ID))
+		writePosition(buffer, portal.Position)
+	}
+}
+
 func writePlayerData(buffer *bytes.Buffer, player *game.Player) error {
 	// Write player ID
 	buffer.WriteByte(byte(player.ID))

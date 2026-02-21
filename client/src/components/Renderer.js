@@ -476,8 +476,8 @@ export class Renderer {
         // Save the current state
         context.save();
 
-        context.lineWidth = 6; // Set the line width
-        context.setLineDash([30, 30]); // Set the line dash pattern for dotted lines
+        context.lineWidth = 8; // Make links easier to see
+        context.setLineDash([24, 20]); // Slightly denser dash pattern
 
         // Draw each stored connection line
         for (const x of this.connectionLines) {
@@ -487,9 +487,12 @@ export class Renderer {
             const posA = playerA.getWorldPosition(this.camera);
             const posB = playerB.getWorldPosition(this.camera);
             context.strokeStyle = x.color || ThemeManager.currentThemeProperties.lineColor;
+            context.shadowColor = x.color || ThemeManager.currentThemeProperties.lineColor;
+            context.shadowBlur = 14;
             context.moveTo(posA.x, posA.y);
             context.lineTo(posB.x, posB.y);
             context.stroke();
+            context.shadowBlur = 0;
         }
 
         context.setLineDash([]); // Reset the line dash pattern
@@ -499,7 +502,8 @@ export class Renderer {
         for (let i = 0; i < this.visiblePlayers.length; i++) {
             const player = this.visiblePlayers[i];
             const pos = player.getWorldPosition(this.camera); // Get the world position of the player
-            const radius = player.buildingRadius.max; // Get the building radius for the player
+            // Keep center clean, but do not erase too much of the connection line.
+            const radius = player.buildingRadius.min + 18;
 
             // Draw a circular area to clear
             context.beginPath(); // Start a new path

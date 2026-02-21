@@ -800,6 +800,18 @@ func broadcastRemoveSpawnProtection(playerID game.ID) {
 	broadcastToAll(EncodeMessage(message))
 }
 
+func broadcastWildPortalsUpdate(portals []game.WildPortalSnapshot) {
+	message := Message{
+		Type: MessageTypeWildPortalsUpdate,
+	}
+
+	buffer := new(bytes.Buffer)
+	PrepareWildPortalData(buffer, portals)
+	message.Payload = buffer.Bytes()
+
+	broadcastToAll(EncodeMessage(message))
+}
+
 func broadcastLeaderboardUpdate(changes *[]game.LeaderboardEntry) {
 	message := Message{
 		Type: MessageTypeLeaderboardUpdate,
@@ -929,6 +941,17 @@ func sendGameState(player *game.Player, excludePlayer *game.ID) {
 	PrepareNeutralBaseData(buffer, game.State.NeutralBases)
 	PrepareBushData(buffer, game.State.Bushes)
 	PrepareRockData(buffer, game.State.Rocks)
+	wildPortals := make([]game.WildPortalSnapshot, 0, len(game.State.WildPortals))
+	for _, portal := range game.State.WildPortals {
+		if portal == nil {
+			continue
+		}
+		wildPortals = append(wildPortals, game.WildPortalSnapshot{
+			ID:       portal.ID,
+			Position: portal.Position,
+		})
+	}
+	PrepareWildPortalData(buffer, wildPortals)
 
 	game.State.RUnlock()
 	message.Payload = buffer.Bytes()
@@ -993,13 +1016,15 @@ func sendResourceUpdate(player *game.Player) {
 	}
 }
 
-func SendBuildingPlacementFailed(player *game.Player, buildingType game.BuildingType) {
+func SendBuildingPlacementFailed(player *game.Player, buildingType game.BuildingType, reason byte, cooldownSeconds uint16) {
 	message := Message{
 		Type: MessageTypeBuildingPlacementFailed,
 	}
 
 	buffer := new(bytes.Buffer)
 	buffer.WriteByte(byte(buildingType))
+	buffer.WriteByte(reason)
+	binary.Write(buffer, binary.BigEndian, cooldownSeconds)
 	message.Payload = buffer.Bytes()
 
 	var toRemove []*websocket.Conn

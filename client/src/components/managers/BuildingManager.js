@@ -2,6 +2,7 @@ import Wall from "../../entities/building/Wall.js";
 import Generator from "../../entities/building/Generator.js";
 import House from "../../entities/building/House.js";
 import Barracks from "../../entities/building/Barracks.js";
+import Portal from "../../entities/building/Portal.js";
 import SimpleTurret from "../../entities/building/SimpleTurret.js";
 import SniperTurret from "../../entities/building/SniperTurret.js";
 import Armory from "../../entities/building/Armory.js";
@@ -17,6 +18,7 @@ export const Buildings = {
     SniperTurret: SniperTurret,
     Armory: Armory,
     Barracks: Barracks,
+    Portal: Portal,
     Generator: Generator,
     House: House
 };
@@ -72,6 +74,47 @@ export class BuildingManager {
     deselectBuildings () {
         this.selectedBuildings.forEach(building => building.setSelectionState(SelectionState.NOT_SELECTED));
         this.selectedBuildings = [];
+    }
+
+    hasActiveOwnedUnits () {
+        const units = this.core.gameManager.player?.units || [];
+        return units.some(unit => unit && !unit.removeFlag);
+    }
+
+    isPortalTooCloseToAnyBase (position, portalSize) {
+        const gameManager = this.core.gameManager;
+        const extraPortalBaseGap = 120;
+
+        const tooClose = (targetPos, centerPos, forbiddenRadius) => {
+            const dx = targetPos.x - centerPos.x;
+            const dy = targetPos.y - centerPos.y;
+            return dx * dx + dy * dy <= forbiddenRadius * forbiddenRadius;
+        };
+
+        const playerBases = [
+            gameManager.player,
+            ...(gameManager.players || [])
+        ].filter(Boolean);
+
+        for (const base of playerBases) {
+            if (!base?.position) continue;
+            const baseRadius = base?.buildingRadius?.max ?? 306;
+            const forbiddenRadius = baseRadius + portalSize + extraPortalBaseGap;
+            if (tooClose(position, base.position, forbiddenRadius)) {
+                return true;
+            }
+        }
+
+        for (const neutral of gameManager.neutrals || []) {
+            if (!neutral?.position) continue;
+            const baseRadius = neutral?.buildingRadius?.max ?? 260;
+            const forbiddenRadius = baseRadius + portalSize + extraPortalBaseGap;
+            if (tooClose(position, neutral.position, forbiddenRadius)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     selectBuildings (selectionCircle) {
@@ -281,6 +324,14 @@ export class BuildingManager {
             if (checkForBuildingClicked) {
                 const clickedEmptyBaseSlot = this.getClickedRelocationSlot(mousePosition);
                 if (clickedEmptyBaseSlot) {
+                    if (this.hasActiveOwnedUnits()) {
+                        this.core.uiManager.addChatMessage(
+                            "System",
+                            "You must have no active units to relocate your base.",
+                            "#ffcc66"
+                        );
+                        return;
+                    }
                     const relocateCost = 4000;
                     this.core.uiManager.showRelocateBasePrompt(
                         relocateCost,
@@ -329,68 +380,90 @@ export class BuildingManager {
                 if (enemy) {
                     const localPlayer = this.core.gameManager.player;
                     const localPlayerID = localPlayer?.id;
-                    if (localPlayer?.hasSpawnProtection) {
-                        this.core.uiManager.addChatMessage(
-                            "System",
-                            "Leave your base protection area before sending an X1 challenge.",
-                            "#ffcc66"
-                        );
-                        return;
-                    }
+                    const onNotifyLeaveBase = enemy.hasSpawnProtection ? () => {
+                        this.core.networkManager.watchPlayerLeaveBase(enemy.id, enemy.name || "Player");
+                    } : null;
 
-                    const enemyInProtectedX1 = (this.core.gameManager.globalDuelArenas || [])
-                        .some(arena => {
-                            const enemyInArena = arena.playerAID === enemy.id || arena.playerBID === enemy.id;
-                            const includesLocalPlayer = localPlayerID && (arena.playerAID === localPlayerID || arena.playerBID === localPlayerID);
-                            return enemyInArena && !includesLocalPlayer;
-                        });
-                    if (enemyInProtectedX1) {
-                        this.core.uiManager.addChatMessage(
-                            "System",
-                            "This player is already in a protected X1 duel.",
-                            "#ffcc66"
-                        );
-                        return;
-                    }
-
-                    if (this.core.gameManager.duelArena) {
-                        if (this.core.gameManager.duelOpponentID === enemy.id) {
+                    const onChallengeX1 = enemy.hasSpawnProtection ? null : () => {
+                        if (localPlayer?.hasSpawnProtection) {
                             this.core.uiManager.addChatMessage(
                                 "System",
-                                "You are already in a protected X1 with this player.",
+                                "Leave your base protection area before sending an X1 challenge.",
                                 "#ffcc66"
                             );
                             return;
                         }
-                        this.core.uiManager.addChatMessage(
-                            "System",
-                            "You are already in a protected X1 duel.",
-                            "#ffcc66"
-                        );
-                        return;
-                    }
 
-                    const dx = enemy.position.x - localPlayer.position.x;
-                    const dy = enemy.position.y - localPlayer.position.y;
-                    const isLeftOrRight = Math.abs(dx) >= Math.abs(dy);
+                        if (this.core.unitManager.hasSelectedUnits()) {
+                            this.core.uiManager.addChatMessage(
+                                "System",
+                                "Deselect your units before sending an X1 challenge.",
+                                "#ffcc66"
+                            );
+                            return;
+                        }
 
-                    if (!isLeftOrRight) {
-                        this.core.uiManager.addChatMessage(
-                            "System",
-                            "You can challenge only players on your left or right.",
-                            "#ffcc66"
-                        );
-                        return;
-                    }
+                        const enemyInProtectedX1 = (this.core.gameManager.globalDuelArenas || [])
+                            .some(arena => {
+                                const enemyInArena = arena.playerAID === enemy.id || arena.playerBID === enemy.id;
+                                const includesLocalPlayer = localPlayerID && (arena.playerAID === localPlayerID || arena.playerBID === localPlayerID);
+                                return enemyInArena && !includesLocalPlayer;
+                            });
+                        if (enemyInProtectedX1) {
+                            this.core.uiManager.addChatMessage(
+                                "System",
+                                "This player is already in a protected X1 duel.",
+                                "#ffcc66"
+                            );
+                            return;
+                        }
 
-                    const now = Date.now();
-                    if (now - this.lastX1ChallengeSentAt < 2000) {
-                        return;
-                    }
-                    this.core.uiManager.showX1SendPrompt(enemy.name || "Player", () => {
-                        this.lastX1ChallengeSentAt = Date.now();
-                        this.core.networkManager.sendX1Challenge(enemy.id);
-                    });
+                        if (this.core.gameManager.duelArena) {
+                            if (this.core.gameManager.duelOpponentID === enemy.id) {
+                                this.core.uiManager.addChatMessage(
+                                    "System",
+                                    "You are already in a protected X1 with this player.",
+                                    "#ffcc66"
+                                );
+                                return;
+                            }
+                            this.core.uiManager.addChatMessage(
+                                "System",
+                                "You are already in a protected X1 duel.",
+                                "#ffcc66"
+                            );
+                            return;
+                        }
+
+                        const dx = enemy.position.x - localPlayer.position.x;
+                        const dy = enemy.position.y - localPlayer.position.y;
+                        const isLeftOrRight = Math.abs(dx) >= Math.abs(dy);
+
+                        if (!isLeftOrRight) {
+                            this.core.uiManager.addChatMessage(
+                                "System",
+                                "You can challenge only players on your left or right.",
+                                "#ffcc66"
+                            );
+                            return;
+                        }
+
+                        const now = Date.now();
+                        if (now - this.lastX1ChallengeSentAt < 2000) {
+                            return;
+                        }
+
+                        this.core.uiManager.showX1SendPrompt(enemy.name || "Player", () => {
+                            this.lastX1ChallengeSentAt = Date.now();
+                            this.core.networkManager.sendX1Challenge(enemy.id);
+                        });
+                    };
+
+                    this.core.uiManager.showEnemyCoreActions(
+                        enemy.name || "Player",
+                        onChallengeX1,
+                        onNotifyLeaveBase
+                    );
                     return;
                 }
             }
@@ -429,6 +502,32 @@ export class BuildingManager {
             const mousePosition = { ...this.core.eventManager.mousePosition };
             const player = this.core.gameManager.player;
             const neutrals = this.core.gameManager.capturedNeutrals;
+            const isPortal = this.buildingToPlace.building.type === BuildingTypes.PORTAL;
+
+            if (isPortal) {
+                const halfMap = this.core.renderer.mapSize / 2;
+                const padding = this.buildingToPlace.building.size + 8;
+                mousePosition.x = Math.max(-halfMap + padding, Math.min(halfMap - padding, mousePosition.x));
+                mousePosition.y = Math.max(-halfMap + padding, Math.min(halfMap - padding, mousePosition.y));
+
+                this.buildingToPlace.building.setPosition(mousePosition);
+                this.buildingToPlace.building.setTargetPoint({
+                    x: mousePosition.x + 1,
+                    y: mousePosition.y
+                });
+
+                const allBuildings = player ? Object.values(player.buildings || {}) : [];
+                let allUnits = [];
+                this.core.gameManager.players.forEach(p => {
+                    allUnits.push(...p.units);
+                });
+
+                this.buildingToPlace.buildingPreview.checkCollision(allBuildings, allUnits);
+                if (this.isPortalTooCloseToAnyBase(mousePosition, this.buildingToPlace.building.size)) {
+                    this.buildingToPlace.buildingPreview.buildable = false;
+                }
+                return;
+            }
 
             const bases = [player, ...neutrals];
             let closestBase = null;
@@ -467,6 +566,7 @@ export class BuildingManager {
                 case BuildingTypes.SIMPLE_TURRET:
                 case BuildingTypes.SNIPER_TURRET:
                 case BuildingTypes.ARMORY:
+                case BuildingTypes.PORTAL:
                 case BuildingTypes.GENERATOR:
                 case BuildingTypes.HOUSE:
                     // These buildings must stay inside the ring: outer edge cannot cross the line.
@@ -522,13 +622,23 @@ export class BuildingManager {
     placeBuilding () {
         if (this.buildingToPlace) {
             if (!this.buildingToPlace.buildingPreview.buildable) return;
-            const cost = getBuildingDetails(this.buildingToPlace.building.type).cost;
+            const buildingType = this.buildingToPlace.building.type;
+            if (buildingType === BuildingTypes.PORTAL && this.isPortalOnCooldown()) {
+                const remainingMs = this.core.gameManager.portalCooldownEndsAt - Date.now();
+                const remainingMinutes = Math.ceil(Math.max(0, remainingMs) / 60000);
+                this.core.uiManager.addChatMessage(
+                    "System",
+                    `Portal is on cooldown. Wait ${remainingMinutes} min to buy again.`,
+                    "#ffcc66"
+                );
+                return;
+            }
+            const cost = this.getPlacementCost(buildingType);
             const currentPower = this.core.gameManager.resources.power.current;
             if (currentPower < cost) {
                 console.log("Not enought power to build!");
                 return;
             }
-            const buildingType = this.buildingToPlace.building.type;
             const position = this.buildingToPlace.building.position;
 
             const ok = this.core.gameManager.increaseBuildingLimit(buildingType);
@@ -584,6 +694,14 @@ export class BuildingManager {
         if (this.relocateBaseMode) {
             const clickedEmptyBaseSlot = this.getClickedRelocationSlot(mousePosition);
             if (clickedEmptyBaseSlot) {
+                if (this.hasActiveOwnedUnits()) {
+                    this.core.uiManager.addChatMessage(
+                        "System",
+                        "You must have no active units to relocate your base.",
+                        "#ffcc66"
+                    );
+                    return;
+                }
                 const relocateCost = 4000;
                 this.core.uiManager.showRelocateBasePrompt(
                     relocateCost,
@@ -629,6 +747,7 @@ export class BuildingManager {
         } else {
             this.deselectBuildings();
             this.core.uiManager.hideUpgrades();
+            this.core.uiManager.hideEnemyCoreActions();
         }
     }
 
@@ -637,6 +756,14 @@ export class BuildingManager {
             const currentPower = this.core.gameManager.resources.power.current;
 
             if (data.name === "Relocate Base") {
+                if (this.hasActiveOwnedUnits()) {
+                    this.core.uiManager.addChatMessage(
+                        "System",
+                        "You must have no active units to relocate your base.",
+                        "#ffcc66"
+                    );
+                    return;
+                }
                 if (currentPower < data.cost) {
                     console.error("Not enough power to build!");
                     return;
@@ -680,6 +807,35 @@ export class BuildingManager {
         }
 
         this.core.uiManager.showCoreUpgrades(onUpgradeClicked)
+    }
+
+    getOwnedPortalCount () {
+        let total = 0;
+        const player = this.core.gameManager.player;
+        if (player?.buildings) {
+            total += Object.values(player.buildings).filter(b => b && b.type === BuildingTypes.PORTAL).length;
+        }
+
+        const capturedNeutrals = this.core.gameManager.capturedNeutrals || [];
+        for (const neutral of capturedNeutrals) {
+            if (!neutral?.buildings) continue;
+            total += Object.values(neutral.buildings).filter(b => b && b.type === BuildingTypes.PORTAL).length;
+        }
+
+        return total;
+    }
+
+    getPlacementCost (buildingType) {
+        if (buildingType === BuildingTypes.PORTAL) {
+            const ownedPortals = this.getOwnedPortalCount();
+            return ownedPortals >= 1 ? 0 : 2500;
+        }
+        return getBuildingDetails(buildingType).cost;
+    }
+
+    isPortalOnCooldown () {
+        const until = this.core.gameManager.portalCooldownEndsAt || 0;
+        return until > Date.now();
     }
 
     getClickedRelocationSlot (worldPosition) {

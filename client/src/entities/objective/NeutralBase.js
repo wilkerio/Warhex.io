@@ -16,7 +16,7 @@ export default class NeutralBase extends Player {
         this.targetHealth = health; // Target health value for animation
         this.buildingRadius = {
             max: 260,
-            min: 82
+            min: 70
         }
         this.coreRadius = { max: this.buildingRadius.min };
         this.buildings = [];
