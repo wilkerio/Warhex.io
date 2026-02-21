@@ -394,6 +394,7 @@ func (b *Base) CheckBuildingCollision(buildingType BuildingType, position Positi
 
 	b.RLock()
 	defer b.RUnlock()
+
 	for _, building := range b.Buildings {
 		if DoPolygonsIntersect(polygon, building.Polygon) {
 			log.Printf("Collision detected.")

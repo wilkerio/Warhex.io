@@ -37,6 +37,9 @@ export class BuildingManager {
         this.selectionCircleActive = false;
         this.lastX1ChallengeSentAt = 0;
         this.relocateBaseMode = false;
+        this.autogensTimer = null;
+        this.autogensRunning = false;
+        this.autoBuildMode = null;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -742,6 +745,12 @@ export class BuildingManager {
             return;
         }
 
+        if (this.autogensRunning) {
+            this.stopAutoPlaceGenerators();
+            this.core.uiManager.addChatMessage("System", "Autogens canceled.", "#ffcc66");
+            return;
+        }
+
         if (this.buildingToPlace) {
             this.removeBuildingToPlace();
         } else {
@@ -836,6 +845,837 @@ export class BuildingManager {
     isPortalOnCooldown () {
         const until = this.core.gameManager.portalCooldownEndsAt || 0;
         return until > Date.now();
+    }
+
+    stopAutoPlaceGenerators () {
+        if (this.autogensTimer) {
+            clearInterval(this.autogensTimer);
+            this.autogensTimer = null;
+        }
+        this.autogensRunning = false;
+        this.autoBuildMode = null;
+    }
+
+    placeExternalAtkArmory () {
+        const player = this.core.gameManager.player;
+        if (!player) return 0;
+
+        if (this.autogensRunning) {
+            this.stopAutoPlaceGenerators();
+            this.core.uiManager.addChatMessage("System", "Auto build canceled.", "#ffcc66");
+            return 0;
+        }
+
+        if (this.buildingToPlace) this.removeBuildingToPlace();
+
+        const collectAllUnits = () => {
+            const units = [];
+            this.core.gameManager.players.forEach(p => units.push(...(p.units || [])));
+            return units;
+        };
+
+        const pendingBuildings = [];
+        let armoryPlaced = false;
+        let housesPlaced = 0;
+
+        const armoryType = BuildingTypes.ARMORY;
+        const armorySize = getBuildingDetails(armoryType)?.size || 34;
+        const armoryCheckSize = armorySize + 1; // Minimal safety margin.
+        const armoryCost = this.getPlacementCost(armoryType);
+
+        const houseType = BuildingTypes.HOUSE;
+        const houseSize = getBuildingDetails(houseType)?.size || 26;
+        const houseCheckSize = houseSize; // Maximum tight packing.
+        const houseCost = this.getPlacementCost(houseType);
+
+        const queue = [];
+        // Planning should ignore transient unit positions; live placement still validates units.
+        const planningUnits = [];
+        const packedHouseCandidates = this.getAutoPackedHouseCandidates(player, houseCheckSize);
+
+        const armoryCandidates = [];
+        const { minRadius, maxRadius } = this.getPlacementRadiusRangeForType(player, armoryType, armoryCheckSize);
+        if (maxRadius >= minRadius) {
+            const desiredArmoryAngle = -Math.PI / 2; // Top center.
+            const preferredAngles = [desiredArmoryAngle, desiredArmoryAngle - 0.08, desiredArmoryAngle + 0.08];
+            const preferredRadius = minRadius;
+            const angleOffsets = [0, -0.03, 0.03];
+            const radiusOffsets = [0, 5, -5, 10];
+
+            for (const baseAngle of preferredAngles) {
+                for (const radiusOffset of radiusOffsets) {
+                    const radius = Math.max(minRadius, Math.min(maxRadius, preferredRadius + radiusOffset));
+                    for (const angleOffset of angleOffsets) {
+                        const angle = baseAngle + angleOffset;
+                        armoryCandidates.push({
+                            angle,
+                            radius,
+                            position: {
+                                x: player.position.x + radius * Math.cos(angle),
+                                y: player.position.y + radius * Math.sin(angle)
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        let bestArmoryCandidate = null;
+        let bestHousePositions = [];
+        const targetHouseCount = 80;
+
+        for (const armoryCandidate of armoryCandidates) {
+            if (!this.canAutoPlaceBuilding(player, armoryCandidate.position, planningUnits, [], armoryType, armoryCheckSize)) {
+                continue;
+            }
+
+            const pendingArmory = this.prepareAutoPlacementBuilding(
+                new Armory(player.color, armoryCandidate.position),
+                player,
+                armoryCandidate.position
+            );
+
+            const optimizedHousePositions = this.getOptimizedHousePlacementOrder(
+                player,
+                planningUnits,
+                houseCheckSize,
+                packedHouseCandidates,
+                [pendingArmory]
+            );
+
+            const desiredArmoryAngle = -Math.PI / 2;
+            const angleBias = Math.abs(armoryCandidate.angle - desiredArmoryAngle);
+            const currentScore = optimizedHousePositions.length * 10000 - Math.round(angleBias * 1200) - Math.round(armoryCandidate.radius);
+            const bestScore = bestHousePositions.length * 10000 - (bestArmoryCandidate ? Math.round(Math.abs(bestArmoryCandidate.angle - desiredArmoryAngle) * 1200) + Math.round(bestArmoryCandidate.radius) : 0);
+
+            if (!bestArmoryCandidate || currentScore > bestScore) {
+                bestArmoryCandidate = armoryCandidate;
+                bestHousePositions = optimizedHousePositions;
+                if (bestHousePositions.length >= targetHouseCount) {
+                    break;
+                }
+            }
+        }
+
+        if (bestArmoryCandidate) {
+            queue.push({
+                type: armoryType,
+                size: armorySize,
+                checkSize: armoryCheckSize,
+                cost: armoryCost,
+                ctor: Armory,
+                position: bestArmoryCandidate.position
+            });
+        }
+
+        // Fallback: if no armory candidate survived planning, still try houses.
+        if (!bestArmoryCandidate && bestHousePositions.length === 0) {
+            bestHousePositions = this.getOptimizedHousePlacementOrder(
+                player,
+                planningUnits,
+                houseCheckSize,
+                packedHouseCandidates,
+                []
+            );
+        }
+
+        const finalHousePositions = bestHousePositions.slice(0, targetHouseCount);
+        for (const position of finalHousePositions) {
+            queue.push({
+                type: houseType,
+                size: houseSize,
+                checkSize: houseCheckSize,
+                cost: houseCost,
+                ctor: House,
+                position
+            });
+        }
+
+        if (queue.length === 0) {
+            this.core.uiManager.addChatMessage("System", "ExternaTK: no valid candidate positions.", "#ffcc66");
+            return 0;
+        }
+
+        let queueIndex = 0;
+
+        const finish = (message, color = "#60c1ff") => {
+            this.stopAutoPlaceGenerators();
+            this.core.uiManager.addChatMessage("System", message, color);
+        };
+
+        this.autogensRunning = true;
+        this.autoBuildMode = "externatk";
+        this.core.uiManager.addChatMessage("System", "ExternaTK started...", "#60c1ff");
+
+        this.autogensTimer = setInterval(() => {
+            if (!this.autogensRunning) return;
+
+            const livePlayer = this.core.gameManager.player;
+            if (!livePlayer) {
+                finish("ExternaTK stopped.", "#ffcc66");
+                return;
+            }
+
+            const livePower = this.core.gameManager.resources.power.current;
+            const remaining = queue.slice(queueIndex);
+            const cheapestRemaining = remaining.length > 0
+                ? remaining.reduce((min, item) => Math.min(min, item.cost), Infinity)
+                : Infinity;
+
+            if (livePower < cheapestRemaining) {
+                if (!armoryPlaced && housesPlaced === 0) {
+                    finish("ExternaTK: not enough power.", "#ffcc66");
+                    return;
+                }
+                finish(`ExternaTK: ${armoryPlaced ? "Armory + " : ""}${housesPlaced} house${housesPlaced === 1 ? "" : "s"} placed.`);
+                return;
+            }
+
+            let placedThisTick = false;
+
+            while (queueIndex < queue.length) {
+                const item = queue[queueIndex++];
+
+                if (item.type === armoryType && armoryPlaced) continue;
+                if (this.core.gameManager.resources.power.current < item.cost) continue;
+
+                const liveUnits = collectAllUnits();
+                if (!this.canAutoPlaceBuilding(livePlayer, item.position, liveUnits, pendingBuildings, item.type, item.checkSize || item.size)) {
+                    continue;
+                }
+
+                const ok = this.core.gameManager.increaseBuildingLimit(item.type);
+                if (!ok) {
+                    if (item.type === houseType) {
+                        finish(`ExternaTK: ${armoryPlaced ? "Armory + " : ""}${housesPlaced} house${housesPlaced === 1 ? "" : "s"} placed.`);
+                        return;
+                    }
+                    continue;
+                }
+
+                this.core.networkManager.placeBuilding(item.type, item.position);
+                const predicted = this.prepareAutoPlacementBuilding(
+                    new item.ctor(livePlayer.color, item.position),
+                    livePlayer,
+                    item.position
+                );
+                livePlayer.setBuildingCache(predicted);
+                this.core.gameManager.subtractResources(item.cost);
+                pendingBuildings.push(predicted);
+
+                if (item.type === armoryType) {
+                    armoryPlaced = true;
+                } else if (item.type === houseType) {
+                    housesPlaced++;
+                }
+
+                placedThisTick = true;
+                break;
+            }
+
+            if (!placedThisTick || queueIndex >= queue.length) {
+                if (!armoryPlaced && housesPlaced === 0) {
+                    finish("ExternaTK: no space, limit or power to place buildings.", "#ffcc66");
+                    return;
+                }
+                finish(`ExternaTK: ${armoryPlaced ? "Armory + " : ""}${housesPlaced} house${housesPlaced === 1 ? "" : "s"} placed.`);
+            }
+        }, 220);
+
+        return 0;
+    }
+
+    autoPlaceGenerators () {
+        const player = this.core.gameManager.player;
+        if (!player) return 0;
+
+        if (this.autogensRunning) {
+            this.stopAutoPlaceGenerators();
+            this.core.uiManager.addChatMessage("System", "Autogens canceled.", "#ffcc66");
+            return 0;
+        }
+
+        if (this.buildingToPlace) {
+            this.removeBuildingToPlace();
+        }
+
+        const base = player;
+        const details = getBuildingDetails(BuildingTypes.GENERATOR);
+        const generatorSize = details?.size || 32;
+        const cost = this.getPlacementCost(BuildingTypes.GENERATOR);
+
+        const limitEntry = this.core.gameManager.buildingLimits
+            .find(entry => entry.type === BuildingTypes.GENERATOR);
+        const remainingLimit = Math.max(0, (limitEntry?.limit || 0) - (limitEntry?.current || 0));
+        if (remainingLimit <= 0) {
+            this.core.uiManager.addChatMessage("System", "Generator limit reached.", "#ffcc66");
+            return 0;
+        }
+
+        const initialPower = this.core.gameManager.resources.power.current;
+        if (initialPower < cost) {
+            this.core.uiManager.addChatMessage("System", "Not enough power to place generators.", "#ffcc66");
+            return 0;
+        }
+
+        const maxAffordable = Math.floor(initialPower / cost);
+        const maxToPlace = Math.min(remainingLimit, maxAffordable);
+        if (maxToPlace <= 0) {
+            this.core.uiManager.addChatMessage("System", "Not enough power to place generators.", "#ffcc66");
+            return 0;
+        }
+
+        const allUnits = [];
+        this.core.gameManager.players.forEach(p => {
+            allUnits.push(...(p.units || []));
+        });
+
+        const candidates = this.getAutoGeneratorCandidates(base, generatorSize);
+        const pendingGenerators = [];
+        let placed = 0;
+        let candidateIndex = 0;
+
+        const finishAutogens = (message, color = "#60c1ff") => {
+            this.stopAutoPlaceGenerators();
+            if (message) {
+                this.core.uiManager.addChatMessage("System", message, color);
+            }
+        };
+
+        this.autogensRunning = true;
+        this.autoBuildMode = "autogens";
+        this.core.uiManager.addChatMessage("System", "Autogens started...", "#60c1ff");
+
+        this.autogensTimer = setInterval(() => {
+            if (!this.autogensRunning) return;
+
+            const livePlayer = this.core.gameManager.player;
+            if (!livePlayer) {
+                finishAutogens("Autogens stopped.", "#ffcc66");
+                return;
+            }
+
+            const livePower = this.core.gameManager.resources.power.current;
+            if (livePower < cost) {
+                if (placed > 0) {
+                    finishAutogens(
+                        `Autogens placed ${placed} generator${placed > 1 ? "s" : ""} (not enough power).`
+                    );
+                } else {
+                    finishAutogens("Not enough power to place generators.", "#ffcc66");
+                }
+                return;
+            }
+
+            const liveLimitEntry = this.core.gameManager.buildingLimits
+                .find(entry => entry.type === BuildingTypes.GENERATOR);
+            const liveRemainingLimit = Math.max(0, (liveLimitEntry?.limit || 0) - (liveLimitEntry?.current || 0));
+            if (liveRemainingLimit <= 0 || placed >= maxToPlace) {
+                if (placed > 0) {
+                    finishAutogens(`Autogens placed ${placed} generator${placed > 1 ? "s" : ""}.`);
+                } else {
+                    finishAutogens("Generator limit reached.", "#ffcc66");
+                }
+                return;
+            }
+
+            let placedThisTick = false;
+
+            while (candidateIndex < candidates.length) {
+                const position = candidates[candidateIndex++];
+                if (!this.canAutoPlaceGenerator(base, position, allUnits, pendingGenerators, generatorSize)) {
+                    continue;
+                }
+
+                const ok = this.core.gameManager.increaseBuildingLimit(BuildingTypes.GENERATOR);
+                if (!ok) {
+                    finishAutogens(`Autogens placed ${placed} generator${placed > 1 ? "s" : ""}.`);
+                    return;
+                }
+
+                this.core.networkManager.placeBuilding(BuildingTypes.GENERATOR, position);
+
+                const predicted = new Generator(livePlayer.color, position);
+                livePlayer.setBuildingCache(predicted);
+                this.core.gameManager.subtractResources(cost);
+                pendingGenerators.push(predicted);
+                placed++;
+                placedThisTick = true;
+                break;
+            }
+
+            if (!placedThisTick || candidateIndex >= candidates.length) {
+                if (placed === 0) {
+                    finishAutogens("Couldn't find valid space to auto-place generators.", "#ffcc66");
+                    return;
+                }
+
+                finishAutogens(`Autogens placed ${placed} generator${placed > 1 ? "s" : ""}.`);
+            }
+        }, 220);
+
+        return 0;
+    }
+
+    getPlacementRadiusRangeForType (base, buildingType, buildingSize) {
+        let minRadius = base.buildingRadius.min;
+        let maxRadius = base.buildingRadius.max;
+
+        switch (buildingType) {
+            case BuildingTypes.BARRACKS:
+                minRadius = base.buildingRadius.max + 34;
+                maxRadius = minRadius;
+                break;
+            case BuildingTypes.WALL:
+                minRadius += buildingSize;
+                maxRadius = base.buildingRadius.max + 16;
+                break;
+            case BuildingTypes.SIMPLE_TURRET:
+            case BuildingTypes.SNIPER_TURRET:
+            case BuildingTypes.ARMORY:
+            case BuildingTypes.PORTAL:
+            case BuildingTypes.GENERATOR:
+            case BuildingTypes.HOUSE:
+                minRadius += buildingSize;
+                maxRadius = base.buildingRadius.max - buildingSize;
+                break;
+            default:
+                minRadius += buildingSize;
+        }
+
+        return { minRadius, maxRadius };
+    }
+
+    getAutoBuildingCandidates (base, buildingType, buildingSize, preferredRadiusPct = 0.5, spacingExtra = 2) {
+        const { minRadius, maxRadius } = this.getPlacementRadiusRangeForType(base, buildingType, buildingSize);
+        if (maxRadius < minRadius) return [];
+
+        const spacing = Math.max(2, buildingSize * 2 + spacingExtra);
+        const radialStep = Math.max(8, spacing * 0.866);
+        const startAngle = -Math.PI / 2;
+        const preferredRadius = minRadius + (maxRadius - minRadius) * Math.max(0, Math.min(1, preferredRadiusPct));
+
+        const candidates = [];
+        const seen = new Set();
+        const addCandidate = (x, y) => {
+            const key = `${Math.round(x)}:${Math.round(y)}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            candidates.push({ x, y });
+        };
+
+        const buildRing = (radius, offsetFactor = 0) => {
+            const perimeter = 2 * Math.PI * radius;
+            const count = Math.max(6, Math.round(perimeter / spacing));
+            const angleStep = (Math.PI * 2) / count;
+            const offset = angleStep * offsetFactor;
+            for (let i = 0; i < count; i++) {
+                const angle = startAngle + offset + i * angleStep;
+                addCandidate(
+                    base.position.x + radius * Math.cos(angle),
+                    base.position.y + radius * Math.sin(angle)
+                );
+            }
+        };
+
+        if (Math.abs(maxRadius - minRadius) < 1) {
+            buildRing(minRadius, 0);
+        } else {
+            let ring = 0;
+            for (let radius = minRadius; radius <= maxRadius; radius += radialStep) {
+                buildRing(radius, ring % 2 ? 0.5 : 0);
+                ring++;
+            }
+            ring = 0;
+            for (let radius = minRadius + radialStep * 0.5; radius <= maxRadius; radius += radialStep) {
+                buildRing(radius, ring % 2 ? 0.5 : 0.25);
+                ring++;
+            }
+        }
+
+        const normalizeAngle = (a) => {
+            let out = a - startAngle;
+            while (out < 0) out += Math.PI * 2;
+            while (out >= Math.PI * 2) out -= Math.PI * 2;
+            return out;
+        };
+
+        candidates.sort((a, b) => {
+            const dax = a.x - base.position.x;
+            const day = a.y - base.position.y;
+            const dbx = b.x - base.position.x;
+            const dby = b.y - base.position.y;
+            const ra = Math.sqrt(dax * dax + day * day);
+            const rb = Math.sqrt(dbx * dbx + dby * dby);
+            const dr = Math.abs(ra - preferredRadius) - Math.abs(rb - preferredRadius);
+            if (Math.abs(dr) > 0.5) return dr;
+
+            const aa = normalizeAngle(Math.atan2(day, dax));
+            const ab = normalizeAngle(Math.atan2(dby, dbx));
+            return aa - ab;
+        });
+
+        return candidates;
+    }
+
+    getAutoGeneratorCandidates (base, generatorSize) {
+        return this.getAutoBuildingCandidates(base, BuildingTypes.GENERATOR, generatorSize, 0.5);
+    }
+
+    getAutoPackedHouseCandidates (base, houseSize) {
+        const range = this.getPlacementRadiusRangeForType(base, BuildingTypes.HOUSE, houseSize);
+        const radiusTolerance = 4; // Keep candidate search aligned with server-side tolerance.
+        const minRadius = Math.max(0, range.minRadius);
+        const maxRadius = range.maxRadius + radiusTolerance;
+        if (maxRadius < minRadius) return [];
+
+        // Beauty-first concentric sockets (close to the yellow reference pattern):
+        // tight rings + staggered phases + symmetric top opening for armory.
+        // Force one dedicated inner ring at minRadius so houses stay visually glued to the core.
+        const radius = houseSize;
+        const diameter = radius * 2;
+        const tangentialGap = Math.max(0.5, radius * 0.02);
+        const spacing = diameter + tangentialGap;
+        const radialStep = Math.max(radius * 1.58, spacing * 0.82);
+        const TWO_PI = Math.PI * 2;
+        const centerX = base.position.x;
+        const centerY = base.position.y;
+        const topAngle = -Math.PI / 2;
+
+        const innerRingRadius = minRadius;
+        const maxHouseLayers = 3; // Keep layout cleaner: inner + 2 rings.
+        const outerSafetyGap = Math.max(2, houseSize * 0.35); // Avoid the largest outer ring.
+        const usableMaxRadius = Math.max(innerRingRadius, maxRadius - outerSafetyGap);
+        const distributedStep = (usableMaxRadius - innerRingRadius) / Math.max(1, maxHouseLayers - 1);
+        // Prefer wider inter-ring spacing to avoid cross-ring collision holes.
+        const ringStep = Math.max(1, Math.max(radialStep, distributedStep));
+
+        const ringTargetRadii = [innerRingRadius];
+        for (let layer = 1; layer < maxHouseLayers; layer++) {
+            const ringRadius = innerRingRadius + ringStep * layer;
+            if (ringRadius >= usableMaxRadius + 0.01) break;
+            ringTargetRadii.push(ringRadius);
+        }
+
+        const buildTemplateCandidates = (globalRotation) => {
+            const list = [];
+            const seen = new Set();
+
+            for (let ringIndex = 0; ringIndex < ringTargetRadii.length; ringIndex++) {
+                const ringRadius = ringTargetRadii[ringIndex];
+                const circumference = TWO_PI * ringRadius;
+                const rawCount = Math.max(10, Math.round(circumference / spacing));
+                const count = (rawCount % 2 === 0) ? rawCount : rawCount + 1; // cleaner mirror symmetry
+                const angleStep = TWO_PI / count;
+                const ringOffset = (ringIndex % 2 === 0) ? 0 : (angleStep * 0.5);
+                const phase = (ringIndex % 3) * angleStep * 0.08;
+                const phaseOffsets = [phase];
+
+                for (const phaseOffset of phaseOffsets) {
+                    for (let i = 0; i < count; i++) {
+                        const angle = globalRotation + ringOffset + phaseOffset + i * angleStep;
+
+                        // Keep one top socket at the inner ring for armory.
+                        if (ringIndex === 0) {
+                            const delta = Math.abs(Math.atan2(Math.sin(angle - topAngle), Math.cos(angle - topAngle)));
+                            if (delta < angleStep * 0.26) continue;
+                        }
+
+                        const wx = centerX + ringRadius * Math.cos(angle);
+                        const wy = centerY + ringRadius * Math.sin(angle);
+                        const key = `${Math.round(wx)}:${Math.round(wy)}`;
+                        if (seen.has(key)) continue;
+                        seen.add(key);
+                        list.push({ x: wx, y: wy });
+                    }
+                }
+            }
+
+            return list;
+        };
+
+        let bestCandidates = [];
+        let bestScore = -1;
+        const rotationSteps = 84;
+        for (let step = 0; step < rotationSteps; step++) {
+            const rotation = (step * TWO_PI) / rotationSteps;
+            const candidates = buildTemplateCandidates(rotation);
+            let outerBandCount = 0;
+            const outerBandStart = maxRadius - radialStep * 0.9;
+            for (const p of candidates) {
+                const dx = p.x - centerX;
+                const dy = p.y - centerY;
+                const r = Math.sqrt(dx * dx + dy * dy);
+                if (r >= outerBandStart) outerBandCount++;
+            }
+            const score = candidates.length * 10000 + outerBandCount * 12;
+            if (score > bestScore) {
+                bestScore = score;
+                bestCandidates = candidates;
+            }
+        }
+
+        const signedAngleFromTop = (p) => {
+            const a = Math.atan2(p.y - centerY, p.x - centerX);
+            let d = a - topAngle;
+            while (d <= -Math.PI) d += TWO_PI;
+            while (d > Math.PI) d -= TWO_PI;
+            return d;
+        };
+
+        bestCandidates.sort((a, b) => {
+            const dax = a.x - centerX;
+            const day = a.y - centerY;
+            const dbx = b.x - centerX;
+            const dby = b.y - centerY;
+            const ra = Math.sqrt(dax * dax + day * day);
+            const rb = Math.sqrt(dbx * dbx + dby * dby);
+            const aInInnerRing = Math.abs(ra - innerRingRadius) <= Math.max(2, tangentialGap * 3);
+            const bInInnerRing = Math.abs(rb - innerRingRadius) <= Math.max(2, tangentialGap * 3);
+            if (aInInnerRing !== bInInnerRing) return aInInnerRing ? -1 : 1;
+            if (Math.abs(ra - rb) > 0.5) return ra - rb;
+
+            const aa = signedAngleFromTop(a);
+            const ab = signedAngleFromTop(b);
+            const absDiff = Math.abs(aa) - Math.abs(ab);
+            if (Math.abs(absDiff) > 0.0001) return absDiff;
+            return aa - ab;
+        });
+
+        return bestCandidates;
+    }
+
+    getOptimizedHousePlacementOrder (base, allUnits, houseSize, candidates, initialPendingBuildings = []) {
+        if (!candidates || candidates.length === 0) return [];
+
+        const range = this.getPlacementRadiusRangeForType(base, BuildingTypes.HOUSE, houseSize);
+        const centerX = base.position.x;
+        const centerY = base.position.y;
+        const ringStep = Math.max(8, houseSize * 2 * 0.92);
+        const minRadius = range.minRadius;
+
+        const radiusOf = (p) => {
+            const dx = p.x - centerX;
+            const dy = p.y - centerY;
+            return Math.sqrt(dx * dx + dy * dy);
+        };
+        const angleOf = (p) => Math.atan2(p.y - centerY, p.x - centerX);
+        const keyOf = (p) => `${Math.round(p.x)}:${Math.round(p.y)}`;
+        const topAngle = -Math.PI / 2;
+        const innerPriorityTolerance = Math.max(2, houseSize * 0.12);
+        const isInnerRingPoint = (p) => Math.abs(radiusOf(p) - minRadius) <= innerPriorityTolerance;
+        const signedAngleFromTop = (p) => {
+            let d = angleOf(p) - topAngle;
+            while (d <= -Math.PI) d += Math.PI * 2;
+            while (d > Math.PI) d -= Math.PI * 2;
+            return d;
+        };
+
+        const tryPlaceAccepted = (ordered, accepted, pending, acceptedKeys) => {
+            for (const position of ordered) {
+                const key = keyOf(position);
+                if (acceptedKeys.has(key)) continue;
+                if (!this.canAutoPlaceBuilding(base, position, allUnits, pending, BuildingTypes.HOUSE, houseSize)) {
+                    continue;
+                }
+
+                accepted.push(position);
+                acceptedKeys.add(key);
+                const pendingHouse = this.prepareAutoPlacementBuilding(
+                    new House(this.core.gameManager.player.color, position),
+                    base,
+                    position
+                );
+                pending.push(pendingHouse);
+            }
+        };
+
+        const sorters = [
+            // Symmetric sweep from top (closest to reference look).
+            (a, b) => {
+                const ra = radiusOf(a);
+                const rb = radiusOf(b);
+                const aInner = isInnerRingPoint(a);
+                const bInner = isInnerRingPoint(b);
+                if (aInner !== bInner) return aInner ? -1 : 1;
+                if (Math.abs(ra - rb) > 0.5) return ra - rb;
+                const aa = signedAngleFromTop(a);
+                const ab = signedAngleFromTop(b);
+                const absDiff = Math.abs(aa) - Math.abs(ab);
+                if (Math.abs(absDiff) > 0.0001) return absDiff;
+                return aa - ab;
+            },
+            // Center -> outside, then angle.
+            (a, b) => {
+                const ra = radiusOf(a);
+                const rb = radiusOf(b);
+                if (Math.abs(ra - rb) > 0.5) return ra - rb;
+                return angleOf(a) - angleOf(b);
+            },
+            // Angle sweep, then radius.
+            (a, b) => {
+                const aa = angleOf(a);
+                const ab = angleOf(b);
+                if (Math.abs(aa - ab) > 0.0001) return aa - ab;
+                return radiusOf(a) - radiusOf(b);
+            },
+            // Outside -> center (can fill edge gaps first).
+            (a, b) => radiusOf(b) - radiusOf(a),
+            // Alternate rings to reduce local locking.
+            (a, b) => {
+                const ra = radiusOf(a);
+                const rb = radiusOf(b);
+                const ringA = Math.floor(ra / ringStep);
+                const ringB = Math.floor(rb / ringStep);
+                const parityA = ringA % 2;
+                const parityB = ringB % 2;
+                if (parityA !== parityB) return parityA - parityB;
+                if (ringA !== ringB) return ringA - ringB;
+                return angleOf(a) - angleOf(b);
+            }
+        ];
+
+        const aestheticPenalty = (accepted) => {
+            if (accepted.length <= 2) return 0;
+
+            // Lower penalty means more uniform angular distribution per ring.
+            let penalty = 0;
+            const rings = new Map();
+            for (const p of accepted) {
+                const r = radiusOf(p);
+                const ringIndex = Math.max(0, Math.floor((r - minRadius) / ringStep));
+                if (!rings.has(ringIndex)) rings.set(ringIndex, []);
+                rings.get(ringIndex).push(angleOf(p));
+            }
+
+            for (const [, angles] of rings) {
+                if (angles.length < 3) continue;
+                angles.sort((a, b) => a - b);
+                const idealGap = (Math.PI * 2) / angles.length;
+                for (let i = 0; i < angles.length; i++) {
+                    const current = angles[i];
+                    const next = (i === angles.length - 1) ? (angles[0] + Math.PI * 2) : angles[i + 1];
+                    const gap = next - current;
+                    penalty += Math.abs(gap - idealGap);
+                }
+            }
+
+            return penalty;
+        };
+
+        let bestOrder = [];
+        let bestInnerCount = -1;
+        let bestCount = -1;
+        let bestPenalty = Infinity;
+
+        for (const sorter of sorters) {
+            const ordered = [...candidates].sort(sorter);
+            const pending = [...initialPendingBuildings];
+            const accepted = [];
+            const acceptedKeys = new Set();
+            tryPlaceAccepted(ordered, accepted, pending, acceptedKeys);
+
+            // Second pass: fill local gaps that remain after the first greedy order.
+            const fillOrders = [
+                [...candidates].sort((a, b) => radiusOf(a) - radiusOf(b)),
+                [...candidates].sort((a, b) => radiusOf(b) - radiusOf(a)),
+                [...candidates].sort((a, b) => angleOf(a) - angleOf(b)),
+                [...candidates].sort((a, b) => angleOf(b) - angleOf(a))
+            ];
+            for (const fillOrder of fillOrders) {
+                const before = accepted.length;
+                tryPlaceAccepted(fillOrder, accepted, pending, acceptedKeys);
+                if (accepted.length === before) continue;
+            }
+
+            const innerCount = accepted.reduce((acc, p) => acc + (isInnerRingPoint(p) ? 1 : 0), 0);
+            const currentPenalty = aestheticPenalty(accepted);
+            if (
+                innerCount > bestInnerCount ||
+                (innerCount === bestInnerCount && accepted.length > bestCount) ||
+                (innerCount === bestInnerCount && accepted.length === bestCount && currentPenalty < bestPenalty)
+            ) {
+                bestInnerCount = innerCount;
+                bestCount = accepted.length;
+                bestPenalty = currentPenalty;
+                bestOrder = accepted;
+            }
+        }
+
+        return bestOrder;
+    }
+
+    canAutoPlaceBuilding (base, position, allUnits, pendingBuildings, buildingType, buildingSize) {
+        const { minRadius, maxRadius } = this.getPlacementRadiusRangeForType(base, buildingType, buildingSize);
+        const dx = position.x - base.position.x;
+        const dy = position.y - base.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const radiusTolerance = buildingType === BuildingTypes.BARRACKS ? 12 : 4;
+        if (distance < (minRadius - radiusTolerance) || distance > (maxRadius + radiusTolerance)) {
+            return false;
+        }
+
+        const BuildingClass = BuildingManager.getBuildingClassByType(buildingType);
+        if (!BuildingClass) return false;
+
+        const existingBuildings = Array.isArray(base.buildings)
+            ? base.buildings
+            : Object.values(base.buildings || {});
+        const collisionBuildings = [];
+        for (const building of [...existingBuildings, ...(pendingBuildings || [])]) {
+            if (!building || !building.position) continue;
+            if (!building.polygon && typeof building.initPolygon === "function") {
+                building.initPolygon();
+            }
+            if (!building.polygon) continue;
+            if (typeof building.updatePolygonTransform === "function") {
+                building.updatePolygonTransform();
+            }
+            collisionBuildings.push(building);
+        }
+        const safeUnits = (allUnits || []).filter(unit => unit && unit.position);
+
+        const previewBuilding = new BuildingClass(this.core.gameManager.player.color, position);
+        this.prepareAutoPlacementBuilding(previewBuilding, base, position);
+        const preview = new BuildingPreview(previewBuilding);
+        preview.checkCollision(collisionBuildings, safeUnits);
+        return preview.buildable;
+    }
+
+    prepareAutoPlacementBuilding (building, base, position) {
+        if (!building) return building;
+        if (position && typeof building.setPosition === "function") {
+            building.setPosition(position);
+        }
+        this.setAutoPlacementTargetPoint(building, base, position || building.position);
+        if (!building.polygon && typeof building.initPolygon === "function") {
+            building.initPolygon();
+        }
+        if (building.polygon && typeof building.updatePolygonTransform === "function") {
+            building.updatePolygonTransform();
+        }
+        return building;
+    }
+
+    setAutoPlacementTargetPoint (building, base, position) {
+        if (!building || !base || !position || typeof building.setTargetPoint !== "function") return;
+        const dx = position.x - base.position.x;
+        const dy = position.y - base.position.y;
+        building.setTargetPoint({
+            x: base.position.x + dx * 1.5,
+            y: base.position.y + dy * 1.5
+        });
+    }
+
+    canAutoPlaceGenerator (base, position, allUnits, pendingGenerators, generatorSize) {
+        return this.canAutoPlaceBuilding(
+            base,
+            position,
+            allUnits,
+            pendingGenerators,
+            BuildingTypes.GENERATOR,
+            generatorSize
+        );
     }
 
     getClickedRelocationSlot (worldPosition) {

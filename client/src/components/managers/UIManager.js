@@ -54,6 +54,7 @@ export default class UIManager {
         this.addSettingsPanelListener();
         this.addChatButtonElementListener();
         this.addUnitControlsListener();
+        this.addAutoBuildMenuButtons();
     }
 
     // Initialize skins from localStorage cache immediately (no async wait)
@@ -1723,6 +1724,118 @@ export default class UIManager {
         });
     }
 
+    addAutoBuildMenuButtons () {
+        const gameContainer = this.DOM?.game?.container;
+        if (!gameContainer) return;
+        if (document.getElementById("autobuild-menu-container")) return;
+
+        const container = document.createElement("div");
+        container.id = "autobuild-menu-container";
+        container.style.position = "absolute";
+        container.style.top = "10px";
+        container.style.left = "50%";
+        container.style.transform = "translateX(-50%)";
+        container.style.display = "none";
+        container.style.width = "280px";
+        container.style.height = "46px";
+        container.style.zIndex = "30";
+        container.style.pointerEvents = "auto";
+
+        const pullTab = document.createElement("button");
+        pullTab.type = "button";
+        pullTab.textContent = "MENU";
+        pullTab.style.pointerEvents = "auto";
+        pullTab.style.position = "absolute";
+        pullTab.style.left = "50%";
+        pullTab.style.transform = "translateX(-50%)";
+        pullTab.style.top = "0";
+        pullTab.style.width = "132px";
+        pullTab.style.height = "46px";
+        pullTab.style.padding = "0";
+        pullTab.style.border = "1px solid #3f6ec0";
+        pullTab.style.borderRadius = "12px";
+        pullTab.style.background = "linear-gradient(180deg, rgba(59,99,170,0.95) 0%, rgba(24,52,104,0.95) 100%)";
+        pullTab.style.color = "#d9e7ff";
+        pullTab.style.cursor = "pointer";
+        pullTab.style.fontWeight = "700";
+        pullTab.style.letterSpacing = "0.5px";
+
+        const actionsPanel = document.createElement("div");
+        actionsPanel.style.position = "absolute";
+        actionsPanel.style.left = "0";
+        actionsPanel.style.top = "0";
+        actionsPanel.style.width = "280px";
+        actionsPanel.style.height = "46px";
+        actionsPanel.style.display = "none";
+        actionsPanel.style.padding = "2px";
+        actionsPanel.style.boxSizing = "border-box";
+        actionsPanel.style.borderRadius = "14px";
+        actionsPanel.style.border = "1px solid rgba(132, 170, 255, 0.35)";
+        actionsPanel.style.background = "linear-gradient(180deg, rgba(20,36,88,0.78) 0%, rgba(10,20,58,0.78) 100%)";
+        actionsPanel.style.boxShadow = "0 8px 22px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.08)";
+        actionsPanel.style.backdropFilter = "blur(3px)";
+        actionsPanel.style.gap = "8px";
+        actionsPanel.style.alignItems = "center";
+        actionsPanel.style.justifyContent = "center";
+
+        const autogensBtn = document.createElement("button");
+        autogensBtn.type = "button";
+        autogensBtn.textContent = "Autogens";
+        autogensBtn.style.flex = "1 1 0";
+        autogensBtn.style.maxWidth = "136px";
+        autogensBtn.style.height = "46px";
+        autogensBtn.style.padding = "0";
+        autogensBtn.style.border = "1px solid #5a8ee0";
+        autogensBtn.style.borderRadius = "12px";
+        autogensBtn.style.background = "linear-gradient(180deg, rgba(40,80,150,0.95) 0%, rgba(16,45,105,0.95) 100%)";
+        autogensBtn.style.color = "#d9e7ff";
+        autogensBtn.style.cursor = "pointer";
+        autogensBtn.style.fontWeight = "700";
+        autogensBtn.style.letterSpacing = "0.2px";
+        autogensBtn.style.userSelect = "none";
+        autogensBtn.addEventListener("click", () => {
+            this.core.buildingManager.autoPlaceGenerators();
+        });
+
+        const externatkBtn = document.createElement("button");
+        externatkBtn.type = "button";
+        externatkBtn.textContent = "ExternaTK";
+        externatkBtn.style.flex = "1 1 0";
+        externatkBtn.style.maxWidth = "136px";
+        externatkBtn.style.height = "46px";
+        externatkBtn.style.padding = "0";
+        externatkBtn.style.border = "1px solid #5a8ee0";
+        externatkBtn.style.borderRadius = "12px";
+        externatkBtn.style.background = "linear-gradient(180deg, rgba(40,80,150,0.95) 0%, rgba(16,45,105,0.95) 100%)";
+        externatkBtn.style.color = "#d9e7ff";
+        externatkBtn.style.cursor = "pointer";
+        externatkBtn.style.fontWeight = "700";
+        externatkBtn.style.letterSpacing = "0.2px";
+        externatkBtn.style.userSelect = "none";
+        externatkBtn.addEventListener("click", () => {
+            this.core.buildingManager.placeExternalAtkArmory();
+        });
+
+        const showActions = () => {
+            pullTab.style.display = "none";
+            actionsPanel.style.display = "flex";
+        };
+        const showMenu = () => {
+            actionsPanel.style.display = "none";
+            pullTab.style.display = "block";
+        };
+
+        // Hover swap behavior: MENU is replaced by action buttons in the same area.
+        container.addEventListener("mouseenter", showActions);
+        container.addEventListener("mouseleave", showMenu);
+
+        actionsPanel.appendChild(autogensBtn);
+        actionsPanel.appendChild(externatkBtn);
+        container.appendChild(pullTab);
+        container.appendChild(actionsPanel);
+        gameContainer.appendChild(container);
+    }
+
     addChatButtonElementListener () {
         if (!this.DOM.chat.button || !this.DOM.chat.input) return;
 
@@ -1991,6 +2104,10 @@ export default class UIManager {
         this.showChat(show);
         this.showMetrics(show);
         this.showMiniMap(show);
+        const autoBuildMenu = document.getElementById("autobuild-menu-container");
+        if (autoBuildMenu) {
+            autoBuildMenu.style.display = show ? "flex" : "none";
+        }
     }
 
     showGameOverUIElements (show) {

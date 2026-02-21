@@ -318,7 +318,6 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection")
 		return
 	}
 
@@ -587,7 +586,6 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection")
 		return
 	}
 
@@ -771,7 +769,6 @@ func handleDestroyBuildingsMessage(conn *websocket.Conn, payload []byte) {
 	// Get the player based on the connection
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection")
 		return
 	}
 
@@ -859,7 +856,6 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection with address:", conn.RemoteAddr())
 		return
 	}
 
@@ -1089,7 +1085,6 @@ func handleToggleUnitSpawning(conn *websocket.Conn, payload []byte) {
 
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection")
 		return
 	}
 
@@ -1134,7 +1129,6 @@ func handleBuyCommander(conn *websocket.Conn, payload []byte) {
 
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection")
 		return
 	}
 
@@ -1169,7 +1163,6 @@ func handleBuyRepair(conn *websocket.Conn, payload []byte) {
 
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection")
 		return
 	}
 
@@ -1192,7 +1185,6 @@ func handleBuyRelocateBase(conn *websocket.Conn, payload []byte) {
 
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection")
 		return
 	}
 
@@ -1349,7 +1341,6 @@ func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
 	// Check if connection comes from a player
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection with address:", conn.RemoteAddr())
 		return
 	}
 
@@ -1419,7 +1410,6 @@ func handleToggleGroupUnitsMessage(conn *websocket.Conn, payload []byte) {
 
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
-		log.Println("Player not found for connection")
 		return
 	}
 

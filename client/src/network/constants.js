@@ -114,7 +114,7 @@ export const BuildingLimits = {
     BARRACKS: 4,
     PORTAL: 2,
     GENERATOR: 9999,
-    HOUSE: 64
+    HOUSE: 9999
 }
 
 export const BuildingTypes = {

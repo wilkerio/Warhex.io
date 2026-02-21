@@ -255,8 +255,6 @@ func removePlayerByConnection(conn *websocket.Conn) {
 			go UpdateUserStats(userData.Discord.ID, playerScore, kills, playtime)
 			RemovePlayingDiscordAccount(userData.Discord.ID)
 		}
-	} else {
-		log.Println("Client disconnected but was not an player in the game.")
 	}
 
 	if userOk {
