@@ -336,6 +336,20 @@ img {
   bottom: 0;
 }
 
+/* Force skin preview to be image-only and fully filled */
+#skin-name-display {
+  display: none !important;
+}
+
+#current-skin-img,
+.skin-circle img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
 .skin-nav-btn {
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
@@ -785,6 +799,9 @@ img {
   border-radius: 4px;
   font-size: 18px;
   transition: background-color 0.2s ease;
+  position: relative;
+  z-index: 20;
+  pointer-events: auto;
 }
 
 #skin-carousel-prev-menu:hover,

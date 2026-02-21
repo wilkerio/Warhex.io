@@ -658,13 +658,28 @@ func updateUnits(player *Player, duration time.Duration, players []*Player) {
 
 	// Slice to hold units that have been updated
 	updatedUnits := make([]*Unit, 0)
+	mapRadius := float32(GetCurrentMapRadius())
 	for _, unit := range units {
 		if unit.IsMarkedForRemoval() {
 			continue
 		}
 
+		// Units die when touching the red world border.
+		if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
+			math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
+			unit.MarkForRemoval()
+			handleUnitDestroyed(unit)
+			continue
+		}
+
 		// Update unit position
 		if unit.UpdatePosition(duration, units) {
+			if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
+				math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
+				unit.MarkForRemoval()
+				handleUnitDestroyed(unit)
+				continue
+			}
 			updatedUnits = append(updatedUnits, unit)
 		}
 	}
@@ -1534,11 +1549,6 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 	player.Camera.Position = player.Base.Position
 	player.Camera.UpdateBounds()
 
-	if player.Base.GetPosition() == (PositionInt{}) {
-		log.Println("No available positions for player")
-		return nil, false
-	}
-
 	// Clear objects around spawn position
 	clearSpawnArea(player.Base.Position, PLAYER_SPAWN_CLEAR_RADIUS)
 
@@ -1550,6 +1560,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 
 	player.ID = playerID
 	State.Players[player.ID] = player
+	AddDynamicBushesForPlayerCount(len(State.Players))
 
 	return player, true
 }

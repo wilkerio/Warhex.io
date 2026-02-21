@@ -20,7 +20,7 @@ export class Renderer {
             spacing: 40,
             lineWidth: 1
         };
-        this.mapSize = 19000;
+        this.mapSize = Renderer.calculateMapSizeByPlayers(1);
 
         this.queues = {
             static: [],
@@ -39,6 +39,66 @@ export class Renderer {
         this.cameraZoomChanged = true;
         this.lastCameraPosition = this.camera.getPosition();
         this.lastCameraZoom = this.camera.getZoom();
+    }
+
+    static calculateMapSizeByPlayers (playerCount) {
+        const safePlayerCount = Math.max(1, Math.floor(playerCount || 0));
+        const minRadius = 1200;
+        const borderDistance = 500;
+        const extraBorderPadding = 300; // keep bases visibly away from the red border
+        const spawnStep = 1500;
+        const { x, y } = Renderer.getSpawnGridCell(safePlayerCount - 1);
+        const maxGrid = Math.max(Math.abs(x), Math.abs(y));
+        const radius = Math.max(minRadius, maxGrid * spawnStep + borderDistance + extraBorderPadding);
+        return radius * 2;
+    }
+
+    static getSpawnGridCell (index) {
+        if (index <= 0) {
+            return { x: 0, y: 0 };
+        }
+
+        const getRingPositions = (r) => {
+            const positions = [];
+            const seen = new Set();
+            const add = (x, y) => {
+                const key = `${x},${y}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    positions.push({ x, y });
+                }
+            };
+
+            // Prioridade: esquerda, cima, canto superior esquerdo.
+            add(-r, 0);
+            add(0, r);
+            add(-r, r);
+
+            // Completa o anel quadrado no sentido horario.
+            for (let x = -r + 1; x <= r; x++) add(x, r);
+            for (let y = r - 1; y >= -r; y--) add(r, y);
+            for (let x = r - 1; x >= -r; x--) add(x, -r);
+            for (let y = -r + 1; y <= r - 1; y++) add(-r, y);
+
+            return positions;
+        };
+
+        let remaining = index - 1;
+        for (let r = 1; ; r++) {
+            const ringCount = 8 * r;
+            if (remaining < ringCount) {
+                return getRingPositions(r)[remaining];
+            }
+            remaining -= ringCount;
+        }
+    }
+
+    setMapPlayerCount (playerCount) {
+        this.mapSize = Renderer.calculateMapSizeByPlayers(playerCount);
+    }
+
+    getMapSize () {
+        return this.mapSize;
     }
 
     clearQueues () {
@@ -228,26 +288,49 @@ export class Renderer {
     }
 
     updatePlayerConnections () {
-        const connectionRadius = 4000; // Define the radius for connections
-        this.connectionLines = []; // Clear previous connections
+        this.connectionLines = [];
+        const clientPlayer = this.queues.player.find(player => player.isClient);
+        if (!clientPlayer) return;
 
-        // Iterate through the players to calculate connection lines
-        for (let i = 0; i < this.queues.player.length; i++) {
-            const playerA = this.queues.player[i];
-            const posA = playerA.getWorldPosition(this.camera); // Get the world position of player A
+        const nearestByDirection = {
+            up: null,
+            down: null,
+            left: null,
+            right: null
+        };
 
-            for (let j = i + 1; j < this.queues.player.length; j++) {
-                const playerB = this.queues.player[j];
-                const posB = playerB.getWorldPosition(this.camera); // Get the world position of player B
+        for (const otherPlayer of this.queues.player) {
+            if (otherPlayer.id === clientPlayer.id) continue;
 
-                // Calculate the distance between player A and player B
-                const dist = Math.sqrt((posA.x - posB.x) ** 2 + (posA.y - posB.y) ** 2);
+            const dx = otherPlayer.position.x - clientPlayer.position.x;
+            const dy = otherPlayer.position.y - clientPlayer.position.y;
+            const distance = Math.hypot(dx, dy);
 
-                // Store line positions if conditions are met
-                if (dist <= connectionRadius && !playerB.hasSpawnProtection && !playerA.hasSpawnProtection) {
-                    this.connectionLines.push({ from: playerA, to: playerB });
-                }
+            let direction;
+            if (Math.abs(dx) >= Math.abs(dy)) {
+                direction = dx >= 0 ? "right" : "left";
+            } else {
+                direction = dy >= 0 ? "up" : "down";
             }
+
+            const current = nearestByDirection[direction];
+            if (!current || distance < current.distance) {
+                nearestByDirection[direction] = { player: otherPlayer, distance };
+            }
+        }
+
+        for (const direction of ["up", "down", "left", "right"]) {
+            const entry = nearestByDirection[direction];
+            if (!entry) continue;
+
+            const otherPlayer = entry.player;
+            this.connectionLines.push({
+                from: clientPlayer,
+                to: otherPlayer,
+                color: otherPlayer.hasSpawnProtection
+                    ? "rgba(255,255,255,0.65)"
+                    : "rgba(255,64,64,0.9)"
+            });
         }
     }
 
@@ -257,7 +340,6 @@ export class Renderer {
         // Save the current state
         context.save();
 
-        context.strokeStyle = ThemeManager.currentThemeProperties.lineColor;
         context.lineWidth = 6; // Set the line width
         context.setLineDash([30, 30]); // Set the line dash pattern for dotted lines
 
@@ -268,6 +350,7 @@ export class Renderer {
             const playerB = x.to;
             const posA = playerA.getWorldPosition(this.camera);
             const posB = playerB.getWorldPosition(this.camera);
+            context.strokeStyle = x.color || ThemeManager.currentThemeProperties.lineColor;
             context.moveTo(posA.x, posA.y);
             context.lineTo(posB.x, posB.y);
             context.stroke();

@@ -120,9 +120,14 @@ export default class NetworkManager {
             }
             // Get nickname from auth metadata if not in table
             const user = await getCurrentUser();
-            if (user && user.user_metadata && user.user_metadata.nickname && !this.userData.nickname) {
-                this.userData.nickname = user.user_metadata.nickname;
-                console.log('Using nickname from auth metadata:', this.userData.nickname);
+            if (user && user.user_metadata && user.user_metadata.nickname) {
+                if (!this.userData) {
+                    this.userData = {};
+                }
+                if (!this.userData.nickname) {
+                    this.userData.nickname = user.user_metadata.nickname;
+                    console.log('Using nickname from auth metadata:', this.userData.nickname);
+                }
             }
             if (this.userData) {
                 // Ensure skins and unlocked properties exist before accessing them
@@ -241,6 +246,14 @@ export default class NetworkManager {
 
             // Update local userData
             this.userData = { ...this.userData, ...data };
+            try {
+                const minimal = {
+                    id: this.userData.id,
+                    nickname: this.userData.nickname,
+                    skins: this.userData.skins || {}
+                };
+                localStorage.setItem('blobl_user_data', JSON.stringify(minimal));
+            } catch (e) {}
             this.core.uiManager.updateAccount();
 
         } catch (error) {
@@ -619,9 +632,9 @@ export default class NetworkManager {
         this.core.leaderboard.clear();
         this.core.camera.enableControls(true);
         this.core.camera.setPosition(position);
-        // Zoom out effect
-        this.core.camera.zoom = this.core.camera.maxZoom;
-        this.core.camera.setZoom(0.75);
+        // Spawn directly at gameplay zoom (no intro zoom animation)
+        this.core.camera.zoom = 0.75;
+        this.core.camera.targetZoom = 0.75;
 
         this.core.gameManager.stats.time = Date.now();
     }

@@ -32,6 +32,7 @@ export default class UIManager {
         // Skin navigation properties
         this.currentSkinIndex = 0;
         this.availableSkins = [];
+        this.skinPersistTimeout = null;
 
         this.initializeUIElements();
         this.initializeSkinsFromCache(); // First: load from localStorage cache
@@ -67,10 +68,7 @@ export default class UIManager {
                         SkinCache.supabaseNameToId.set(s.name, s.numericId);
                     });
 
-                    this.availableSkins = [
-                        { name: 'Default', id: 0, numericId: 0, url: null },
-                        ...skins
-                    ];
+                    this.availableSkins = this.buildAvailableSkins(skins);
                     console.log('Skins loaded from localStorage cache:', skins.length);
                     
                     // Restore selected skin index by name
@@ -90,12 +88,83 @@ export default class UIManager {
         } catch (error) {
             console.warn('Could not load skins from cache:', error);
         }
-        
-        // Initialize with default skin if no cache
-        this.availableSkins = [{ name: 'Default', id: 0, numericId: 0, url: null }];
+
+        // Fallback to bundled catalog skins if available, otherwise default only.
+        const fallbackSkins = this.getFallbackCatalogSkins();
+        this.availableSkins = this.buildAvailableSkins(fallbackSkins);
         this.currentSkinIndex = 0;
         this.updateSkinCircle();
         this.updateUseButton();
+    }
+
+    buildAvailableSkins(rawSkins) {
+        const defaultSkin = { name: 'Default', id: 0, numericId: 0, url: null };
+        if (!Array.isArray(rawSkins) || rawSkins.length === 0) {
+            return [defaultSkin];
+        }
+
+        const cleaned = [];
+        const seenNames = new Set();
+        const seenUrls = new Set();
+        let nextNumericId = 200;
+
+        for (const skin of rawSkins) {
+            if (!skin) continue;
+
+            const name = typeof skin.name === 'string' ? skin.name.trim() : '';
+            const url = typeof skin.url === 'string' && skin.url.trim() ? skin.url.trim() : null;
+
+            // Ignore broken entries from stale cache.
+            if (!name || name.toLowerCase() === 'default') continue;
+
+            const keyName = name.toLowerCase();
+            const keyUrl = url || '';
+            if (seenNames.has(keyName) || (keyUrl && seenUrls.has(keyUrl))) continue;
+
+            const numericId = Number.isInteger(skin.numericId)
+                ? skin.numericId
+                : (Number.isInteger(skin.id) ? skin.id : nextNumericId++);
+
+            cleaned.push({
+                ...skin,
+                id: skin.id ?? name,
+                name,
+                url,
+                numericId
+            });
+
+            seenNames.add(keyName);
+            if (keyUrl) seenUrls.add(keyUrl);
+        }
+
+        return [defaultSkin, ...cleaned];
+    }
+
+    getFallbackCatalogSkins() {
+        const categories = ["default", "veteran", "premium"];
+        const result = [];
+
+        for (const category of categories) {
+            const list = SkinCache.getAllSkinsByCategory(category) || [];
+            for (const skin of list) {
+                if (!skin || skin.id == null || !skin.name) continue;
+                if (skin.id === 0 || skin.name === "Default") continue;
+                result.push({
+                    id: skin.id,
+                    numericId: skin.id,
+                    name: skin.name,
+                    url: `assets/skins/${category}/${skin.name}.webp`
+                });
+            }
+        }
+
+        // Deduplicate by name.
+        const seen = new Set();
+        return result.filter(s => {
+            if (seen.has(s.name)) return false;
+            seen.add(s.name);
+            return true;
+        });
     }
 
     async loadSupabaseSkins() {
@@ -107,10 +176,7 @@ export default class UIManager {
                 console.log('Supabase skins fetched and cached:', skins.length);
                 
                 // Build available skins array (default + supabase skins)
-                this.availableSkins = [
-                    { name: 'Default', id: 0, numericId: 0, url: null },
-                    ...skins
-                ];
+                this.availableSkins = this.buildAvailableSkins(skins);
                 
                 // Get currently equipped skin
                 const equippedSkinName = localStorage.getItem('equippedSkinName') || null;
@@ -128,12 +194,27 @@ export default class UIManager {
                 this.updateUseButton();
                 this.populateSkinLibrary();
             } else if (this.availableSkins.length <= 1) {
-                // Only set default if we don't have cached skins
-                console.warn('No Supabase skins found - using cached or default');
+                const fallbackSkins = this.getFallbackCatalogSkins();
+                if (fallbackSkins.length > 0) {
+                    this.availableSkins = this.buildAvailableSkins(fallbackSkins);
+                    this.currentSkinIndex = Math.min(this.currentSkinIndex, this.availableSkins.length - 1);
+                    this.updateSkinCircle();
+                    this.updateUseButton();
+                } else {
+                    console.warn('No Supabase skins found - using cached or default');
+                }
             }
         } catch (error) {
             console.error('Error loading Supabase skins:', error);
-            // Keep whatever we have from cache
+            if (this.availableSkins.length <= 1) {
+                const fallbackSkins = this.getFallbackCatalogSkins();
+                if (fallbackSkins.length > 0) {
+                    this.availableSkins = this.buildAvailableSkins(fallbackSkins);
+                    this.currentSkinIndex = 0;
+                    this.updateSkinCircle();
+                    this.updateUseButton();
+                }
+            }
         }
     }
 
@@ -577,7 +658,7 @@ export default class UIManager {
                 try {
                     await signIn(email, password);
                     this.showSigninDialog(false);
-                    this.core.networkManager.checkLoginStatus();
+                    await this.core.networkManager.checkLoginStatus();
                 } catch (error) {
                     alert("Login failed: " + error.message);
                 }
@@ -664,6 +745,8 @@ export default class UIManager {
         const isLoggedIn = this.core.networkManager.loggedIn;
         if (isLoggedIn && userData.nickname) {
             // Hide input and show nickname
+            this.DOM.menu.playerNameInput.value = userData.nickname;
+            localStorage.setItem("playerName", userData.nickname);
             this.DOM.menu.playerNameInput.style.display = 'none';
             this.DOM.menu.loggedInNickname.style.display = 'block';
             this.DOM.menu.loggedInNickname.textContent = `Playing as: ${userData.nickname}`;
@@ -791,7 +874,7 @@ export default class UIManager {
         this.updateAccount();
     }
 
-    updateSkinCircle() {
+    async updateSkinCircle() {
         const circle = document.getElementById('skin-preview-circle');
         const img = document.getElementById('current-skin-img');
         const nameDisplay = document.getElementById('skin-name-display');
@@ -805,70 +888,112 @@ export default class UIManager {
         const currentSkin = this.availableSkins[this.currentSkinIndex];
         
         if (currentSkin) {
-            nameDisplay.textContent = currentSkin.name || 'Default';
+            nameDisplay.textContent = '';
+            nameDisplay.style.display = 'none';
             
             if (currentSkin.url) {
                 img.src = currentSkin.url;
                 img.style.display = 'block';
+            } else if (currentSkin.name && currentSkin.name !== 'Default') {
+                try {
+                    const cached = await SkinCache.getSkinByName(currentSkin.name);
+                    if (cached?.url) {
+                        img.src = cached.url;
+                        img.style.display = 'block';
+                    } else if (cached?.image?.src) {
+                        img.src = cached.image.src;
+                        img.style.display = 'block';
+                    } else {
+                        img.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.warn('Failed to load skin preview image:', error);
+                    img.style.display = 'none';
+                }
             } else {
+                img.src = '';
                 img.style.display = 'none';
             }
         }
         
-        // Update button states
-        if (prevBtn) {
-            prevBtn.disabled = this.currentSkinIndex === 0;
-        }
-        if (nextBtn) {
-            nextBtn.disabled = this.currentSkinIndex >= this.availableSkins.length - 1;
-        }
+        // Keep nav buttons interactive; carousel is circular.
+        if (prevBtn) prevBtn.disabled = false;
+        if (nextBtn) nextBtn.disabled = false;
         
         // Update Use button state
         this.updateUseButton();
+        this.bindSkinNavButtons();
     }
     
     updateUseButton() {
         const useBtn = document.getElementById('skin-use-button');
         if (!useBtn) return;
-        
-        const currentSkin = this.availableSkins[this.currentSkinIndex];
-        const equippedSkinName = localStorage.getItem('equippedSkinName') || '';
-        
-        // Check if current viewing skin is the equipped one
-        const isCurrentEquipped = 
-            (currentSkin?.name === 'Default' && (!equippedSkinName || equippedSkinName === '')) ||
-            (currentSkin?.name === equippedSkinName);
-        
-        if (isCurrentEquipped) {
-            useBtn.textContent = 'Equipped ✓';
-            useBtn.classList.add('selected');
-        } else {
-            useBtn.textContent = 'Use';
-            useBtn.classList.remove('selected');
-        }
+        useBtn.textContent = 'Auto Equipped';
+        useBtn.classList.add('selected');
+        useBtn.disabled = true;
     }
-    
+
     addSkinNavigationListeners() {
+        this.bindSkinNavButtons();
+    }
+
+    goPrevSkin(e) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        const total = this.availableSkins.length;
+        if (total <= 1) return;
+        this.currentSkinIndex = (this.currentSkinIndex - 1 + total) % total;
+        const currentSkin = this.availableSkins[this.currentSkinIndex];
+        this.updateSkinCircle();
+        this.applySelectedSkinToLocalPlayer(currentSkin);
+        this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
+    }
+
+    goNextSkin(e) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        const total = this.availableSkins.length;
+        if (total <= 1) return;
+        this.currentSkinIndex = (this.currentSkinIndex + 1) % total;
+        const currentSkin = this.availableSkins[this.currentSkinIndex];
+        this.updateSkinCircle();
+        this.applySelectedSkinToLocalPlayer(currentSkin);
+        this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
+    }
+
+    bindSkinNavButtons() {
         const prevBtn = document.getElementById('skin-carousel-prev-menu');
         const nextBtn = document.getElementById('skin-carousel-next-menu');
-        
-        if (prevBtn) {
-            prevBtn.addEventListener('click', () => {
-                if (this.currentSkinIndex > 0) {
-                    this.currentSkinIndex--;
-                    this.updateSkinCircle();
-                }
-            });
+
+        if (prevBtn && !prevBtn.dataset.boundNav) {
+            prevBtn.addEventListener('click', (e) => this.goPrevSkin(e));
+            prevBtn.dataset.boundNav = '1';
         }
-        
-        if (nextBtn) {
-            nextBtn.addEventListener('click', () => {
-                if (this.currentSkinIndex < this.availableSkins.length - 1) {
-                    this.currentSkinIndex++;
-                    this.updateSkinCircle();
-                }
-            });
+
+        if (nextBtn && !nextBtn.dataset.boundNav) {
+            nextBtn.addEventListener('click', (e) => this.goNextSkin(e));
+            nextBtn.dataset.boundNav = '1';
         }
+    }
+
+    applySelectedSkinToLocalPlayer(currentSkin) {
+        const player = this.core?.gameManager?.player;
+        if (!player) return;
+
+        if (!currentSkin || currentSkin.name === 'Default') {
+            player.skinID = null;
+            player.skin = null;
+            player.skinLoaded = false;
+            return;
+        }
+
+        player.skinID = currentSkin.name;
+        player.skinLoadAttempts = 0;
+        player._loadSkin(currentSkin.name);
     }
     
     addSkinUseButtonListener() {
@@ -880,7 +1005,8 @@ export default class UIManager {
         }
     }
     
-    async selectCurrentSkin() {
+    async selectCurrentSkin(options = {}) {
+        const { persistRemote = true, refreshLibrary = true } = options;
         const currentSkin = this.availableSkins[this.currentSkinIndex];
         if (!currentSkin) return;
         
@@ -892,29 +1018,38 @@ export default class UIManager {
         localStorage.setItem('equippedSkinName', skinName || '');
         
         console.log('Skin equipped:', skinName);
-        
-        // Update Use button immediately
+
+        // Update UI immediately
+        this.updateSkinCircle();
         this.updateUseButton();
+        this.updateAccount();
+        this.applySelectedSkinToLocalPlayer(currentSkin);
         
         // If logged in, save to database
         const isLoggedIn = this.core.networkManager.loggedIn;
         const userId = this.core.networkManager.userId;
         
-        if (isLoggedIn && userId) {
-            try {
-                await updateSelectedSkin(userId, skinName);
-                console.log('Skin saved to database');
-                
-                if (this.core.networkManager.userData) {
-                    this.core.networkManager.userData.selected_skin = skinName;
-                }
-            } catch (error) {
-                console.error('Error saving skin to database:', error);
+        if (persistRemote && isLoggedIn && userId) {
+            if (this.skinPersistTimeout) {
+                clearTimeout(this.skinPersistTimeout);
             }
+            this.skinPersistTimeout = setTimeout(async () => {
+                try {
+                    await updateSelectedSkin(userId, skinName);
+                    console.log('Skin saved to database');
+                    if (this.core.networkManager.userData) {
+                        this.core.networkManager.userData.selected_skin = skinName;
+                    }
+                } catch (error) {
+                    console.error('Error saving skin to database:', error);
+                }
+            }, 250);
         }
         
         // Update library if open
-        this.populateSkinLibrary();
+        if (refreshLibrary) {
+            this.populateSkinLibrary();
+        }
     }
     
     addSkinCircleClickListener() {
@@ -942,6 +1077,7 @@ export default class UIManager {
         let currentEquippedName = localStorage.getItem('equippedSkinName') || '';
         
         this.availableSkins.forEach((skin, index) => {
+            if (!skin || !skin.name) return;
             const skinCard = document.createElement('div');
             skinCard.classList.add('skin-item');
             
@@ -1658,6 +1794,18 @@ export default class UIManager {
             return userData.nickname;
         }
 
+        if (isLoggedIn) {
+            try {
+                const cachedUser = localStorage.getItem('blobl_user_data');
+                if (cachedUser) {
+                    const parsedUser = JSON.parse(cachedUser);
+                    if (parsedUser && parsedUser.nickname) {
+                        return parsedUser.nickname;
+                    }
+                }
+            } catch (e) {}
+        }
+
         const defaultNames = ["◕‿↼", "•◡•", "(ㆆ _ ㆆ)", "ಠ╭╮ಠ", "(• ε •)",
             "⇀‸↼‶", "◔̯◔", "◉‿◉", "•`_´•", "-_-",
             "⌐■_■", "•_•", "ಠ_ರೃ", "´◔ ω◔`", "♥‿♥", "⊙＿⊙'", "⊙ω⊙", "> _ <"
@@ -2098,3 +2246,4 @@ export default class UIManager {
         }
     }
 }
+

@@ -177,6 +177,65 @@ func generateRectangularGameMap() (playerPositions, neutralPositions []PositionI
 	return nil, nil
 }
 
+func AddDynamicBushesForPlayerCount(playerCount int) {
+	if playerCount < 1 {
+		playerCount = 1
+	}
+
+	const baseBushCount = 6
+	const bushesPerPlayer = 2
+	const baseMinDistance int16 = 800
+	const maxAttemptsPerBush = 250
+
+	targetBushCount := baseBushCount + playerCount*bushesPerPlayer
+	if len(State.Bushes) >= targetBushCount {
+		return
+	}
+
+	mapRadius := float64(calculateMapRadius(playerCount))
+
+	occupied := make([]PositionInt, 0, len(State.Players)+len(State.NeutralBases))
+	for _, p := range State.Players {
+		occupied = append(occupied, p.Base.Position)
+	}
+	for _, n := range State.NeutralBases {
+		occupied = append(occupied, n.Base.Position)
+	}
+
+	isFarEnough := func(pos PositionInt) bool {
+		for _, basePos := range occupied {
+			if isTooClose(pos, basePos, baseMinDistance, baseMinDistance) {
+				return false
+			}
+		}
+		for _, bush := range State.Bushes {
+			if isTooClose(pos, bush, baseMinDistance/2, baseMinDistance/2) {
+				return false
+			}
+		}
+		return true
+	}
+
+	toAdd := targetBushCount - len(State.Bushes)
+	for i := 0; i < toAdd; i++ {
+		added := false
+		for attempt := 0; attempt < maxAttemptsPerBush; attempt++ {
+			x := int16(rand.Float64()*2*mapRadius - mapRadius)
+			y := int16(rand.Float64()*2*mapRadius - mapRadius)
+			pos := PositionInt{X: x, Y: y}
+			if isFarEnough(pos) {
+				State.Bushes = append(State.Bushes, pos)
+				added = true
+				break
+			}
+		}
+
+		if !added {
+			break
+		}
+	}
+}
+
 // Helper function to initialize the game state with predefined positions
 func InitializeGameMap() {
 	_, neutralPositions := generateRectangularGameMap()
@@ -211,7 +270,7 @@ func InitializeGameMap() {
 	}
 
 	// Generate bushes and rocks within the initial map radius
-	const initialRadius = 2000
-	State.Bushes = generateBushes(nil, neutralPositions, initialRadius, 5, 800)
-	State.Rocks = generateRocks(nil, neutralPositions, initialRadius, 3, 1000, ShapeHexagon)
+	initialRadius := float64(calculateMapRadius(1))
+	State.Bushes = generateBushes(nil, neutralPositions, initialRadius, 6, 800)
+	State.Rocks = make([]Rock, 0)
 }

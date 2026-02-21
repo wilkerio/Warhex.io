@@ -36,6 +36,8 @@ export default class MiniMap {
         this.initEventListeners(); 
         this.toggleFullScreen = this.toggleFullScreen.bind(this);
         this.isFullScreen = false;
+        this.entityScale = 0.45; // Keep minimap objects visually compact
+        this.baseScale = 0.30; // Bases should be smaller than other minimap objects
     }
 
     initEventListeners() {
@@ -50,12 +52,16 @@ export default class MiniMap {
         const x = event.clientX - rect.left; // X coordinate
         const y = event.clientY - rect.top;  // Y coordinate
 
-        // Convert the coordinates to the actual game map scale if needed
-        const scale = this.dynamicCanvas.width / 16000; // based on map
+        // Convert click position to world coordinates using current map size
+        const scale = this.dynamicCanvas.width / this.getMapSize();
         const mapX = (x - this.dynamicCanvas.width / 2) / scale;
         const mapY = (y - this.dynamicCanvas.height / 2) / scale;
 
         this.core.camera.setPosition({x: mapX, y: mapY}, false);
+    }
+
+    getMapSize() {
+        return this.core.renderer?.getMapSize?.() || 2400;
     }
 
     reset(){
@@ -125,24 +131,55 @@ export default class MiniMap {
         this.staticContext.save();
 
         // Scale down the context for rendering
-        const scale = this.staticCanvas.width / 16000; // Scale based on the radius of player positions
+        const scale = this.staticCanvas.width / this.getMapSize();
         this.staticContext.translate(this.staticCanvas.width / 2, this.staticCanvas.height / 2);
         this.staticContext.scale(scale, scale); // Apply scaling
 
-        const drawBase = (x, y, color, radius) => {
+        const drawBase = (x, y, color, radius, hasSpawnProtection = false, spawnProtectionRadius = 0, drawRings = true) => {
+            const scaledRadius = radius * this.baseScale;
             this.staticContext.beginPath();
             // Adjust player position based on the center
-            this.staticContext.arc(x, y, radius, 0, Math.PI * 2);
+            this.staticContext.arc(x, y, scaledRadius, 0, Math.PI * 2);
             this.staticContext.fillStyle = color;
             this.staticContext.fill();
             this.staticContext.strokeStyle = darkenColor(color, 30);
-            this.staticContext.lineWidth = 100;
+            this.staticContext.lineWidth = 36;
             this.staticContext.stroke();
             this.staticContext.closePath();
+
+            if (drawRings) {
+                const drawDashedRing = (ringRadius, strokeStyle, lineWidth, dashLength, gapLength) => {
+                    this.staticContext.save();
+                    this.staticContext.beginPath();
+                    this.staticContext.arc(x, y, ringRadius, 0, Math.PI * 2);
+                    this.staticContext.strokeStyle = strokeStyle;
+                    this.staticContext.lineWidth = lineWidth;
+                    this.staticContext.lineCap = "round";
+                    this.staticContext.setLineDash([dashLength, gapLength]);
+                    this.staticContext.stroke();
+                    this.staticContext.closePath();
+                    this.staticContext.restore();
+                };
+
+                // White dashed building radius ring
+                drawDashedRing(radius * this.baseScale, "rgba(255,255,255,0.92)", 14, 80, 70);
+
+                // Green dashed spawn-protection ring
+                if (hasSpawnProtection && spawnProtectionRadius > 0) {
+                    drawDashedRing(spawnProtectionRadius * this.baseScale, "rgba(57,255,20,0.9)", 10, 65, 60);
+                }
+            }
         };
 
         this.players.forEach(p => {
-            drawBase(p.position.x, p.position.y, p.color, p.buildingRadius.max);
+            drawBase(
+                p.position.x,
+                p.position.y,
+                p.color,
+                p.buildingRadius.max,
+                p.hasSpawnProtection,
+                p.spawnProtectionRadius
+            );
         });
 
         this.neutrals.forEach(n => {
@@ -150,16 +187,23 @@ export default class MiniMap {
         });
 
         this.bushes.forEach(b => {
-            drawBase(b.position.x, b.position.y, "#7aaf4c", b.size * 2);
+            drawBase(b.position.x, b.position.y, "#7aaf4c", b.size * 1.2, false, 0, false);
         });
 
         this.rocks.forEach(r => {
-            drawBase(r.position.x, r.position.y, "#98a3a8", r.size * 2);
+            drawBase(r.position.x, r.position.y, "#98a3a8", r.size * 1.3, false, 0, false);
         });
 
 
         // Draw the client player as a circle
-        drawBase(clientPlayer.position.x, clientPlayer.position.y, clientPlayer.color, clientPlayer.buildingRadius.max);
+        drawBase(
+            clientPlayer.position.x,
+            clientPlayer.position.y,
+            clientPlayer.color,
+            clientPlayer.buildingRadius.max,
+            clientPlayer.hasSpawnProtection,
+            clientPlayer.spawnProtectionRadius
+        );
 
         // Restore the context to its original state
         this.staticContext.restore();
@@ -178,15 +222,17 @@ export default class MiniMap {
         this.dynamicContext.save();
 
         // Scale down the context for rendering
-        const scale = this.dynamicCanvas.width / 16000; // Scale based on the radius of player positions
+        const scale = this.dynamicCanvas.width / this.getMapSize();
         this.dynamicContext.translate(this.dynamicCanvas.width / 2, this.dynamicCanvas.height / 2);
         this.dynamicContext.scale(scale, scale); // Apply scaling
 
         // Calculate the rectangle dimensions based on camera zoom
-        const cameraWidth = window.innerWidth  / this.core.camera.zoom; // Use the game's canvas width
-        const cameraHeight =  window.innerHeight  / this.core.camera.zoom; // Use the game's canvas height
+        const cameraPosition = this.core.camera.getPosition();
+        const cameraWidth = Math.min(this.getMapSize(), (this.core.canvas.width / this.core.camera.zoom) * 2);
+        const cameraHeight = Math.min(this.getMapSize(), (this.core.canvas.height / this.core.camera.zoom) * 2);
 
         const drawUnit = (x, y, color, size, rotation) => {
+            const scaledSize = size * this.entityScale;
             this.dynamicContext.save(); // Save the current context state
 
             // Move to the unit's position
@@ -195,15 +241,15 @@ export default class MiniMap {
 
             this.dynamicContext.beginPath();
             // Draw a triangle centered at (0, 0) after translation and rotation
-            this.dynamicContext.moveTo(0, -size); // Top vertex
-            this.dynamicContext.lineTo(-size, size); // Bottom left vertex
-            this.dynamicContext.lineTo(size, size); // Bottom right vertex
+            this.dynamicContext.moveTo(0, -scaledSize); // Top vertex
+            this.dynamicContext.lineTo(-scaledSize, scaledSize); // Bottom left vertex
+            this.dynamicContext.lineTo(scaledSize, scaledSize); // Bottom right vertex
             this.dynamicContext.closePath();
 
             this.dynamicContext.fillStyle = color;
             this.dynamicContext.fill();
             this.dynamicContext.strokeStyle = darkenColor(color, 30); // Outline color
-            this.dynamicContext.lineWidth = 50; // Outline thickness
+            this.dynamicContext.lineWidth = 20; // Outline thickness
             this.dynamicContext.stroke();
 
             this.dynamicContext.restore(); // Restore to the original state
@@ -218,7 +264,7 @@ export default class MiniMap {
         clientPlayer.units.forEach(unit => drawUnit(unit.position.x, unit.position.y, clientPlayer.color, 150, unit.rotation + Math.PI / 2));
 
         // Draw the camera rectangle
-        this.drawCamera(this.core.camera.x * 2, this.core.camera.y * 2, cameraWidth, cameraHeight , clientPlayer.color);
+        this.drawCamera(cameraPosition.x, cameraPosition.y, cameraWidth, cameraHeight, clientPlayer.color);
 
         // Restore the context to its original state
         this.dynamicContext.restore();
@@ -226,8 +272,9 @@ export default class MiniMap {
 
     // Helper method to draw the camera rectangle
     drawCamera(x, y, width, height, color) {
-        this.dynamicContext.strokeStyle = color; // Darken the outline color
-        this.dynamicContext.lineWidth = 150; // Adjust the outline thickness as necessary
+        const scale = this.dynamicCanvas.width / this.getMapSize();
+        this.dynamicContext.strokeStyle = darkenColor(color, 20);
+        this.dynamicContext.lineWidth = 1.5 / scale; // thinner camera frame
         this.dynamicContext.strokeRect(x - width / 2, y - height / 2, width, height); // Draw the rectangle
     }
 }

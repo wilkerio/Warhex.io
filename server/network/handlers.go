@@ -14,6 +14,7 @@ import (
 )
 
 var PORT = os.Getenv("PORT")
+var DISABLE_MULTIBOX_CHECK = true // Temporary: allow multiple clients from same IP/fingerprint/account
 
 func handleMessage(conn *websocket.Conn, message []byte) {
 	if len(message) < 1 {
@@ -78,7 +79,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	if SERVER_REBOOTING {
+	if SERVER_REBOOTING && !DISABLE_MULTIBOX_CHECK {
 		sendError(conn)
 		return
 	}
@@ -103,24 +104,26 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 
 	permission := MapRoleToPermission(userData.Role)
 
-	//Check if the fingerprint is already used for the client's IP
-	isUsed := IsFingerprintUsedForIP(userData.ClientIP, fingerprint)
-	if isUsed {
-		//fmt.Println("Fingerprint already used for this IP.")
-		sendError(conn)
-		return
-	} else {
-		//fmt.Println("Fingerprint is not used for this IP.")
-		AddFingerprintForConn(conn, fingerprint)
-	}
-
-	if userData.Discord.ID != "" {
-		if isDiscordAccountAlreadyPlaying(userData.Discord.ID) {
+	if !DISABLE_MULTIBOX_CHECK {
+		// Check if the fingerprint is already used for the client's IP
+		isUsed := IsFingerprintUsedForIP(userData.ClientIP, fingerprint)
+		if isUsed {
 			sendError(conn)
 			return
 		}
 
-		AddPlayingDiscordAccount(userData.Discord.ID)
+		if err := AddFingerprintForConn(conn, fingerprint); err != nil {
+			log.Printf("failed to add fingerprint for conn: %v", err)
+		}
+
+		if userData.Discord.ID != "" {
+			if isDiscordAccountAlreadyPlaying(userData.Discord.ID) {
+				sendError(conn)
+				return
+			}
+
+			AddPlayingDiscordAccount(userData.Discord.ID)
+		}
 	}
 
 	cleanName := filterProfanity(string(name))
@@ -691,6 +694,8 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 
 	offset := 1
 	targetPosition := getPositionIntFromPayload(payload[offset:])
+	const mapEdgeSafetyMargin int16 = 120
+	targetPosition = game.ClampPositionIntToMap(targetPosition, mapEdgeSafetyMargin)
 	offset += 4
 
 	unitIDs := payload[offset:]
@@ -824,7 +829,8 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 					targetY += offsetY
 
 					// Set the target position for the unit
-					unitsToUpdate[totalUnits].SetTargetPosition(game.PositionFloat{X: targetX, Y: targetY})
+					clampedTarget := game.ClampPositionFloatToMap(game.PositionFloat{X: targetX, Y: targetY}, float32(mapEdgeSafetyMargin))
+					unitsToUpdate[totalUnits].SetTargetPosition(clampedTarget)
 
 					// Get the current position of the unit
 					currentPosition := unitsToUpdate[totalUnits].Position

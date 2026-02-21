@@ -19,7 +19,7 @@ class GameManager {
         }
         this.resources = {
             power: {
-                current: 1000,
+                current: 6000,
                 max: 6000,
                 generationRate: 0
             },
@@ -48,6 +48,14 @@ class GameManager {
         }
     }
 
+    updateDynamicMapSize () {
+        if (!this.core.renderer) return;
+        const totalPlayers = this.players.length + (this.player ? 1 : 0);
+        this.core.renderer.setMapPlayerCount(totalPlayers);
+        // Camera uses half-world coordinates internally.
+        this.core.camera.mapHalfSize = this.core.renderer.getMapSize() / 4;
+    }
+
     // Function to reset the game to start values
     reset () {
         // !Unit ugprades will be reset when a armory is placed
@@ -71,6 +79,7 @@ class GameManager {
             max: 5
         }
 
+        this.updateDynamicMapSize();
         this.core.miniMap.update();
     }
 
@@ -190,6 +199,7 @@ class GameManager {
         player.setAsClientPlayer();
         this.player = player;
         this.core.renderer.addToQueue(this.player, QueueType.PLAYER);
+        this.updateDynamicMapSize();
         this.core.miniMap.update();
     }
 
@@ -249,6 +259,7 @@ class GameManager {
     addPlayer (player) {
         this.players.push(player);
         this.core.renderer.addToQueue(player, QueueType.PLAYER);
+        this.updateDynamicMapSize();
         this.core.miniMap.update();
     }
 
@@ -276,6 +287,7 @@ class GameManager {
         this.core.renderer.removeFromQueue(playerToRemove, QueueType.PLAYER);
 
         this.metrics.players = this.players.length;
+        this.updateDynamicMapSize();
         this.core.miniMap.update();
     }
 
