@@ -46,12 +46,12 @@ export default class Core {
         player.addBuilding(new Buildings.House(color, { x: 610, y: 100 }, BuildingVariantTypes.HOUSE.BASIC));
         player.addBuilding(new Buildings.House(color, { x: 650, y: 160 }, BuildingVariantTypes.HOUSE.LARGE_HOUSE));
         player.addBuilding(new Buildings.SimpleTurret(color, { x: 640, y: -200 }, BuildingVariantTypes.SIMPLE_TURRET.HEAVY_TURRET));
-        player.addBuilding(new Buildings.Barracks(color, { x: 840, y: -348 }, BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_TANK_FACTORY));
+        player.addBuilding(new Buildings.Barracks(color, { x: 840, y: -348 }, BuildingVariantTypes.BARRACKS.TANK_FACTORY));
         player.addBuilding(new Buildings.Barracks(color, { x: 940, y: -335 }, BuildingVariantTypes.BARRACKS.BASIC));
         player.addBuilding(new Buildings.Barracks(color, { x: 1010, y: -305 }, BuildingVariantTypes.BARRACKS.GREATER_BARRACKS));
 
 
-        let unit = new Tank(color, {x:840, y:-438}, UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON);
+        let unit = new Tank(color, {x:840, y:-438}, UnitVariantTypes.TANK.BASIC);
         unit.rotation = 4.5;
         player.addUnit(unit);
 
@@ -139,14 +139,14 @@ export default class Core {
         player.addBuilding(new Buildings.SimpleTurret(color, { x: -450, y: -260 }));
         player.addBuilding(new Buildings.SimpleTurret(color, { x: -450, y: -60 }, BuildingVariantTypes.SIMPLE_TURRET.RAPID_TURRET));
         player.addBuilding(new Buildings.SimpleTurret(color, { x: -520, y: -20 }, BuildingVariantTypes.SIMPLE_TURRET.GATLING_TURRET));
-        player.addBuilding(new Buildings.Barracks(color, { x: -620, y: 30 }, BuildingVariantTypes.BARRACKS.CANNON_TANK_FACTORY));
-        player.addBuilding(new Buildings.Barracks(color, { x: -700, y: 28 }, BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_SIEGE_TANK_FACTORY));
+        player.addBuilding(new Buildings.Barracks(color, { x: -620, y: 30 }, BuildingVariantTypes.BARRACKS.TANK_FACTORY));
+        player.addBuilding(new Buildings.Barracks(color, { x: -700, y: 28 }, BuildingVariantTypes.BARRACKS.SIEGE_TANK_FACTORY));
   
-        unit = new Tank(color, {x:-610, y:100}, UnitVariantTypes.TANK.CANNON);
+        unit = new Tank(color, {x:-610, y:100}, UnitVariantTypes.TANK.BASIC);
         unit.rotation = 240;
         player.addUnit(unit);
 
-         unit = new SiegeTank(color, {x:-720, y:110}, UnitVariantTypes.SIEGE_TANK.BOOSTER_ENGINE_CANNON);
+         unit = new SiegeTank(color, {x:-720, y:110}, UnitVariantTypes.SIEGE_TANK.BASIC);
         unit.rotation = 90;
         player.addUnit(unit);
 

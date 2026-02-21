@@ -209,7 +209,7 @@ type BulletSpawning struct {
 var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 	SIMPLE_TURRET: {
 		BASIC_BUILDING: {
-			Health:       Health{Current: 15, Max: 15},
+			Health:       Health{Current: 20, Max: 20},
 			Speed:        500,
 			Size:         10,
 			Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
@@ -217,7 +217,7 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 			Behavior:     NormalBullet,
 		},
 		RAPID_TURRET: {
-			Health:       Health{Current: 15, Max: 15},
+			Health:       Health{Current: 20, Max: 20},
 			Speed:        500,
 			Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
 			Size:         10,
@@ -233,17 +233,17 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 			Behavior:     NormalBullet,
 		},
 		HEAVY_TURRET: {
-			Health:       Health{Current: 400, Max: 400},
-			Speed:        200,
-			Size:         20,
-			Polygon:      GeneratePolygon(ShapeCircle, 20, 0),
+			Health:       Health{Current: 30, Max: 30},
+			Speed:        800,
+			Size:         12,
+			Polygon:      GeneratePolygon(ShapeCircle, 12, 0),
 			StayDuration: 0, // No stay duration for non-trapper bullets
 			Behavior:     NormalBullet,
 		},
 	},
 	SNIPER_TURRET: {
 		BASIC_BUILDING: {
-			Health:       Health{Current: 50, Max: 50},
+			Health:       Health{Current: 30, Max: 30},
 			Speed:        800,
 			Size:         10,
 			Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
@@ -251,7 +251,7 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 			Behavior:     NormalBullet,
 		},
 		SEMI_AUTOMATIC_SNIPER: {
-			Health:       Health{Current: 50, Max: 50},
+			Health:       Health{Current: 30, Max: 30},
 			Speed:        800,
 			Size:         10,
 			Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
@@ -259,7 +259,7 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 			Behavior:     NormalBullet,
 		},
 		HEAVY_SNIPER: {
-			Health:       Health{Current: 60, Max: 60},
+			Health:       Health{Current: 30, Max: 30},
 			Speed:        900,
 			Size:         12,
 			Polygon:      GeneratePolygon(ShapeCircle, 12, 0),
@@ -267,12 +267,12 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 			Behavior:     NormalBullet,
 		},
 		ANTI_TANK_GUN: {
-			Health:           Health{Current: 60, Max: 60},
+			Health:           Health{Current: 50, Max: 50},
 			Speed:            1000,
 			Size:             12,
 			Polygon:          GeneratePolygon(ShapeCircle, 12, 0),
 			StayDuration:     0,              // No stay duration for non-trapper bullets
-			DamageMultiplier: 1.5,            // 150%
+			DamageMultiplier: 5.0,            // 500%
 			Behavior:         AntiTankBullet, // 150% Damage to tanks
 		},
 		TRAPPER: {
@@ -289,19 +289,19 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 	TANK: {
 		CANNON_TANK: {
-			Health:           Health{Current: 16, Max: 16},
+			Health:           Health{Current: 10, Max: 10},
 			Speed:            500,
 			Size:             6,
 			Polygon:          unitBulletPolygon,
-			DamageMultiplier: 2.0,
+			DamageMultiplier: 1.0,
 			Behavior:         UnitBullet,
 		},
 		BOOSTER_ENGINE_CANNON_TANK: {
-			Health:           Health{Current: 16, Max: 16},
+			Health:           Health{Current: 10, Max: 10},
 			Speed:            500,
 			Size:             6,
 			Polygon:          unitBulletPolygon,
-			DamageMultiplier: 2.0,
+			DamageMultiplier: 1.0,
 			Behavior:         UnitBullet,
 		},
 	},
@@ -311,7 +311,7 @@ var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 			Speed:            500,
 			Size:             8,
 			Polygon:          unitBulletPolygon,
-			DamageMultiplier: 2.0,
+			DamageMultiplier: 1.0,
 			Behavior:         UnitBullet,
 		},
 		BOOSTER_ENGINE_CANNON_SIEGE_TANK: {
@@ -319,17 +319,17 @@ var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 			Speed:            500,
 			Size:             8,
 			Polygon:          unitBulletPolygon,
-			DamageMultiplier: 2.0,
+			DamageMultiplier: 1.0,
 			Behavior:         UnitBullet,
 		},
 	},
 	COMMANDER: {
 		BASIC_UNIT: {
-			Health:           Health{Current: 100, Max: 100},
+			Health:           Health{Current: 30, Max: 30},
 			Speed:            700,
 			Size:             12,
 			Polygon:          unitBulletPolygon,
-			DamageMultiplier: 2.0,
+			DamageMultiplier: 1.0,
 			Behavior:         UnitBullet,
 		},
 	},
@@ -339,45 +339,45 @@ var turretBulletSpawningConfig = map[BuildingType]map[BuildingVariant]BulletSpaw
 	SIMPLE_TURRET: {
 		BASIC_BUILDING: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 750},
-			Range:     350,
+			Frequency: SpawnFrequency{Current: 0, Original: 800},
+			Range:     180,
 		},
 		RAPID_TURRET: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 300},
-			Range:     350,
+			Frequency: SpawnFrequency{Current: 0, Original: 400},
+			Range:     180,
 		},
 		GATLING_TURRET: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 200},
-			Range:     350,
+			Frequency: SpawnFrequency{Current: 0, Original: 140},
+			Range:     180,
 		},
 		HEAVY_TURRET: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 8000},
-			Range:     350,
+			Frequency: SpawnFrequency{Current: 0, Original: 800},
+			Range:     240,
 		},
 	},
 	SNIPER_TURRET: {
 		BASIC_BUILDING: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 1500},
-			Range:     400,
+			Frequency: SpawnFrequency{Current: 0, Original: 2000},
+			Range:     240,
 		},
 		SEMI_AUTOMATIC_SNIPER: BulletSpawning{
 			Shooter:   nil,
 			Frequency: SpawnFrequency{Current: 0, Original: 1000},
-			Range:     450,
+			Range:     240,
 		},
 		HEAVY_SNIPER: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 1500},
-			Range:     450,
+			Frequency: SpawnFrequency{Current: 0, Original: 2000},
+			Range:     240,
 		},
 		ANTI_TANK_GUN: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 2500},
-			Range:     450,
+			Frequency: SpawnFrequency{Current: 0, Original: 4500},
+			Range:     280,
 		},
 		TRAPPER: BulletSpawning{
 			Shooter:   nil,
@@ -391,13 +391,13 @@ var unitBulletSpawningConfig = map[UnitType]map[UnitVariant]BulletSpawning{
 	TANK: {
 		CANNON_TANK: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 1500},
-			Range:     350,
+			Frequency: SpawnFrequency{Current: 0, Original: 900},
+			Range:     200,
 		},
 		BOOSTER_ENGINE_CANNON_TANK: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 1500},
-			Range:     350,
+			Frequency: SpawnFrequency{Current: 0, Original: 900},
+			Range:     200,
 		},
 	},
 	SIEGE_TANK: {
@@ -415,8 +415,8 @@ var unitBulletSpawningConfig = map[UnitType]map[UnitVariant]BulletSpawning{
 	COMMANDER: {
 		BASIC_UNIT: BulletSpawning{
 			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 2000},
-			Range:     600,
+			Frequency: SpawnFrequency{Current: 0, Original: 600},
+			Range:     160,
 		},
 	},
 }

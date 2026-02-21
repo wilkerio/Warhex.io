@@ -34,17 +34,7 @@ export default class Barracks extends Building {
             [BuildingVariantTypes.BARRACKS.BASIC]: this.renderBarracks,
             [BuildingVariantTypes.BARRACKS.GREATER_BARRACKS]: this.renderGreaterBarracks,
             [BuildingVariantTypes.BARRACKS.TANK_FACTORY]: this.renderTankFactory,
-            [BuildingVariantTypes.BARRACKS.HEAVY_TANK_FACTORY]: this.renderHeavyTankFactory,
-            [BuildingVariantTypes.BARRACKS.BOOSTER_TANK_FACTORY]: this.renderBoosterTankFactory,
-            [BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_TANK_FACTORY]: this.renderBoosterCannonTankFactory,
-            [BuildingVariantTypes.BARRACKS.CANNON_TANK_FACTORY]: this.renderCannonTankFactory,
             [BuildingVariantTypes.BARRACKS.SIEGE_TANK_FACTORY]: this.renderSiegeFactory,
-            [BuildingVariantTypes.BARRACKS.HEAVY_BOOSTER_TANK_FACTORY]: this.renderHeavyBoosterTankFactory,
-            [BuildingVariantTypes.BARRACKS.HEAVY_SIEGE_TANK_FACTORY]: this.renderHeavySiegeFactory,
-            [BuildingVariantTypes.BARRACKS.BOOSTER_SIEGE_TANK_FACTORY]: this.renderBoosterSiegeFactory,
-            [BuildingVariantTypes.BARRACKS.CANNON_SIEGE_TANK_FACTORY]: this.renderCannonSiegeTankFactory,
-            [BuildingVariantTypes.BARRACKS.HEAVY_BOOSTER_SIEGE_TANK_FACTORY]: this.renderHeavyBoosterSiegeFactory,
-            [BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_SIEGE_TANK_FACTORY]: this.renderBoosterCannonSiegeFactory,
         };
 
         this.renderUpgrade = variantMap[buildingVariant] || this.renderBarracks;

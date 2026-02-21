@@ -103,16 +103,17 @@ const (
 	// Player timeout and protection settings
 	PLAYER_TIMEOUT                 = 10 // Minutes
 	PLAYER_SPAWN_PROTECTION_TIME   = 10 // Minutes
-	PLAYER_SPAWN_PROTECTION_RADIUS = 355 + 145
+	PLAYER_SPAWN_PROTECTION_RADIUS = 306 + 145
 
 	// Player health regeneration settings
 	PLAYER_HEALTH_REGENERATION           = 30
 	PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
 
 	// Player building settings
-	PLAYER_MAX_BUILDING_RADIUS = 355
-	PLAYER_MIN_BUILDING_RADIUS = 120
-	PLAYER_MAX_CORE_RADIUS     = PLAYER_MIN_BUILDING_RADIUS - 2
+	PLAYER_MAX_BUILDING_RADIUS = 306
+	PLAYER_MIN_BUILDING_RADIUS = 130
+	// Core stays slightly inside the inner ring.
+	PLAYER_MAX_CORE_RADIUS = PLAYER_MIN_BUILDING_RADIUS
 
 	// Neutral base configuration
 	NEUTRAL_BASE_POPULATION                    = 32
@@ -121,11 +122,12 @@ const (
 	NEUTRAL_BASE_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
 	NEUTRAL_BASE_MAX_BUILDING_RADIUS           = 260
 	NEUTRAL_BASE_MIN_BUILDING_RADIUS           = 82
-	NEUTRAL_BASE_MAX_CORE_RADIUS               = NEUTRAL_BASE_MIN_BUILDING_RADIUS - 2
+	NEUTRAL_BASE_MAX_CORE_RADIUS               = NEUTRAL_BASE_MIN_BUILDING_RADIUS
 	NEUTRAL_BASE_CAPTURE_SCORE                 = 10 // Per Second
 
 	// Unit and detection settings
-	BARRACKS_UNIT_SPAWN_RADIUS = 100
+	// Spawn units closer to barracks to avoid long gap after outer-ring placement.
+	BARRACKS_UNIT_SPAWN_RADIUS = 68
 	UNIT_DETECTION_RADIUS      = 1000
 
 	KICK_REASON_TIMEOUT   = 0

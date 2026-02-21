@@ -79,12 +79,12 @@ export const MessageTypes = {
 
 export const BuildingSizes = {
     WALL: { size: 30 },
-    SIMPLE_TURRET: { size: 30 },
-    SNIPER_TURRET: { size: 33 },
+    SIMPLE_TURRET: { size: 29 },
+    SNIPER_TURRET: { size: 32 },
     ARMORY: { size: 40 },
     BARRACKS: { size: 60 },
-    GENERATOR: { size: 40 },
-    HOUSE: { size: 35 }
+    GENERATOR: { size: 32 },
+    HOUSE: { size: 30 }
 };
 
 export const BuildingLimits = {
@@ -170,7 +170,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.WALL.BASIC,
             name: "Basic Wall",
             description: "Simple defensive structure.",
-            cost: 50,
+            cost: 60,
             size: BuildingSizes.WALL.size,
             next: [BuildingVariantTypes.WALL.BOULDER, BuildingVariantTypes.WALL.MICRO_GENERATOR]
         },
@@ -178,7 +178,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.WALL.BOULDER,
             name: "Boulder",
             description: "Stronger than a wall.",
-            cost: 80,
+            cost: 60,
             size: BuildingSizes.WALL.size,
             next: [BuildingVariantTypes.WALL.SPIKE]
         },
@@ -186,7 +186,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.WALL.SPIKE,
             name: "Spike",
             description: "Stronger than a boulder.",
-            cost: 120,
+            cost: 200,
             size: BuildingSizes.WALL.size,
             next: []
         },
@@ -194,7 +194,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.WALL.MICRO_GENERATOR,
             name: "Micro Generator",
             description: "Generates power slowly over time.",
-            cost: 100,
+            cost: 30,
             size: BuildingSizes.WALL.size,
             next: []
         },
@@ -204,8 +204,8 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.SIMPLE_TURRET.BASIC,
             name: "Simple Turret",
             description: "Automatically attacks enemy units.",
-            cost: 150,
-            range: 350,
+            cost: 25,
+            range: 180,
             size: BuildingSizes.SIMPLE_TURRET.size,
             next: [BuildingVariantTypes.SIMPLE_TURRET.RAPID_TURRET, BuildingVariantTypes.SIMPLE_TURRET.HEAVY_TURRET]
         },
@@ -213,8 +213,8 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.SIMPLE_TURRET.RAPID_TURRET,
             name: "Rapid Turret",
             description: "Higher fire rate, lower damage.",
-            cost: 200,
-            range: 350,
+            cost: 60,
+            range: 180,
             size: BuildingSizes.SIMPLE_TURRET.size,
             next: [BuildingVariantTypes.SIMPLE_TURRET.GATLING_TURRET]
         },
@@ -222,8 +222,8 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.SIMPLE_TURRET.GATLING_TURRET,
             name: "Gatling Turret",
             description: "Fires rapidly at close range.",
-            cost: 300,
-            range: 350,
+            cost: 100,
+            range: 180,
             size: BuildingSizes.SIMPLE_TURRET.size,
             next: []
         },
@@ -231,8 +231,8 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.SIMPLE_TURRET.HEAVY_TURRET,
             name: "Heavy Turret",
             description: "Heavy shots with massive damage.",
-            cost: 500,
-            range: 350,
+            cost: 60,
+            range: 240,
             size: BuildingSizes.SIMPLE_TURRET.size,
             next: []
         }
@@ -242,8 +242,8 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.SNIPER_TURRET.BASIC,
             name: "Sniper Turret",
             description: "High damage, long range, slow fire rate.",
-            cost: 200,
-            range: 400,
+            cost: 80,
+            range: 240,
             size: BuildingSizes.SNIPER_TURRET.size,
             next: [BuildingVariantTypes.SNIPER_TURRET.SEMI_AUTOMATIC_SNIPER, BuildingVariantTypes.SNIPER_TURRET.HEAVY_SNIPER]
         },
@@ -251,8 +251,8 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.SNIPER_TURRET.SEMI_AUTOMATIC_SNIPER,
             name: "Semi-Automatic",
             description: "Higher fire rate.",
-            cost: 250,
-            range: 450,
+            cost: 180,
+            range: 240,
             size: BuildingSizes.SNIPER_TURRET.size,
             next: []
         },
@@ -260,8 +260,8 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.SNIPER_TURRET.HEAVY_SNIPER,
             name: "Heavy Sniper",
             description: "High damage, long range, slow fire rate.",
-            cost: 250,
-            range: 450,
+            cost: 180,
+            range: 240,
             size: BuildingSizes.SNIPER_TURRET.size,
             next: [BuildingVariantTypes.SNIPER_TURRET.TRAPPER, BuildingVariantTypes.SNIPER_TURRET.ANTI_TANK_GUN]
         },
@@ -269,8 +269,8 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.SNIPER_TURRET.ANTI_TANK_GUN,
             name: "Anti-Tank Gun",
             description: "Huge damage, slow fire rate.",
-            cost: 400,
-            range: 450,
+            cost: 300,
+            range: 280,
             size: BuildingSizes.SNIPER_TURRET.size,
             next: []
         },
@@ -289,7 +289,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.ARMORY.BASIC,
             name: "Armory",
             description: "Unlocks unit upgrades.",
-            cost: 150,
+            cost: 100,
             size: BuildingSizes.ARMORY.size,
             next: [
                 BuildingVariantTypes.ARMORY.POWER_ARMOR,
@@ -391,7 +391,7 @@ export const BuildingDetails = {
         BASIC: {
             variant: BuildingVariantTypes.BARRACKS.BASIC,
             name: "Barracks",
-            description: "Trains Soldiers.",
+            description: "Produces soldiers over time.",
             cost: 150,
             size: BuildingSizes.BARRACKS.size,
             next: [
@@ -403,104 +403,24 @@ export const BuildingDetails = {
         GREATER_BARRACKS: {
             variant: BuildingVariantTypes.BARRACKS.GREATER_BARRACKS,
             name: "Greater Barracks",
-            description: "Trains soldiers at a faster rate.",
-            cost: 200,
+            description: "Produces soldiers at a faster rate.",
+            cost: 500,
             size: BuildingSizes.BARRACKS.size,
             next: []
         },
         TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.TANK_FACTORY,
             name: "Tank Factory",
-            description: "Produces Tanks over time.",
-            cost: 200,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        HEAVY_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.HEAVY_TANK_FACTORY,
-            name: "H. Tank Factory",
-            description: "Produces Heavy Tanks.",
-            cost: 250,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        BOOSTER_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.BOOSTER_TANK_FACTORY,
-            name: "B. Tank Factory",
-            description: "Produces Booster Engine Tanks.",
-            cost: 250,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        CANNON_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.CANNON_TANK_FACTORY,
-            name: "C. Tank Factory",
-            description: "Produces Cannon Tanks.",
-            cost: 300,
+            description: "Slowly produces tanks over time.",
+            cost: 2000,
             size: BuildingSizes.BARRACKS.size,
             next: []
         },
         SIEGE_TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.SIEGE_TANK_FACTORY,
             name: "Siege Factory",
-            description: "Produces Siege Tanks.",
-            cost: 300,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        HEAVY_BOOSTER_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.HEAVY_BOOSTER_TANK_FACTORY,
-            name: "H.B. Tank Factory",
-            description: "Produces strong, heavily armored Booster Engine Tanks.",
-            cost: 300,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        BOOSTER_CANNON_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_TANK_FACTORY,
-            name: "B.C. Tank Factory",
-            description: "Produces Booster Engine Cannon Tanks.",
-            cost: 300,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        HEAVY_SIEGE_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.HEAVY_SIEGE_TANK_FACTORY,
-            name: "H. Siege Factory",
-            description: "Produces Heavy Armor Siege Tanks.",
-            cost: 350,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        BOOSTER_SIEGE_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.BOOSTER_SIEGE_TANK_FACTORY,
-            name: "B. Siege Factory",
-            description: "Produces Booster Engine Siege Tanks.",
-            cost: 350,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        CANNON_SIEGE_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.CANNON_SIEGE_TANK_FACTORY,
-            name: "C. Siege Factory",
-            description: "Produces Cannon Siege Tanks.",
-            cost: 400,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        HEAVY_BOOSTER_SIEGE_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.HEAVY_BOOSTER_SIEGE_TANK_FACTORY,
-            name: "H.B. Siege Factory",
-            description: "Produces strong, heavily armored Booster Engine Siege Tanks.",
-            cost: 400,
-            size: BuildingSizes.BARRACKS.size,
-            next: []
-        },
-        BOOSTER_CANNON_SIEGE_TANK_FACTORY: {
-            variant: BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_SIEGE_TANK_FACTORY,
-            name: "B.C. Siege Factory",
-            description: "Produces Booster Engine Cannon Siege Tanks.",
-            cost: 400,
+            description: "Produces siege tanks over time.",
+            cost: 3000,
             size: BuildingSizes.BARRACKS.size,
             next: []
         },
@@ -510,7 +430,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.GENERATOR.BASIC,
             name: "Generator",
             description: "Basic power supply.",
-            cost: 100,
+            cost: 50,
             size: BuildingSizes.GENERATOR.size,
             next: [BuildingVariantTypes.GENERATOR.POWER_PLANT]
         },
@@ -518,7 +438,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.GENERATOR.POWER_PLANT,
             name: "Power Plant",
             description: "Increased energy output.",
-            cost: 200,
+            cost: 100,
             size: BuildingSizes.GENERATOR.size,
             next: []
         }
@@ -528,7 +448,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.HOUSE.BASIC,
             name: "House",
             description: "Increases population limit.",
-            cost: 120,
+            cost: 60,
             size: BuildingSizes.HOUSE.size,
             next: [BuildingVariantTypes.HOUSE.LARGE_HOUSE]
         },
@@ -536,7 +456,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.HOUSE.LARGE_HOUSE,
             name: "Large House",
             description: "Increases population limit.",
-            cost: 150,
+            cost: 120,
             size: BuildingSizes.HOUSE.size,
             next: []
         },
@@ -567,8 +487,8 @@ export const BulletDetails = {
         },
         HEAVY_TURRET: {
             type: BulletTypes.BASIC,
-            speed: 200,
-            size: 20
+            speed: 800,
+            size: 12
         }
     },
     SNIPER_TURRET: {
@@ -651,59 +571,55 @@ export const UnitDetails = {
     TANK: {
         BASIC: {
             variant: UnitVariantTypes.TANK.BASIC,
-            size: 28,
+            size: 31,
         },
         HEAVY_ARMOR: {
             variant: UnitVariantTypes.TANK.HEAVY_ARMOR,
-            size: 28,
+            size: 31,
         },
         BOOSTER_ENGINE: {
             variant: UnitVariantTypes.TANK.BOOSTER_ENGINE,
-            size: 28,
+            size: 31,
         },
         CANNON: {
             variant: UnitVariantTypes.TANK.CANNON,
-            size: 28,
-        },
-        HEAVY_ARMOR: {
-            variant: UnitVariantTypes.TANK.LIGHT_ARMOR,
-            size: 28,
+            size: 31,
         },
         HEAVY_ARMOR_BOOSTER_ENGINE: {
             variant: UnitVariantTypes.TANK.HEAVY_ARMOR_BOOSTER_ENGINE,
-            size: 28,
+            size: 31,
         },
         BOOSTER_ENGINE_CANNON: {
             variant: UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON,
-            size: 28,
+            size: 31,
         }
     },
     SIEGE_TANK: {
         BASIC: {
             variant: UnitVariantTypes.SIEGE_TANK.BASIC,
-            size: 38,
+            size: 40,
         },
         HEAVY_ARMOR: {
             variant: UnitVariantTypes.SIEGE_TANK.HEAVY_ARMOR,
-            size: 38,
+            size: 40,
         },
         BOOSTER_ENGINE: {
             variant: UnitVariantTypes.SIEGE_TANK.BOOSTER_ENGINE,
-            size: 38,
+            size: 40,
             next: []
         },
         CANNON: {
             variant: UnitVariantTypes.SIEGE_TANK.CANNON,
-            size: 38,
+            size: 40,
             next: []
         },
         HEAVY_ARMOR_BOOSTER_ENGINE: {
             variant: UnitVariantTypes.SIEGE_TANK.HEAVY_ARMOR_BOOSTER_ENGINE,
-            size: 38,
+            size: 40,
         },
-        BOOSTER_ENGINE_CANNON_SIEGE_TANK: {
-            variant: UnitVariantTypes.SIEGE_TANK.BOOSTER_ENGINE_CANNON_SIEGE_TANK,
-            size: 38,
+        BOOSTER_ENGINE_CANNON: {
+            variant: UnitVariantTypes.SIEGE_TANK.BOOSTER_ENGINE_CANNON,
+            size: 40,
         }
     },
     COMMANDER: {
@@ -712,7 +628,7 @@ export const UnitDetails = {
             name: "Commander",
             description: "Powerful unit, you can only have 1",
             cost: 5000,
-            size: 40,
+            size: 32,
         },
     },
     TRI_COMMANDER: {

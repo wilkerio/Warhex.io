@@ -316,41 +316,61 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	dy := float64(position.Y - float32(basePosition.Y))
 	distance := math.Sqrt(dx*dx + dy*dy)
 
-	// Define maximum and minimum allowed distances (radii)
-	maxRadius := game.PLAYER_MAX_BUILDING_RADIUS
-	minRadius := game.PLAYER_MIN_BUILDING_RADIUS
-	maxRadiusNeutralBase := game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
-	minRadiusNeutralBase := game.NEUTRAL_BASE_MIN_BUILDING_RADIUS
+		// Define maximum and minimum allowed distances (radii)
+		maxRadius := game.PLAYER_MAX_BUILDING_RADIUS
+		minRadius := game.PLAYER_MIN_BUILDING_RADIUS
+		maxRadiusNeutralBase := game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
+		minRadiusNeutralBase := game.NEUTRAL_BASE_MIN_BUILDING_RADIUS
+		maxRadiusByType := maxRadius
+		maxRadiusNeutralByType := maxRadiusNeutralBase
 
-	switch buildingType {
-	case game.BARRACKS:
-		minRadius = game.PLAYER_MAX_BUILDING_RADIUS
-		minRadiusNeutralBase = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
-	case game.GENERATOR, game.HOUSE:
-		radiusOffset := -6 // Check this for house again
-		minRadius += game.GetBuildingSize(buildingType) + radiusOffset
-		minRadiusNeutralBase += game.GetBuildingSize(buildingType) + radiusOffset
-	default:
-		// Circular shape (Wall, turret, etc.)
-		minRadius += game.GetBuildingSize(buildingType)
-		minRadiusNeutralBase += game.GetBuildingSize(buildingType)
-	}
+		switch buildingType {
+		case game.BARRACKS:
+			minRadius = game.PLAYER_MAX_BUILDING_RADIUS
+			minRadiusNeutralBase = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
+			// Barracks fixed slightly outside the ring.
+			maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
+			maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
+		case game.WALL:
+			size := game.GetBuildingSize(buildingType)
+			minRadius += size
+			minRadiusNeutralBase += size
+			// Wall can be placed freely and a bit outside the ring.
+			maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 16
+			maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 16
+		case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.GENERATOR, game.HOUSE:
+			// These must remain inside ring: building edge cannot cross max radius.
+			size := game.GetBuildingSize(buildingType)
+			minRadius += size
+			minRadiusNeutralBase += size
+			maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS - size
+			maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS - size
+		default:
+			// Circular shape (Wall, turret, etc.)
+			size := game.GetBuildingSize(buildingType)
+			minRadius += size
+			minRadiusNeutralBase += size
+		}
 
-	tolerance := 2
+		tolerance := 4
+		if buildingType == game.BARRACKS {
+			// Extra buffer for fixed outer-ring placement.
+			tolerance = 12
+		}
 
 	base := player.Base
 	// Validation for building placement
 	isPlayerRadiusValid := false
 
-	if buildingType == game.BARRACKS {
-		// Walls and barracks must be at the border
-		isPlayerRadiusValid = uint16(math.Floor(distance)) >= uint16(maxRadius-tolerance) &&
-			uint16(math.Ceil(distance)) <= uint16(maxRadius+tolerance)
-	} else {
-		// Other buildings can be within the valid range, including the border
-		isPlayerRadiusValid = !(uint16(math.Floor(distance)) > uint16(maxRadius+tolerance) ||
-			uint16(math.Ceil(distance)) < uint16(minRadius-tolerance))
-	}
+		if buildingType == game.BARRACKS {
+			// Walls and barracks must be at the border
+			isPlayerRadiusValid = uint16(math.Floor(distance)) >= uint16(maxRadiusByType-tolerance) &&
+				uint16(math.Ceil(distance)) <= uint16(maxRadiusByType+tolerance)
+		} else {
+			// Other buildings can be within the valid range, including the border
+			isPlayerRadiusValid = !(uint16(math.Floor(distance)) > uint16(maxRadiusByType+tolerance) ||
+				uint16(math.Ceil(distance)) < uint16(minRadius-tolerance))
+		}
 
 	player.RLock()
 	neutrals := make([]*game.NeutralBase, 0, len(player.CapturedNeutralBases))
@@ -367,7 +387,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 
 			// Calculate the clamped minimum and maximum distances
 			minDistance := float64(minRadiusNeutralBase - tolerance)
-			maxDistance := float64(maxRadiusNeutralBase + tolerance)
+				maxDistance := float64(maxRadiusNeutralByType + tolerance)
 
 			// Check if the distance is valid within the neutral base radii
 			if distanceToNeutralBase >= minDistance && distanceToNeutralBase <= maxDistance {
@@ -594,28 +614,31 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 			player.AddUnitSpawning(building, wasUnitSpawningActive)
 		case game.SIMPLE_TURRET, game.SNIPER_TURRET:
 			base.AddBulletSpawning(building)
-		case game.ARMORY:
-			player.ApplySoldierArmorUpgrade(buildingVariant == game.BuildingVariant(1))
-			player.ApplyTankBoosterUpgrade(
-				buildingVariant == game.BuildingVariant(2) ||
+			case game.ARMORY:
+				// Armory upgrades are powerups and must stack.
+				if buildingVariant == game.BuildingVariant(1) {
+					player.ApplySoldierArmorUpgrade(true)
+				}
+				if buildingVariant == game.BuildingVariant(2) ||
 					buildingVariant == game.BuildingVariant(4) ||
 					buildingVariant == game.BuildingVariant(6) ||
-					buildingVariant == game.BuildingVariant(8),
-			)
-			player.ApplyTankCannonUpgrade(
-				buildingVariant == game.BuildingVariant(3) ||
+					buildingVariant == game.BuildingVariant(8) {
+					player.ApplyTankBoosterUpgrade(true)
+				}
+				if buildingVariant == game.BuildingVariant(3) ||
 					buildingVariant == game.BuildingVariant(4) ||
 					buildingVariant == game.BuildingVariant(7) ||
-					buildingVariant == game.BuildingVariant(8),
-			)
-			player.ApplyTankCloakUpgrade(
-				buildingVariant == game.BuildingVariant(5) ||
+					buildingVariant == game.BuildingVariant(8) {
+					player.ApplyTankCannonUpgrade(true)
+				}
+				if buildingVariant == game.BuildingVariant(5) ||
 					buildingVariant == game.BuildingVariant(6) ||
 					buildingVariant == game.BuildingVariant(7) ||
-					buildingVariant == game.BuildingVariant(8),
-			)
+					buildingVariant == game.BuildingVariant(8) {
+					player.ApplyTankCloakUpgrade(true)
+				}
+			}
 		}
-	}
 
 	// Update the player's last activity timestamp
 	player.SetLastActivity()

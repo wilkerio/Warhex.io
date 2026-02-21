@@ -18,7 +18,7 @@ export default class NeutralBase extends Player {
             max: 260,
             min: 82
         }
-        this.coreRadius = { max: this.buildingRadius.min - 2 };
+        this.coreRadius = { max: this.buildingRadius.min };
         this.buildings = [];
         this.borderRotation = 0;
         this.hasSpawnProtection = false;

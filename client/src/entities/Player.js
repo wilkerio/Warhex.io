@@ -25,10 +25,10 @@ export default class Player extends Renderable {
         this.springDamping = 0.1;
         this.springStiffness = 0.005;
         this.buildingRadius = {
-            max: 355,
-            min: 120
+            max: 306,
+            min: 130
         }
-        this.coreRadius = { max: this.buildingRadius.min - 2 };
+        this.coreRadius = { max: this.buildingRadius.min };
         this.buildingCache = null;
         this.buildingCacheTimestamp = 0;
         this.buildings = [];

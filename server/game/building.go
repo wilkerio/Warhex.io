@@ -45,6 +45,7 @@ func (b *Building) GetPosition() PositionFloat {
 type BuildingUpgrade struct {
 	Variant BuildingVariant
 	Health  Health
+	Damage  uint16
 	Next    []BuildingVariant
 	Cost    uint16
 }
@@ -53,83 +54,96 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 	WALL: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 800, Max: 800},
+			Health:  Health{Current: 150, Max: 150},
+			Damage:  50,
 			Next:    []BuildingVariant{MICRO_GENERATOR, BOULDER},
-			Cost:    50,
+			Cost:    60,
 		},
 		MICRO_GENERATOR: {
 			Variant: MICRO_GENERATOR,
-			Health:  Health{Current: 800, Max: 800},
+			Health:  Health{Current: 50, Max: 50},
+			Damage:  10,
 			Next:    nil,
-			Cost:    100,
+			Cost:    30,
 		},
 		BOULDER: {
 			Variant: BOULDER,
-			Health:  Health{Current: 1000, Max: 1000},
+			Health:  Health{Current: 150, Max: 150},
+			Damage:  50,
 			Next:    []BuildingVariant{SPIKE},
-			Cost:    80,
+			Cost:    60,
 		},
 		SPIKE: {
 			Variant: SPIKE,
-			Health:  Health{Current: 1200, Max: 1200},
+			Health:  Health{Current: 200, Max: 200},
+			Damage:  100,
 			Next:    nil,
-			Cost:    120,
+			Cost:    200,
 		},
 	},
 	SIMPLE_TURRET: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 20, Max: 20},
+			Damage:  20,
 			Next:    []BuildingVariant{RAPID_TURRET, HEAVY_TURRET},
-			Cost:    150,
+			Cost:    25,
 		},
 		RAPID_TURRET: {
 			Variant: RAPID_TURRET,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 20, Max: 20},
+			Damage:  20,
 			Next:    []BuildingVariant{GATLING_TURRET},
-			Cost:    200,
+			Cost:    60,
 		},
 		GATLING_TURRET: {
 			Variant: GATLING_TURRET,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 20, Max: 20},
+			Damage:  15,
 			Next:    nil,
-			Cost:    300,
+			Cost:    100,
 		},
 		HEAVY_TURRET: {
-			Variant: GATLING_TURRET,
-			Health:  Health{Current: 100, Max: 100},
+			Variant: HEAVY_TURRET,
+			Health:  Health{Current: 30, Max: 30},
+			Damage:  30,
 			Next:    nil,
-			Cost:    500,
+			Cost:    60,
 		},
 	},
 	SNIPER_TURRET: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 30, Max: 30},
+			Damage:  30,
 			Next:    []BuildingVariant{SEMI_AUTOMATIC_SNIPER, HEAVY_SNIPER},
-			Cost:    200,
+			Cost:    80,
 		},
 		SEMI_AUTOMATIC_SNIPER: {
 			Variant: SEMI_AUTOMATIC_SNIPER,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 60, Max: 60},
+			Damage:  30,
 			Next:    nil,
-			Cost:    250,
+			Cost:    180,
 		},
 		HEAVY_SNIPER: {
 			Variant: HEAVY_SNIPER,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 60, Max: 60},
+			Damage:  30,
 			Next:    []BuildingVariant{TRAPPER, ANTI_TANK_GUN},
-			Cost:    250,
+			Cost:    180,
 		},
 		ANTI_TANK_GUN: {
 			Variant: ANTI_TANK_GUN,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 60, Max: 60},
+			Damage:  30,
 			Next:    nil,
-			Cost:    400,
+			Cost:    300,
 		},
 		TRAPPER: {
 			Variant: TRAPPER,
 			Health:  Health{Current: 100, Max: 100},
+			Damage:  30,
 			Next:    nil,
 			Cost:    550,
 		},
@@ -137,55 +151,64 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 	ARMORY: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    []BuildingVariant{BuildingVariant(1), BuildingVariant(2), BuildingVariant(3), BuildingVariant(5)},
-			Cost:    150,
+			Cost:    100,
 		},
 		BuildingVariant(1): {
 			Variant: BuildingVariant(1),
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    []BuildingVariant{BuildingVariant(2), BuildingVariant(3), BuildingVariant(5)},
 			Cost:    500,
 		},
 		BuildingVariant(2): {
 			Variant: BuildingVariant(2),
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    []BuildingVariant{BuildingVariant(4), BuildingVariant(6)},
 			Cost:    600,
 		},
 		BuildingVariant(3): {
 			Variant: BuildingVariant(3),
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    []BuildingVariant{BuildingVariant(7)},
 			Cost:    1000,
 		},
 		BuildingVariant(4): {
 			Variant: BuildingVariant(4),
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    []BuildingVariant{BuildingVariant(8)},
 			Cost:    1000,
 		},
 		BuildingVariant(5): {
 			Variant: BuildingVariant(5),
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    nil,
 			Cost:    2000,
 		},
 		BuildingVariant(6): {
 			Variant: BuildingVariant(6),
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    []BuildingVariant{BuildingVariant(8)},
 			Cost:    2000,
 		},
 		BuildingVariant(7): {
 			Variant: BuildingVariant(7),
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    []BuildingVariant{BuildingVariant(8)},
 			Cost:    2000,
 		},
 		BuildingVariant(8): {
 			Variant: BuildingVariant(8),
-			Health:  Health{Current: 200, Max: 200},
+			Health:  Health{Current: 90, Max: 90},
+			Damage:  30,
 			Next:    nil,
 			Cost:    2000,
 		},
@@ -193,127 +216,75 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 	BARRACKS: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 150, Max: 150},
+			Health:  Health{Current: 60, Max: 60},
+			Damage:  30,
 			Next:    []BuildingVariant{GREATER_BARRACKS, TANK_FACTORY, SIEGE_TANK_FACTORY},
 			Cost:    150,
 		},
 		GREATER_BARRACKS: {
 			Variant: GREATER_BARRACKS,
-			Health:  Health{Current: 150, Max: 150},
+			Health:  Health{Current: 80, Max: 80},
+			Damage:  40,
 			Next:    nil,
-			Cost:    200,
+			Cost:    500,
 		},
 		TANK_FACTORY: {
 			Variant: TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
+			Health:  Health{Current: 140, Max: 140},
+			Damage:  50,
 			Next:    nil,
-			Cost:    200,
-		},
-		HEAVY_TANK_FACTORY: {
-			Variant: HEAVY_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    250,
-		},
-		BOOSTER_TANK_FACTORY: {
-			Variant: BOOSTER_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    250,
-		},
-		CANNON_TANK_FACTORY: {
-			Variant: CANNON_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    300,
+			Cost:    2000,
 		},
 		SIEGE_TANK_FACTORY: {
 			Variant: SIEGE_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
+			Health:  Health{Current: 200, Max: 200},
+			Damage:  100,
 			Next:    nil,
-			Cost:    300,
-		},
-		HEAVY_BOOSTER_TANK_FACTORY: {
-			Variant: HEAVY_BOOSTER_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    300,
-		},
-		BOOSTER_CANNON_TANK_FACTORY: {
-			Variant: BOOSTER_CANNON_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    300,
-		},
-		HEAVY_SIEGE_TANK_FACTORY: {
-			Variant: HEAVY_SIEGE_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    350,
-		},
-		BOOSTER_SIEGE_TANK_FACTORY: {
-			Variant: BOOSTER_SIEGE_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    350,
-		},
-		CANNON_SIEGE_TANK_FACTORY: {
-			Variant: CANNON_SIEGE_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    400,
-		},
-		HEAVY_BOOSTER_SIEGE_TANK_FACTORY: {
-			Variant: HEAVY_BOOSTER_SIEGE_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    400,
-		},
-		BOOSTER_CANNON_SIEGE_TANK_FACTORY: {
-			Variant: BOOSTER_CANNON_SIEGE_TANK_FACTORY,
-			Health:  Health{Current: 150, Max: 150},
-			Next:    nil,
-			Cost:    400,
+			Cost:    3000,
 		},
 	},
 	GENERATOR: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 50, Max: 50},
+			Damage:  10,
 			Next:    []BuildingVariant{POWER_PLANT},
-			Cost:    100,
+			Cost:    50,
 		},
 		POWER_PLANT: {
 			Variant: POWER_PLANT,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 80, Max: 80},
+			Damage:  10,
 			Next:    nil,
-			Cost:    200,
+			Cost:    100,
 		},
 	},
 	HOUSE: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 40, Max: 40},
+			Damage:  10,
 			Next:    []BuildingVariant{LARGE_HOUSE},
-			Cost:    120,
+			Cost:    60,
 		},
 		LARGE_HOUSE: {
 			Variant: LARGE_HOUSE,
-			Health:  Health{Current: 100, Max: 100},
+			Health:  Health{Current: 60, Max: 60},
+			Damage:  10,
 			Next:    []BuildingVariant{},
-			Cost:    150,
+			Cost:    120,
 		},
 	},
 }
 
 var buildingSizes = map[BuildingType]int{
 	WALL:          30,
-	SIMPLE_TURRET: 30,
-	SNIPER_TURRET: 33,
+	SIMPLE_TURRET: 29,
+	SNIPER_TURRET: 32,
 	ARMORY:        40,
 	BARRACKS:      60,
-	GENERATOR:     40,
-	HOUSE:         35,
+	GENERATOR:     32,
+	HOUSE:         30,
 }
 
 type BuildingLimit struct {
@@ -323,18 +294,18 @@ type BuildingLimit struct {
 
 var resourceGeneration = map[BuildingType]map[BuildingVariant]Generating{
 	WALL: {
-		MICRO_GENERATOR: Generating{Power: 2},
+		MICRO_GENERATOR: Generating{Power: 1},
 	},
 	GENERATOR: {
-		BASIC_BUILDING: Generating{Power: 2},
-		POWER_PLANT:    Generating{Power: 3},
+		BASIC_BUILDING: Generating{Power: 1},
+		POWER_PLANT:    Generating{Power: 2},
 	},
 }
 
 var populationCapacity = map[BuildingType]map[BuildingVariant]uint16{
 	HOUSE: {
-		BASIC_BUILDING: 8,
-		LARGE_HOUSE:    12,
+		BASIC_BUILDING: 3,
+		LARGE_HOUSE:    6,
 	},
 }
 
@@ -345,87 +316,27 @@ var unitSpawningConfig = map[BuildingType]map[BuildingVariant]UnitSpawning{
 			Barracks:    nil,
 			UnitType:    SOLDIER,
 			UnitVariant: BASIC_UNIT,
-			Frequency:   SpawnFrequency{Current: 0, Original: 4},
+			Frequency:   SpawnFrequency{Current: 0, Original: 3500},
 		},
 		GREATER_BARRACKS: UnitSpawning{
 			Barracks:    nil,
 			UnitType:    SOLDIER,
 			UnitVariant: BASIC_UNIT,
-			Frequency:   SpawnFrequency{Current: 0, Original: 2},
+			Frequency:   SpawnFrequency{Current: 0, Original: 2500},
 		},
 		// Tanks
 		TANK_FACTORY: UnitSpawning{
 			Barracks:    nil,
 			UnitType:    TANK,
 			UnitVariant: BASIC_UNIT,
-			Frequency:   SpawnFrequency{Current: 0, Original: 20},
-		},
-		HEAVY_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    TANK,
-			UnitVariant: HEAVY_ARMOR_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 20},
-		},
-		BOOSTER_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    TANK,
-			UnitVariant: BOOSTER_ENGINE_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 20},
-		},
-		CANNON_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    TANK,
-			UnitVariant: CANNON_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 20},
-		},
-		HEAVY_BOOSTER_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    TANK,
-			UnitVariant: HEAVY_ARMOR_BOOSTER_ENGINE_SIEGE_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 20},
-		},
-		BOOSTER_CANNON_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    TANK,
-			UnitVariant: BOOSTER_ENGINE_CANNON_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 20},
+			Frequency:   SpawnFrequency{Current: 0, Original: 10000},
 		},
 		// Siege Tanks
 		SIEGE_TANK_FACTORY: UnitSpawning{
 			Barracks:    nil,
 			UnitType:    SIEGE_TANK,
 			UnitVariant: BASIC_UNIT,
-			Frequency:   SpawnFrequency{Current: 0, Original: 30},
-		},
-		HEAVY_SIEGE_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    SIEGE_TANK,
-			UnitVariant: HEAVY_ARMOR_SIEGE_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 30},
-		},
-		BOOSTER_SIEGE_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    SIEGE_TANK,
-			UnitVariant: BOOSTER_ENGINE_SIEGE_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 30},
-		},
-		CANNON_SIEGE_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    SIEGE_TANK,
-			UnitVariant: CANNON_SIEGE_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 30},
-		},
-		HEAVY_BOOSTER_SIEGE_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    SIEGE_TANK,
-			UnitVariant: HEAVY_ARMOR_BOOSTER_ENGINE_SIEGE_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 30},
-		},
-		BOOSTER_CANNON_SIEGE_TANK_FACTORY: UnitSpawning{
-			Barracks:    nil,
-			UnitType:    SIEGE_TANK,
-			UnitVariant: BOOSTER_ENGINE_CANNON_SIEGE_TANK,
-			Frequency:   SpawnFrequency{Current: 0, Original: 30},
+			Frequency:   SpawnFrequency{Current: 0, Original: 20000},
 		},
 	},
 }
@@ -462,6 +373,15 @@ func GetBuildingCost(buildingType BuildingType, buildingVariant BuildingVariant)
 	if upgrades, ok := buildingTypes[buildingType]; ok {
 		if upgrade, ok := upgrades[buildingVariant]; ok {
 			return upgrade.Cost, true
+		}
+	}
+	return 0, false
+}
+
+func GetBuildingContactDamage(buildingType BuildingType, buildingVariant BuildingVariant) (uint16, bool) {
+	if upgrades, ok := buildingTypes[buildingType]; ok {
+		if upgrade, ok := upgrades[buildingVariant]; ok {
+			return upgrade.Damage, true
 		}
 	}
 	return 0, false

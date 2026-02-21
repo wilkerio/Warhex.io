@@ -206,7 +206,7 @@ func startResourceUpdateLoop() {
 }
 
 func startUnitSpawnLoop() {
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -232,11 +232,11 @@ func startUnitSpawnLoop() {
 					continue
 				}
 
-				// Always decrement the frequency
-				if spawning.Frequency.Current > 0 {
-					decrement := uint16(1) // 1 second decrement
-					spawning.Frequency.Decrement(decrement)
-				}
+					// Frequencies are configured in milliseconds (legacy parity).
+					if spawning.Frequency.Current > 0 {
+						decrement := uint16(100) // 100ms tick
+						spawning.Frequency.Decrement(decrement)
+					}
 
 				// Only proceed if the frequency has reached zero
 				if spawning.Frequency.Get() == 0 {
@@ -766,9 +766,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					continue
 				}
 
-				if isBulletCollidingWithUnit(bullet, unit) {
-					unitHealth := unit.Health.Current
-					bulletHealth := bullet.Health.Current * 2
+					if isBulletCollidingWithUnit(bullet, unit) {
+						unitHealth := unit.Health.Current
+						bulletHealth := bullet.Health.Current
 
 					isAlive := bullet.TakeDamage(unitHealth)
 					if !isAlive { // Bullet is destroyed
@@ -777,10 +777,10 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 						otherPlayer.Base.RemoveBullet(bullet.ID)
 					}
 
-					damage := bulletHealth
-					if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
-						damage *= uint16(bullet.DamageMultiplier) // 150% damage to tanks
-					}
+						damage := bulletHealth
+						if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
+							damage *= uint16(bullet.DamageMultiplier)
+						}
 
 					isAlive = unit.TakeDamage(damage)
 					if !isAlive { // Unit is destroyed
@@ -876,9 +876,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					continue
 				}
 
-				if isBulletCollidingWithUnit(bullet, unit) {
-					unitHealth := unit.Health.Current
-					bulletHealth := bullet.Health.Current
+					if isBulletCollidingWithUnit(bullet, unit) {
+						unitHealth := unit.Health.Current
+						bulletHealth := bullet.Health.Current
 
 					isAlive := bullet.TakeDamage(unitHealth)
 					if !isAlive { // Bullet is destroyed
@@ -887,10 +887,10 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 						neutral.Base.RemoveBullet(bullet.ID)
 					}
 
-					damage := bulletHealth
-					if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
-						damage *= uint16(bullet.DamageMultiplier) // 150% damage to tanks
-					}
+						damage := bulletHealth
+						if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
+							damage *= uint16(bullet.DamageMultiplier)
+						}
 
 					isAlive = unit.TakeDamage(damage)
 					if !isAlive { // Unit is destroyed
@@ -1017,13 +1017,13 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 				continue
 			}
 
-			// Check if unit is colliding with the core
-			otherPlayerHealth := otherPlayer.Base.Health.Current
-			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(otherPlayerHealth)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS+unitSize)
-			if isNearCore {
-				unitHealth := unit.Health.Current
-				unitIsAlive := unit.TakeDamage(otherPlayerHealth)
-				otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitHealth)
+				// Check if unit is colliding with the core
+				otherPlayerHealth := otherPlayer.Base.Health.Current
+				isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(otherPlayerHealth)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS+unitSize)
+				if isNearCore {
+					unitDamage := unit.Damage
+					unitIsAlive := unit.TakeDamage(otherPlayerHealth)
+					otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitDamage)
 
 				if !otherPlayerIsAlive {
 					// Calculate the score and power increment
@@ -1105,13 +1105,13 @@ func checkNeutralBaseCollisions(player *Player, neutrals []*NeutralBase, units [
 				continue
 			}
 
-			// Check if unit is colliding with the core
-			neutralBaseHealth := neutral.Base.Health.Current
-			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(neutralBaseHealth)/NEUTRAL_BASE_INITIAL_HEALTH)*NEUTRAL_BASE_MAX_CORE_RADIUS+unitSize)
-			if isNearCore {
-				unitHealth := unit.Health.Current
-				unitIsAlive := unit.TakeDamage(neutralBaseHealth)
-				neutralBaseIsAlive := neutral.Base.TakeDamage(unitHealth)
+				// Check if unit is colliding with the core
+				neutralBaseHealth := neutral.Base.Health.Current
+				isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(neutralBaseHealth)/NEUTRAL_BASE_INITIAL_HEALTH)*NEUTRAL_BASE_MAX_CORE_RADIUS+unitSize)
+				if isNearCore {
+					unitDamage := unit.Damage
+					unitIsAlive := unit.TakeDamage(neutralBaseHealth)
+					neutralBaseIsAlive := neutral.Base.TakeDamage(unitDamage)
 
 				if !neutralBaseIsAlive {
 					handleNeutralBaseCaptured(player, neutral)
@@ -1403,14 +1403,17 @@ func handleNeutralBaseCaptured(player *Player, neutral *NeutralBase) {
 }
 
 func handleUnitBuildingCollision(unit *Unit, building *Building) (bool, bool) {
-	unitHealth := unit.Health.Current
-	buildingHealth := building.Health.Current
+	unitDamage := unit.Damage
+	buildingDamage, ok := GetBuildingContactDamage(building.Type, building.Variant)
+	if !ok {
+		buildingDamage = building.Health.Current
+	}
 
-	isUnitAlive := unit.TakeDamage(buildingHealth)
+	isUnitAlive := unit.TakeDamage(buildingDamage)
 	if isUnitAlive {
 		TriggerUnitHealthUpdateEvent(unit.Player, unit)
 	}
-	isBuildingAlive := building.TakeDamage(unitHealth)
+	isBuildingAlive := building.TakeDamage(unitDamage)
 
 	return isUnitAlive, isBuildingAlive
 }
@@ -1425,15 +1428,15 @@ func handleUnitCollision(unit1, unit2 *Unit) (bool, bool) {
 		unit1, unit2 = unit2, unit1
 	}
 
-	unit1Health := unit1.Health.Current
-	unit2Health := unit2.Health.Current
+	unit1Damage := unit1.Damage
+	unit2Damage := unit2.Damage
 
 	// Apply damage
-	isAliveUnit1 := unit1.TakeDamage(unit2Health)
+	isAliveUnit1 := unit1.TakeDamage(unit2Damage)
 	if isAliveUnit1 {
 		TriggerUnitHealthUpdateEvent(unit1.Player, unit1)
 	}
-	isAliveUnit2 := unit2.TakeDamage(unit1Health)
+	isAliveUnit2 := unit2.TakeDamage(unit1Damage)
 	if isAliveUnit2 {
 		TriggerUnitHealthUpdateEvent(unit2.Player, unit2)
 	}

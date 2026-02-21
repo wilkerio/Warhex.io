@@ -22,6 +22,7 @@ type Unit struct {
 	TargetRotation            UnitTargetRotation
 	Polygon                   Polygon
 	Health                    Health
+	Damage                    uint16
 	Speed                     float64
 	Size                      int
 	ExplosionRadius           int
@@ -191,6 +192,7 @@ type UnitSpawning struct {
 type UnitStats struct {
 	Variant            UnitVariant    // Identifies the unit variant.
 	Health             Health         // Current and max health of the unit.
+	Damage             uint16         // Contact/ram damage.
 	Speed              float64        // Movement speed of the unit.
 	Size               int            // Unit's size
 	RequiredPopulation uint16         // Population required to spawn
@@ -202,14 +204,16 @@ var unitTypes = map[UnitType]map[UnitVariant]UnitStats{
 	SOLDIER: {
 		BASIC_UNIT: {
 			Variant:            BASIC_UNIT,
-			Health:             Health{Current: 180, Max: 180},
+			Health:             Health{Current: 120, Max: 120},
+			Damage:             20,
 			Speed:              140,
 			Size:               18,
 			RequiredPopulation: 16,
 		},
 		LIGHT_ARMOR_SOLDIER: {
 			Variant: LIGHT_ARMOR_SOLDIER,
-			Health:  Health{Current: 225, Max: 225},
+			Health:  Health{Current: 140, Max: 140},
+			Damage:  20,
 			Speed:   140,
 			Size:    18,
 		},
@@ -217,87 +221,100 @@ var unitTypes = map[UnitType]map[UnitVariant]UnitStats{
 	TANK: {
 		BASIC_UNIT: {
 			Variant:            BASIC_UNIT,
-			Health:             Health{Current: 800, Max: 800},
-			Speed:              70,
-			Size:               28,
-			RequiredPopulation: 32,
+			Health:             Health{Current: 250, Max: 250},
+			Damage:             50,
+			Speed:              63,
+			Size:               31,
+			RequiredPopulation: 15,
 		},
 		HEAVY_ARMOR_TANK: {
 			Variant: HEAVY_ARMOR_TANK,
-			Health:  Health{Current: 1000, Max: 1000},
-			Speed:   70,
-			Size:    28,
+			Health:  Health{Current: 320, Max: 320},
+			Damage:  50,
+			Speed:   63,
+			Size:    31,
 		},
 		CANNON_TANK: {
 			Variant: CANNON_TANK,
-			Health:  Health{Current: 1000, Max: 1000},
-			Speed:   70,
-			Size:    28,
+			Health:  Health{Current: 250, Max: 250},
+			Damage:  50,
+			Speed:   63,
+			Size:    31,
 		},
 		BOOSTER_ENGINE_TANK: {
 			Variant: BOOSTER_ENGINE_TANK,
-			Health:  Health{Current: 800, Max: 800},
-			Speed:   90,
-			Size:    28,
+			Health:  Health{Current: 250, Max: 250},
+			Damage:  50,
+			Speed:   80,
+			Size:    31,
 		},
 		HEAVY_ARMOR_BOOSTER_ENGINE_TANK: {
 			Variant: HEAVY_ARMOR_BOOSTER_ENGINE_TANK,
-			Health:  Health{Current: 1000, Max: 1000},
-			Speed:   90,
-			Size:    28,
+			Health:  Health{Current: 320, Max: 320},
+			Damage:  50,
+			Speed:   80,
+			Size:    31,
 		},
 		BOOSTER_ENGINE_CANNON_TANK: {
 			Variant: BOOSTER_ENGINE_CANNON_TANK,
-			Health:  Health{Current: 800, Max: 800},
-			Speed:   90,
-			Size:    28,
+			Health:  Health{Current: 250, Max: 250},
+			Damage:  50,
+			Speed:   80,
+			Size:    31,
 		},
 	},
 	SIEGE_TANK: {
 		BASIC_UNIT: {
 			Variant:            BASIC_UNIT,
-			Health:             Health{Current: 2800, Max: 2800},
-			Speed:              60,
-			Size:               38,
-			RequiredPopulation: 80,
+			Health:             Health{Current: 1500, Max: 1500},
+			Damage:             100,
+			Speed:              20,
+			Size:               40,
+			RequiredPopulation: 40,
 		},
 		HEAVY_ARMOR_SIEGE_TANK: {
 			Variant: HEAVY_ARMOR_SIEGE_TANK,
-			Health:  Health{Current: 3200, Max: 3200},
-			Speed:   60,
-			Size:    38,
+			Health:  Health{Current: 1800, Max: 1800},
+			Damage:  100,
+			Speed:   20,
+			Size:    40,
 		},
 		BOOSTER_ENGINE_SIEGE_TANK: {
 			Variant: BOOSTER_ENGINE_SIEGE_TANK,
-			Health:  Health{Current: 2800, Max: 2800},
-			Speed:   80,
-			Size:    38,
+			Health:  Health{Current: 1500, Max: 1500},
+			Damage:  100,
+			Speed:   28,
+			Size:    40,
 		},
 		CANNON_SIEGE_TANK: {
 			Variant: CANNON_SIEGE_TANK,
-			Health:  Health{Current: 3200, Max: 3200},
-			Speed:   60,
-			Size:    38,
+			Health:  Health{Current: 1800, Max: 1800},
+			Damage:  100,
+			Speed:   20,
+			Size:    40,
 		},
 		BOOSTER_ENGINE_CANNON_SIEGE_TANK: {
 			Variant: BOOSTER_ENGINE_CANNON_SIEGE_TANK,
-			Health:  Health{Current: 2800, Max: 2800},
-			Speed:   80,
-			Size:    38,
+			Health:  Health{Current: 1500, Max: 1500},
+			Damage:  100,
+			Speed:   28,
+			Size:    40,
 		},
 		HEAVY_ARMOR_BOOSTER_ENGINE_SIEGE_TANK: {
 			Variant: HEAVY_ARMOR_BOOSTER_ENGINE_SIEGE_TANK,
-			Health:  Health{Current: 3200, Max: 3200},
-			Speed:   80,
-			Size:    38,
+			Health:  Health{Current: 1800, Max: 1800},
+			Damage:  100,
+			Speed:   28,
+			Size:    40,
 		},
 	},
 	COMMANDER: {
 		BASIC_UNIT: {
 			Variant:            BASIC_UNIT,
-			Health:             Health{Current: 4000, Max: 4000},
+			Health:             Health{Current: 700, Max: 700},
+			Damage:             100,
 			Speed:              200,
-			Size:               40,
+			Size:               32,
 			RequiredPopulation: 0,
 		},
 	},

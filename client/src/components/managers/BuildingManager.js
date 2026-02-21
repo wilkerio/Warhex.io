@@ -336,17 +336,28 @@ export class BuildingManager {
             const dy = mousePosition.y - closestBase.position.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Calculate minRadius based on whether it's a Barracks or not
+            // Calculate min/max placement radius based on building type.
             let minRadius = closestBase.buildingRadius.min;
+            let maxRadius = closestBase.buildingRadius.max;
             switch (this.buildingToPlace.building.type) {
                 case BuildingTypes.BARRACKS:
-                    // Only buildable at the border
-                    minRadius = closestBase.buildingRadius.max;
+                    // Barracks fixed slightly outside the ring.
+                    minRadius = closestBase.buildingRadius.max + 34;
+                    maxRadius = minRadius;
                     break;
+                case BuildingTypes.WALL:
+                    // Wall can be placed freely and a bit outside the ring.
+                    minRadius += this.buildingToPlace.building.size;
+                    maxRadius = closestBase.buildingRadius.max + 16;
+                    break;
+                case BuildingTypes.SIMPLE_TURRET:
+                case BuildingTypes.SNIPER_TURRET:
+                case BuildingTypes.ARMORY:
                 case BuildingTypes.GENERATOR:
                 case BuildingTypes.HOUSE:
-                    const offset = -6;
-                    minRadius += this.buildingToPlace.building.size + offset;
+                    // These buildings must stay inside the ring: outer edge cannot cross the line.
+                    maxRadius = closestBase.buildingRadius.max - this.buildingToPlace.building.size;
+                    minRadius += this.buildingToPlace.building.size;
                     break;
                 default:
                     // Circular shape (Wall, turret, ...)
@@ -354,11 +365,11 @@ export class BuildingManager {
             }
 
             // Check if the distance is greater than the building radius or less than the inner radius
-            if (distance > closestBase.buildingRadius.max) {
+            if (distance > maxRadius) {
                 // Normalize the distance and set the position to the edge of the building radius
                 const angle = Math.atan2(dy, dx);
-                mousePosition.x = closestBase.position.x + closestBase.buildingRadius.max * Math.cos(angle);
-                mousePosition.y = closestBase.position.y + closestBase.buildingRadius.max * Math.sin(angle);
+                mousePosition.x = closestBase.position.x + maxRadius * Math.cos(angle);
+                mousePosition.y = closestBase.position.y + maxRadius * Math.sin(angle);
             } else if (distance < minRadius) {
                 // Normalize the distance and set the position to the edge of the inner radius
                 const angle = Math.atan2(dy, dx);
