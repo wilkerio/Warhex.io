@@ -18,14 +18,14 @@ type MovementPackage struct {
 
 type Player struct {
 	// Identification & Connection
-	ID           ID
-	Conn         *websocket.Conn
-	Permission   Permission
-	Name         [12]byte
-	LastActivity time.Time // Used for timeout
+	ID                      ID
+	Conn                    *websocket.Conn
+	Permission              Permission
+	Name                    [12]byte
+	LastActivity            time.Time // Used for timeout
 	LastActivityWarningSent time.Time
-	LastResync   time.Time
-	SkinID       ID
+	LastResync              time.Time
+	SkinID                  ID
 
 	// Statistics
 	StartTime time.Time // For playtime
@@ -48,10 +48,13 @@ type Player struct {
 	UnitSpawning       []*UnitSpawning
 	UnitBulletSpawning []*BulletSpawning
 	UnitSpawningLimit  Capacity
-		HasCommander       bool
-		GroupUnits         bool
-	
-		// Script prevention
+	HasCommander       bool
+	HasTankBooster     bool
+	HasTankCannon      bool
+	HasTankCloak       bool
+	GroupUnits         bool
+
+	// Script prevention
 	LastBuildingAction  time.Time // Timestamp of the last building upgraded/placed
 	BuildingActionCount uint32    // Counter to track the number of building actions
 	LastMovementPackage MovementPackage
@@ -383,6 +386,19 @@ func (p *Player) AddUnitSpawning(barracks *Building, setActive bool) bool {
 		Activated:   setActive,
 	}
 
+	if barracks.Variant == TANK_FACTORY && spawning.UnitType == TANK {
+		switch {
+		case p.HasTankBooster && p.HasTankCannon:
+			spawning.UnitVariant = BOOSTER_ENGINE_CANNON_TANK
+		case p.HasTankBooster:
+			spawning.UnitVariant = BOOSTER_ENGINE_TANK
+		case p.HasTankCannon:
+			spawning.UnitVariant = CANNON_TANK
+		default:
+			spawning.UnitVariant = BASIC_UNIT
+		}
+	}
+
 	// If the spawning is activated, increment the limit
 	if setActive {
 		p.UnitSpawningLimit.Increment(1)
@@ -516,4 +532,82 @@ func (p *Player) SetGroupUnits(isGrouped bool) {
 	p.Lock()
 	defer p.Unlock()
 	p.GroupUnits = isGrouped
+}
+
+func (p *Player) ApplySoldierArmorUpgrade(enabled bool) {
+	targetVariant := BASIC_UNIT
+	if enabled {
+		targetVariant = LIGHT_ARMOR_SOLDIER
+	}
+
+	p.Lock()
+	for _, spawning := range p.UnitSpawning {
+		if spawning.UnitType == SOLDIER {
+			spawning.UnitVariant = targetVariant
+		}
+	}
+	p.Unlock()
+}
+
+func (p *Player) ApplyTankBoosterUpgrade(enabled bool) {
+	p.Lock()
+	p.HasTankBooster = enabled
+	for _, spawning := range p.UnitSpawning {
+		if spawning.UnitType != TANK {
+			continue
+		}
+		if spawning.Barracks != nil && spawning.Barracks.Variant == TANK_FACTORY {
+			switch {
+			case p.HasTankBooster && p.HasTankCannon:
+				spawning.UnitVariant = BOOSTER_ENGINE_CANNON_TANK
+			case p.HasTankBooster:
+				spawning.UnitVariant = BOOSTER_ENGINE_TANK
+			case p.HasTankCannon:
+				spawning.UnitVariant = CANNON_TANK
+			default:
+				spawning.UnitVariant = BASIC_UNIT
+			}
+		}
+	}
+	p.Unlock()
+}
+
+func (p *Player) ApplyTankCannonUpgrade(enabled bool) {
+	p.Lock()
+	p.HasTankCannon = enabled
+	for _, spawning := range p.UnitSpawning {
+		if spawning.UnitType != TANK {
+			continue
+		}
+		if spawning.Barracks != nil && spawning.Barracks.Variant == TANK_FACTORY {
+			switch {
+			case p.HasTankBooster && p.HasTankCannon:
+				spawning.UnitVariant = BOOSTER_ENGINE_CANNON_TANK
+			case p.HasTankBooster:
+				spawning.UnitVariant = BOOSTER_ENGINE_TANK
+			case p.HasTankCannon:
+				spawning.UnitVariant = CANNON_TANK
+			default:
+				spawning.UnitVariant = BASIC_UNIT
+			}
+		}
+	}
+	p.Unlock()
+}
+
+func (p *Player) ApplyTankCloakUpgrade(enabled bool) {
+	p.Lock()
+	p.HasTankCloak = enabled
+	p.Unlock()
+}
+
+func (p *Player) HasBarracksVariant(variant BuildingVariant) bool {
+	p.RLock()
+	defer p.RUnlock()
+	for _, spawning := range p.UnitSpawning {
+		if spawning.Barracks != nil && spawning.Barracks.Variant == variant {
+			return true
+		}
+	}
+	return false
 }

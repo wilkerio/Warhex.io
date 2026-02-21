@@ -972,7 +972,8 @@ export default class NetworkManager {
 
             // Reset unit upgrades if the building is an Armory
             if (building.type === BuildingTypes.ARMORY) {
-                this.core.gameManager.unitUpgrades = []; //! Reset unit upgrades
+                this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BASIC);
             }
 
         } else {
@@ -1022,6 +1023,40 @@ export default class NetworkManager {
         if (!base) return;
 
         base.upgradeBuildings(buildingIDs, buildingVariant);
+
+        if (isClient) {
+            const hasArmory = buildingIDs.some(id => {
+                const b = base.getBuilding(id);
+                return b && b.type === BuildingTypes.ARMORY;
+            });
+            if (hasArmory) {
+                if (buildingVariant === BuildingVariantTypes.ARMORY.POWER_ARMOR) {
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.LIGHT_ARMOR);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BASIC);
+                } else if (buildingVariant === BuildingVariantTypes.ARMORY.BOOSTER_ENGINES) {
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BOOSTER_ENGINE);
+                } else if (buildingVariant === BuildingVariantTypes.ARMORY.PANZER_CANNONS) {
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.CANNON);
+                } else if (buildingVariant === BuildingVariantTypes.ARMORY.PANZER_CANNONS_COMBO) {
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON);
+                } else if (buildingVariant === BuildingVariantTypes.ARMORY.CLOAKING_DEVICE) {
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BASIC);
+                } else if (buildingVariant === BuildingVariantTypes.ARMORY.BOOSTER_CLOAK_COMBO) {
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BOOSTER_ENGINE);
+                } else if (buildingVariant === BuildingVariantTypes.ARMORY.PANZER_CLOAK_COMBO) {
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.CANNON);
+                } else if (buildingVariant === BuildingVariantTypes.ARMORY.PANZER_BOOSTER_CLOAK_COMBO) {
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON);
+                }
+            }
+        }
     }
 
     handleBuildingsRemoved (payload) {
@@ -1032,7 +1067,8 @@ export default class NetworkManager {
             const callback = player.isClient ? ((building) => {
                 this.core.gameManager.decreaseBuildingLimit(building.type);
                 if (building.type === BuildingTypes.ARMORY) {
-                    this.core.gameManager.unitUpgrades = [];
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                    this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BASIC);
                 } else if (building.type === BuildingTypes.BARRACKS) {
                     if (building.activated) {
                         this.core.gameManager.decreaseActiveBarracks(1);
@@ -1053,7 +1089,8 @@ export default class NetworkManager {
                 callback = player.isClient ? ((building) => {
                     this.core.gameManager.decreaseBuildingLimit(building.type);
                     if (building.type === BuildingTypes.ARMORY) {
-                        this.core.gameManager.unitUpgrades = [];
+                        this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
+                        this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BASIC);
                     } else if (building.type === BuildingTypes.BARRACKS) {
                         if (building.activated) {
                             this.core.gameManager.decreaseActiveBarracks(1);

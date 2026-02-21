@@ -99,14 +99,14 @@ func startRegenerationLoop() {
 				player.Base.Health.Increment(PLAYER_HEALTH_REGENERATION)
 				TriggerBaseHealthUpdateEvent(player.Base)
 			}
-			for _, neutral := range player.CapturedNeutralBases{
-				if !neutral.Base.Health.hasMaxHealth(){
+			for _, neutral := range player.CapturedNeutralBases {
+				if !neutral.Base.Health.hasMaxHealth() {
 					neutral.Base.Health.Increment(PLAYER_HEALTH_REGENERATION)
 					TriggerBaseHealthUpdateEvent(neutral.Base)
 				}
 			}
 		}
-		
+
 		State.RUnlock()
 	}
 }
@@ -451,6 +451,7 @@ func processPlayerUnitTurrets(player *Player, duration time.Duration, players []
 func findClosestUnitInRange(spawning *BulletSpawning, players []*Player, excludePlayer *Player) *Unit {
 	var closestUnit *Unit
 	minDistance := float32(math.MaxFloat32)
+	_, shooterIsTower := spawning.Shooter.GetObjectPointer().(*Building)
 
 	for _, otherPlayer := range players {
 		if excludePlayer == otherPlayer || otherPlayer.IsMarkedForRemoval() || otherPlayer.HasProtection() {
@@ -467,6 +468,9 @@ func findClosestUnitInRange(spawning *BulletSpawning, players []*Player, exclude
 
 		for _, unit := range otherPlayerUnits {
 			if unit.IsMarkedForRemoval() {
+				continue
+			}
+			if shooterIsTower && otherPlayer.HasTankCloak && unit.Type == TANK {
 				continue
 			}
 
@@ -1034,18 +1038,19 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 					// Mark the other player for removal and trigger the kill event
 					otherPlayer.MarkForRemoval()
 					TriggerPlayerKilledEvent(otherPlayer, player)
-				                } else {
-				                    // Update the health
-				                    TriggerBaseHealthUpdateEvent(otherPlayer.Base)
-				                }
-				
-				                if !unitIsAlive {
-				                    unit.MarkForRemoval()
-				                    handleUnitDestroyed(unit)
-				                    continue
-				                } else {
-				                    TriggerUnitHealthUpdateEvent(unit.Player, unit)
-				                }			}
+				} else {
+					// Update the health
+					TriggerBaseHealthUpdateEvent(otherPlayer.Base)
+				}
+
+				if !unitIsAlive {
+					unit.MarkForRemoval()
+					handleUnitDestroyed(unit)
+					continue
+				} else {
+					TriggerUnitHealthUpdateEvent(unit.Player, unit)
+				}
+			}
 
 			// Check collision with buildings
 			for _, building := range otherBuildings {
@@ -1509,15 +1514,15 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		Generating: Generating{
 			Power: 1, // 1 per sec
 		},
-		HasSpawnProtection:     true,
-		HasCommander:           false,
-		SpawnProtectionEndTime: time.Now().Add(PLAYER_SPAWN_PROTECTION_TIME * time.Minute),
-		LastActivity:           time.Now(),
+		HasSpawnProtection:      true,
+		HasCommander:            false,
+		SpawnProtectionEndTime:  time.Now().Add(PLAYER_SPAWN_PROTECTION_TIME * time.Minute),
+		LastActivity:            time.Now(),
 		LastActivityWarningSent: time.Now(),
-		RemoveFlag:             false,
-		SuspiciousCounter:      0.0, // Initial suspicious counter is 0
-		SuspicionDecayRate:     1.0, // Decay rate per update, adjust as needed
-		SuspicionThreshold:     5.0, // Threshold where suspicion triggers action
+		RemoveFlag:              false,
+		SuspiciousCounter:       0.0, // Initial suspicious counter is 0
+		SuspicionDecayRate:      1.0, // Decay rate per update, adjust as needed
+		SuspicionThreshold:      5.0, // Threshold where suspicion triggers action
 	}
 
 	player.Base = &Base{
@@ -1530,6 +1535,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 			WALL:          {0, 9999},
 			SIMPLE_TURRET: {0, 9999},
 			SNIPER_TURRET: {0, 9999},
+			ARMORY:        {0, 1},
 			BARRACKS:      {0, 4},
 			GENERATOR:     {0, 9999},
 			HOUSE:         {0, 9999}},

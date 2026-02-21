@@ -1,6 +1,6 @@
 import ThemeManager from "../components/managers/ThemeManager.js";
 import Renderable from "../components/Renderable.js";
-import { BuildingSizes, UnitTypes } from "../network/constants.js";
+import { BuildingSizes, UnitTypes, getUnitDetails } from "../network/constants.js";
 
 export default class Unit extends Renderable {
     constructor (id, type, color, details, position, variant = 0, health, maxHealth) {
@@ -49,9 +49,9 @@ export default class Unit extends Renderable {
         this.rotation = rotation;
     }
 
-    setUpgrade (buildingVariant) {
-        this.variant = buildingVariant;
-        this.details = getBuildingDetails(this.type, variant);
+    setUpgrade (unitVariant) {
+        this.variant = unitVariant;
+        this.details = getUnitDetails(this.type, unitVariant);
     }
 
     hasReachedTarget (tolerance = 1) {

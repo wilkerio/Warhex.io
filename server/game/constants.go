@@ -10,6 +10,7 @@ const (
 	WALL          BuildingType = 0
 	SIMPLE_TURRET BuildingType = 1
 	SNIPER_TURRET BuildingType = 2
+	ARMORY        BuildingType = 3
 	BARRACKS      BuildingType = 4
 	GENERATOR     BuildingType = 5
 	HOUSE         BuildingType = 6

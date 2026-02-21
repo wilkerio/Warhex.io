@@ -165,7 +165,7 @@ export default class Core {
     }
 
     initializeToolbar () {
-        const toolbarItems = [Buildings.Wall, Buildings.SimpleTurret, Buildings.Generator, Buildings.House, Buildings.SniperTurret, /*Buildings.Armory*/, Buildings.Barracks];
+        const toolbarItems = [Buildings.Wall, Buildings.SimpleTurret, Buildings.Generator, Buildings.House, Buildings.SniperTurret, Buildings.Armory, Buildings.Barracks];
         const onSelectedBuilding = (buildingClass) => this.buildingManager.handleBuildingSelectionForPlacement(buildingClass);
 
         this.toolbar = new Toolbar(this, toolbarItems, onSelectedBuilding, this.buildingManager);

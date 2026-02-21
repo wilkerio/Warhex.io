@@ -242,6 +242,29 @@ export default class Tank extends Unit {
         context.lineWidth = 4;
         context.stroke();
 
+        // Rear booster detail: gray block + small red line.
+        const tailWidth = this.size * 0.24;
+        const tailHeight = this.size * 0.2;
+        const tailX = -this.size * 0.9;
+        const tailY = -tailHeight / 2;
+
+        context.fillStyle = "#9a9a9a";
+        context.fillRect(tailX, tailY, tailWidth, tailHeight);
+        context.strokeStyle = "#666666";
+        context.lineWidth = 3;
+        context.strokeRect(tailX, tailY, tailWidth, tailHeight);
+
+        const lineX = tailX + tailWidth / 2;
+        const lineStartY = tailY + tailHeight + 1;
+        const lineEndY = lineStartY + this.size * 0.16;
+        context.beginPath();
+        context.moveTo(lineX, lineStartY);
+        context.lineTo(lineX, lineEndY);
+        context.strokeStyle = "#ff2a2a";
+        context.lineWidth = 3;
+        context.lineCap = "round";
+        context.stroke();
+
         // Restore context state after rendering the booster
         context.restore();
     }

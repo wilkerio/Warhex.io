@@ -270,7 +270,7 @@ func (b *Base) UpgradeBuilding(buildingID ID, variant BuildingVariant) bool {
 	if p, ok := b.Owner.(*Player); ok {
 		player = p
 	} else if n, ok := b.Owner.(*NeutralBase); ok {
-		player = n.CapturedBy 
+		player = n.CapturedBy
 	}
 
 	// Ensure player is not nil before proceeding
@@ -319,6 +319,13 @@ func (b *Base) RemoveBuilding(buildingID ID) bool {
 	case BARRACKS:
 		if player != nil {
 			player.RemoveUnitSpawning(building)
+		}
+	case ARMORY:
+		if player != nil {
+			player.ApplySoldierArmorUpgrade(false)
+			player.ApplyTankBoosterUpgrade(false)
+			player.ApplyTankCannonUpgrade(false)
+			player.ApplyTankCloakUpgrade(false)
 		}
 	case GENERATOR, WALL:
 		if player != nil {

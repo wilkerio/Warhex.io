@@ -514,6 +514,20 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 			return
 		}
 
+		if building.Type == game.ARMORY &&
+			(buildingVariant == game.BuildingVariant(2) ||
+				buildingVariant == game.BuildingVariant(3) ||
+				buildingVariant == game.BuildingVariant(4) ||
+				buildingVariant == game.BuildingVariant(5) ||
+				buildingVariant == game.BuildingVariant(6) ||
+				buildingVariant == game.BuildingVariant(7) ||
+				buildingVariant == game.BuildingVariant(8)) {
+			if !player.HasBarracksVariant(game.TANK_FACTORY) {
+				log.Println("Tank upgrades require at least one Tank Factory")
+				return
+			}
+		}
+
 		// Subtract the cost from the power
 		costs, ok := game.GetBuildingCost(building.Type, buildingVariant)
 		if !ok {
@@ -580,6 +594,26 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 			player.AddUnitSpawning(building, wasUnitSpawningActive)
 		case game.SIMPLE_TURRET, game.SNIPER_TURRET:
 			base.AddBulletSpawning(building)
+		case game.ARMORY:
+			player.ApplySoldierArmorUpgrade(buildingVariant == game.BuildingVariant(1))
+			player.ApplyTankBoosterUpgrade(
+				buildingVariant == game.BuildingVariant(2) ||
+					buildingVariant == game.BuildingVariant(4) ||
+					buildingVariant == game.BuildingVariant(6) ||
+					buildingVariant == game.BuildingVariant(8),
+			)
+			player.ApplyTankCannonUpgrade(
+				buildingVariant == game.BuildingVariant(3) ||
+					buildingVariant == game.BuildingVariant(4) ||
+					buildingVariant == game.BuildingVariant(7) ||
+					buildingVariant == game.BuildingVariant(8),
+			)
+			player.ApplyTankCloakUpgrade(
+				buildingVariant == game.BuildingVariant(5) ||
+					buildingVariant == game.BuildingVariant(6) ||
+					buildingVariant == game.BuildingVariant(7) ||
+					buildingVariant == game.BuildingVariant(8),
+			)
 		}
 	}
 

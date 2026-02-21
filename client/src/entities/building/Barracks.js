@@ -74,25 +74,25 @@ export default class Barracks extends Building {
     }
 
     renderBasic (context) {
-        // Exact pink-square design.
+        // Square style following the same visual pattern used by other buildings.
         const outerSize = this.size;
         const outerHalf = outerSize / 2;
 
-        // Outer square uses player's/base color
+        // Outer square
         context.fillStyle = this.activated ? this.color : "#8a8a8a";
         context.fillRect(-outerHalf, -outerHalf, outerSize, outerSize);
-        context.strokeStyle = "#2a2a2a";
-        context.lineWidth = 3;
+        context.strokeStyle = "#666666";
+        context.lineWidth = 4;
         context.strokeRect(-outerHalf, -outerHalf, outerSize, outerSize);
 
         // Inner gray square
         const innerSize = outerSize * 0.5;
         const innerHalf = innerSize / 2;
-        context.fillStyle = "#8a8a8a";
+        context.fillStyle = "#a8a8a8";
         context.fillRect(-innerHalf, -innerHalf, innerSize, innerSize);
 
-        // Inner square border
-        context.strokeStyle = "#2a2a2a";
+        // Inner border
+        context.strokeStyle = "#666666";
         context.lineWidth = 2.5;
         context.strokeRect(-innerHalf, -innerHalf, innerSize, innerSize);
     }
@@ -102,84 +102,91 @@ export default class Barracks extends Building {
         this.renderBasic(context);
     }
     renderGreaterBarracks(context) {
-        this.renderBasic(context);
-    
-        context.rotate(this.rotationOffset); // Align with the barracks' rotation
-        
-        const unitSize = 15;
+        // Exact pattern from reference:
+        // pink square + dark border + two gray bars with dark borders.
+        const outerSize = this.size;
+        const outerHalf = outerSize / 2;
 
-        // First triangle
-        context.translate(-1, -unitSize + 4);
-    
-        context.beginPath();
-        const outerPoints = [];
-        for (let i = 0; i < 3; i++) {
-            const angle = (Math.PI * 2 / 3) * i;
-            const x = unitSize * Math.cos(angle);
-            const y = unitSize * Math.sin(angle);
-            outerPoints.push({ x, y });
-        }
-    
-        context.moveTo(outerPoints[0].x, outerPoints[0].y);
-        for (let i = 1; i < outerPoints.length; i++) {
-            context.lineTo(outerPoints[i].x, outerPoints[i].y);
-        }
-        context.closePath();
-    
-        context.fillStyle = "#a4a4a4"; // Gray color
-        context.fill();
-        context.strokeStyle = "#666666"; // Darker outline
-        context.lineWidth = 4;
-        context.stroke();
-    
-        // Second triangle
-        context.translate(0, unitSize*1.5); // Move to the right for the second triangle
-    
-        context.beginPath();
-        for (let i = 0; i < 3; i++) {
-            const angle = (Math.PI * 2 / 3) * i;
-            const x = unitSize * Math.cos(angle);
-            const y = unitSize * Math.sin(angle);
-            outerPoints[i] = { x, y }; // Reusing the points array for the second triangle
-        }
-    
-        context.moveTo(outerPoints[0].x, outerPoints[0].y);
-        for (let i = 1; i < outerPoints.length; i++) {
-            context.lineTo(outerPoints[i].x, outerPoints[i].y);
-        }
-        context.closePath();
-    
-        context.fill();
-        context.stroke();
+        // Outer container follows base color
+        context.fillStyle = this.activated ? this.color : "#8a8a8a";
+        context.fillRect(-outerHalf, -outerHalf, outerSize, outerSize);
+        context.strokeStyle = "#666666";
+        context.lineWidth = outerSize * 0.1; // 10px for a 200px reference
+        context.strokeRect(-outerHalf, -outerHalf, outerSize, outerSize);
+
+        // Inner bars (120x40 over a 200x200 reference)
+        const barWidth = outerSize * 0.6;
+        const barHeight = outerSize * 0.2;
+        const barX = -barWidth / 2;
+        const barGap = outerSize * 0.1;
+        const topBarY = -(barHeight + barGap / 2);
+        const bottomBarY = barGap / 2;
+
+        context.fillStyle = "#a8a8a8";
+        context.strokeStyle = "#666666";
+        context.lineWidth = outerSize * 0.08; // 8px for a 200px reference
+
+        // Top bar
+        context.fillRect(barX, topBarY, barWidth, barHeight);
+        context.strokeRect(barX, topBarY, barWidth, barHeight);
+
+        // Bottom bar
+        context.fillRect(barX, bottomBarY, barWidth, barHeight);
+        context.strokeRect(barX, bottomBarY, barWidth, barHeight);
     }
     
     renderTankFactory (context) {
-        this.renderBasic(context);
+        // Exact HTML/CSS reference recreation:
+        // width/height 200, border 10, padding 15, gap 15, cell border 8 (all scaled).
+        const outerSize = this.size;
+        const outerHalf = outerSize / 2;
 
-        context.rotate(this.rotationOffset); // Align with the barracks' rotation
-        context.translate(-3, 0);
+        const scale = outerSize / 200;
+        const border = 10 * scale;
+        const padding = 15 * scale;
+        const gap = 15 * scale;
+        const cellBorder = 8 * scale;
 
-        context.beginPath();
-        const unitSize = 20;
-        const outerPoints = [];
-        for (let i = 0; i < 3; i++) {
-            const angle = (Math.PI * 2 / 3) * i;
-            const x = unitSize * Math.cos(angle);
-            const y = unitSize * Math.sin(angle);
-            outerPoints.push({ x, y });
+        // Outer square follows base color
+        context.fillStyle = this.color;
+        context.fillRect(-outerHalf, -outerHalf, outerSize, outerSize);
+
+        // Draw border inside the outer square (CSS border-box equivalent)
+        context.strokeStyle = "#666666";
+        context.lineWidth = border;
+        context.strokeRect(
+            -outerHalf + border / 2,
+            -outerHalf + border / 2,
+            outerSize - border,
+            outerSize - border
+        );
+
+        // Content area after border (like border-box)
+        const contentSize = outerSize - border * 2;
+        const gridAreaSize = contentSize - padding * 2;
+        const cellSize = (gridAreaSize - gap) / 2;
+        const startX = -outerHalf + border + padding;
+        const startY = -outerHalf + border + padding;
+
+        for (let row = 0; row < 2; row++) {
+            for (let col = 0; col < 2; col++) {
+                const x = startX + col * (cellSize + gap);
+                const y = startY + row * (cellSize + gap);
+
+                // Cell border (box-sizing border-box)
+                context.fillStyle = "#666666";
+                context.fillRect(x, y, cellSize, cellSize);
+
+                // Cell fill
+                context.fillStyle = "#a0a0a0";
+                context.fillRect(
+                    x + cellBorder,
+                    y + cellBorder,
+                    cellSize - cellBorder * 2,
+                    cellSize - cellBorder * 2
+                );
+            }
         }
-
-        context.moveTo(outerPoints[0].x, outerPoints[0].y);
-        for (let i = 1; i < outerPoints.length; i++) {
-            context.lineTo(outerPoints[i].x, outerPoints[i].y);
-        }
-        context.closePath();
-
-        context.fillStyle = "#a8a8a8"; // Gray color
-        context.fill();
-        context.strokeStyle = "#666666"; // Darker outline
-        context.lineWidth = 4;
-        context.stroke();
     }
 
     renderHeavyTankFactory (context) {
@@ -439,52 +446,46 @@ export default class Barracks extends Building {
 
 
     renderSiegeFactory (context) {
-        this.renderBasic(context);
+        // Pixel-art style cross, snapped to integer pixels to match the reference look.
+        const size = this.size;
+        const half = size / 2;
+        const bodyColor = "#a6a6a6";
+        const borderColor = "#555555";
+        const px = (n) => Math.round(n);
+        const borderThickness = Math.max(2, px(size * 0.04)); // 12 on 300 reference
 
-        context.rotate(this.rotationOffset); // Align with the barracks' rotation
-        // Move to the center of the square
-        context.translate(-4, 0);
+        const drawBlock = (x, y, w, h, fill) => {
+            const bx = px(x);
+            const by = px(y);
+            const bw = px(w);
+            const bh = px(h);
 
-        context.beginPath();
-        const unitSize = 25;
-        const outerPoints = [];
-        for (let i = 0; i < 3; i++) {
-            const angle = (Math.PI * 2 / 3) * i;
-            const x = unitSize * Math.cos(angle);
-            const y = unitSize * Math.sin(angle);
-            outerPoints.push({ x, y });
-        }
+            context.fillStyle = borderColor;
+            context.fillRect(bx, by, bw, bh);
 
-        context.moveTo(outerPoints[0].x, outerPoints[0].y);
-        for (let i = 1; i < outerPoints.length; i++) {
-            context.lineTo(outerPoints[i].x, outerPoints[i].y);
-        }
-        context.closePath();
+            const innerX = bx + borderThickness;
+            const innerY = by + borderThickness;
+            const innerW = Math.max(1, bw - borderThickness * 2);
+            const innerH = Math.max(1, bh - borderThickness * 2);
 
-        context.fillStyle = "#a8a8a8"; // Gray color
-        context.fill();
-        context.strokeStyle = "#666666"; // Darker outline
-        context.lineWidth = 4;
-        context.stroke();
+            context.fillStyle = fill;
+            context.fillRect(innerX, innerY, innerW, innerH);
+        };
 
-        // Draw the smaller triangle
-        context.beginPath();
-        const smallerUnitSize = unitSize * 0.45;
-        for (let i = 0; i < 3; i++) {
-            const angle = (Math.PI * 2 / 3) * i;
-            const x = smallerUnitSize * Math.cos(angle);
-            const y = smallerUnitSize * Math.sin(angle);
-            outerPoints[i] = { x, y };
-        }
+        // Background square uses base color
+        drawBlock(-half, -half, size, size, this.color);
 
-        context.moveTo(outerPoints[0].x, outerPoints[0].y);
-        for (let i = 1; i < outerPoints.length; i++) {
-            context.lineTo(outerPoints[i].x, outerPoints[i].y);
-        }
-        context.closePath();
+        // Arms exactly from provided JS reference
+        const armSize = size * 0.3;
+        drawBlock(size * 0.35 - half, size * 0.08 - half, armSize, armSize, bodyColor); // top
+        drawBlock(size * 0.35 - half, size * 0.62 - half, armSize, armSize, bodyColor); // bottom
+        drawBlock(size * 0.08 - half, size * 0.35 - half, armSize, armSize, bodyColor); // left
+        drawBlock(size * 0.62 - half, size * 0.35 - half, armSize, armSize, bodyColor); // right
 
-        context.fill();
-        context.stroke();
+        // Center block exactly from provided JS reference
+        const centerSize = size * 0.45;
+        const centerPos = (size - centerSize) / 2;
+        drawBlock(centerPos - half, centerPos - half, centerSize, centerSize, bodyColor);
     }
 
 

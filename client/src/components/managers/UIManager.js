@@ -928,9 +928,18 @@ export default class UIManager {
     updateUseButton() {
         const useBtn = document.getElementById('skin-use-button');
         if (!useBtn) return;
-        useBtn.textContent = 'Auto Equipped';
-        useBtn.classList.add('selected');
-        useBtn.disabled = true;
+
+        const currentSkin = this.availableSkins[this.currentSkinIndex];
+        const dbSelected = this.core?.networkManager?.userData?.selected_skin ?? null;
+        const localSelected = localStorage.getItem('equippedSkinName') || '';
+        const equippedName = dbSelected ?? localSelected;
+
+        const currentName = currentSkin?.name === 'Default' ? '' : (currentSkin?.name || '');
+        const isEquipped = currentName === equippedName;
+
+        useBtn.textContent = isEquipped ? 'Equipped' : 'Use';
+        useBtn.classList.toggle('selected', isEquipped);
+        useBtn.disabled = isEquipped;
     }
 
     addSkinNavigationListeners() {
@@ -945,10 +954,7 @@ export default class UIManager {
         const total = this.availableSkins.length;
         if (total <= 1) return;
         this.currentSkinIndex = (this.currentSkinIndex - 1 + total) % total;
-        const currentSkin = this.availableSkins[this.currentSkinIndex];
         this.updateSkinCircle();
-        this.applySelectedSkinToLocalPlayer(currentSkin);
-        this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
     }
 
     goNextSkin(e) {
@@ -959,10 +965,7 @@ export default class UIManager {
         const total = this.availableSkins.length;
         if (total <= 1) return;
         this.currentSkinIndex = (this.currentSkinIndex + 1) % total;
-        const currentSkin = this.availableSkins[this.currentSkinIndex];
         this.updateSkinCircle();
-        this.applySelectedSkinToLocalPlayer(currentSkin);
-        this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
     }
 
     bindSkinNavButtons() {
@@ -1011,7 +1014,8 @@ export default class UIManager {
         if (!currentSkin) return;
         
         const skinName = currentSkin.name === 'Default' ? null : currentSkin.name;
-        const skinNumeric = currentSkin.numericId ?? currentSkin.id ?? 0;
+        const rawSkinNumeric = currentSkin.numericId ?? currentSkin.id ?? 0;
+        const skinNumeric = Number(rawSkinNumeric) || 0;
 
         // Save to localStorage (name for DB/UI, numeric for network byte)
         localStorage.setItem('equippedSkin', skinNumeric);
@@ -1039,6 +1043,9 @@ export default class UIManager {
                     console.log('Skin saved to database');
                     if (this.core.networkManager.userData) {
                         this.core.networkManager.userData.selected_skin = skinName;
+                        if (this.core.networkManager.userData.skins) {
+                            this.core.networkManager.userData.skins.equipped = skinNumeric;
+                        }
                     }
                 } catch (error) {
                     console.error('Error saving skin to database:', error);
@@ -1181,6 +1188,33 @@ export default class UIManager {
             // Restore the original context state
             context.restore();
 
+            if (renderable?.previewBadge === "spotter-blocked") {
+                // Draw badge in fixed canvas coordinates so it is always visible.
+                context.save();
+                const cx = previewCanvas.width - 18;
+                const cy = 18;
+
+                context.fillStyle = "#555555";
+                context.strokeStyle = "#3d3d3d";
+                context.lineWidth = 2;
+                context.beginPath();
+                context.arc(cx, cy, 7, 0, Math.PI * 2);
+                context.fill();
+                context.stroke();
+                context.closePath();
+
+                context.strokeStyle = "#ff2d2d";
+                context.lineWidth = 3;
+                context.beginPath();
+                context.moveTo(cx - 6, cy - 6);
+                context.lineTo(cx + 6, cy + 6);
+                context.moveTo(cx + 6, cy - 6);
+                context.lineTo(cx - 6, cy + 6);
+                context.stroke();
+                context.closePath();
+                context.restore();
+            }
+
 
 
             // Request the next frame
@@ -1195,6 +1229,15 @@ export default class UIManager {
             if (animationFrameId) {
                 cancelAnimationFrame(animationFrameId);
                 animationFrameId = null;
+            }
+        };
+    }
+
+    createCloakingPreviewRenderable (baseRenderable) {
+        return {
+            previewBadge: "spotter-blocked",
+            render: (context, camera, deltaTime) => {
+                baseRenderable.render(context, camera, deltaTime);
             }
         };
     }
@@ -1362,10 +1405,11 @@ export default class UIManager {
             // SINGLE BUILDING TYPE
             const isArmory = BuildingTypes.ARMORY === building.type;
             const isBarracks = BuildingTypes.BARRACKS === building.type;
-            const upgradeHotkeys = ["Q", "E", "T"];
+            const upgradeHotkeys = ["Q", "E", "T", "R", "Y"];
 
             const getAvailableUpgrades = () => {
-                return getAvailableBuildingUpgrades(building.type, building.variant);
+                const purchasedVariants = building.purchasedUpgrades ? Array.from(building.purchasedUpgrades) : [];
+                return getAvailableBuildingUpgrades(building.type, building.variant, purchasedVariants);
             };
 
             const createUpgradeItem = (upgradeInfo, index) => {
@@ -1379,9 +1423,13 @@ export default class UIManager {
 
                 let renderable;
                 if (isArmory) {
-                    const unitType = this.selectedUpgradeTab;
+                    const unitType = upgradeInfo.unitType ?? this.selectedUpgradeTab;
+                    const unitVariant = upgradeInfo.unitVariant ?? upgradeInfo.variant;
                     const UnitClass = UnitManager.getUnitClassByType(unitType);
-                    renderable = new UnitClass(building.color, { x: 0, y: 0 }, upgradeInfo.variant);
+                    const baseRenderable = new UnitClass(building.color, { x: 0, y: 0 }, unitVariant);
+                    renderable = /cloaking device/i.test(upgradeInfo.name)
+                        ? this.createCloakingPreviewRenderable(baseRenderable)
+                        : baseRenderable;
                 } else {
                     const BuildingClass = BuildingManager.getBuildingClassByType(building.type);
                     renderable = new BuildingClass(building.color, { x: 0, y: 0 }, upgradeInfo.variant);
@@ -1394,10 +1442,11 @@ export default class UIManager {
                 const description = document.createElement("div");
                 description.classList.add("description");
 
+                const hotkey = upgradeHotkeys[index] ?? "-";
                 description.innerHTML = `
                     <p class="header">${upgradeInfo.name}</p>
                     <p class="text">${upgradeInfo.description}</p>
-                    <p class="hotkey">[${upgradeHotkeys[index]}]</p>
+                    <p class="hotkey">[${hotkey}]</p>
                     <p class="cost">${upgradeInfo.cost} Power</p>
                 `;
                 this.upgradeCostElements.push({ cost: upgradeInfo.cost, element: description.querySelector(".cost") });
@@ -1407,7 +1456,12 @@ export default class UIManager {
 
                 upgradeItem.addEventListener("click", () => {
                     const upgradeData = isArmory
-                        ? { unitType: this.selectedUpgradeTab, unitVariant: upgradeInfo.variant }
+                        ? {
+                            unitType: upgradeInfo.unitType ?? this.selectedUpgradeTab,
+                            unitVariant: upgradeInfo.unitVariant ?? upgradeInfo.variant,
+                            buildingVariant: upgradeInfo.variant,
+                            cost: upgradeInfo.cost
+                        }
                         : { buildingVariant: upgradeInfo.variant, cost: upgradeInfo.cost };
                     onUpgradeSelect(upgradeData);
                 });

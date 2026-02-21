@@ -81,6 +81,7 @@ export const BuildingSizes = {
     WALL: { size: 30 },
     SIMPLE_TURRET: { size: 30 },
     SNIPER_TURRET: { size: 33 },
+    ARMORY: { size: 40 },
     BARRACKS: { size: 60 },
     GENERATOR: { size: 40 },
     HOUSE: { size: 35 }
@@ -90,6 +91,7 @@ export const BuildingLimits = {
     WALL: 9999,
     SIMPLE_TURRET: 9999,
     SNIPER_TURRET: 9999,
+    ARMORY: 1,
     BARRACKS: 4,
     GENERATOR: 9999,
     HOUSE: 64
@@ -99,6 +101,7 @@ export const BuildingTypes = {
     WALL: 0,
     SIMPLE_TURRET: 1,
     SNIPER_TURRET: 2,
+    ARMORY: 3,
     BARRACKS: 4,
     GENERATOR: 5,
     HOUSE: 6
@@ -123,6 +126,17 @@ export const BuildingVariantTypes = {
         HEAVY_SNIPER: 2,
         ANTI_TANK_GUN: 3,
         TRAPPER: 4,
+    },
+    ARMORY: {
+        BASIC: 0,
+        POWER_ARMOR: 1,
+        BOOSTER_ENGINES: 2,
+        PANZER_CANNONS: 3,
+        PANZER_CANNONS_COMBO: 4,
+        CLOAKING_DEVICE: 5,
+        BOOSTER_CLOAK_COMBO: 6,
+        PANZER_CLOAK_COMBO: 7,
+        PANZER_BOOSTER_CLOAK_COMBO: 8,
     },
     BARRACKS: {
         BASIC: 0,
@@ -270,6 +284,109 @@ export const BuildingDetails = {
             next: []
         },
     },
+    ARMORY: {
+        BASIC: {
+            variant: BuildingVariantTypes.ARMORY.BASIC,
+            name: "Armory",
+            description: "Unlocks unit upgrades.",
+            cost: 150,
+            size: BuildingSizes.ARMORY.size,
+            next: [
+                BuildingVariantTypes.ARMORY.POWER_ARMOR,
+                BuildingVariantTypes.ARMORY.BOOSTER_ENGINES,
+                BuildingVariantTypes.ARMORY.PANZER_CANNONS,
+                BuildingVariantTypes.ARMORY.CLOAKING_DEVICE
+            ]
+        },
+        POWER_ARMOR: {
+            // Soldier LIGHT_ARMOR variant (use numeric literal to avoid load-order reference error)
+            variant: 1,
+            unitType: 0,
+            unitVariant: 1,
+            name: "Power Armor",
+            description: "Increases soldier armor.",
+            cost: 500,
+            size: BuildingSizes.ARMORY.size,
+            next: [
+                BuildingVariantTypes.ARMORY.BOOSTER_ENGINES,
+                BuildingVariantTypes.ARMORY.PANZER_CANNONS,
+                BuildingVariantTypes.ARMORY.CLOAKING_DEVICE
+            ]
+        },
+        BOOSTER_ENGINES: {
+            variant: 2,
+            unitType: 1,
+            unitVariant: 2,
+            name: "Booster Engines",
+            description: "Increases tank movement speed.",
+            cost: 600,
+            size: BuildingSizes.ARMORY.size,
+            next: [
+                BuildingVariantTypes.ARMORY.PANZER_CANNONS_COMBO,
+                BuildingVariantTypes.ARMORY.BOOSTER_CLOAK_COMBO
+            ]
+        },
+        PANZER_CANNONS: {
+            variant: 3,
+            unitType: 1,
+            unitVariant: 3,
+            name: "Panzer Cannons",
+            description: "Adds cannons to your tanks, making them ranged units.",
+            cost: 1000,
+            size: BuildingSizes.ARMORY.size,
+            next: [BuildingVariantTypes.ARMORY.PANZER_CLOAK_COMBO]
+        },
+        PANZER_CANNONS_COMBO: {
+            variant: 4,
+            unitType: 1,
+            unitVariant: 5,
+            name: "Panzer Cannons",
+            description: "Adds cannons to your tanks, making them ranged units.",
+            cost: 1000,
+            size: BuildingSizes.ARMORY.size,
+            next: [BuildingVariantTypes.ARMORY.PANZER_BOOSTER_CLOAK_COMBO]
+        },
+        CLOAKING_DEVICE: {
+            variant: 5,
+            unitType: 1,
+            unitVariant: 0,
+            name: "Cloaking Device",
+            description: "This hides tanks from enemy towers, only spotters can see the tanks.",
+            cost: 2000,
+            size: BuildingSizes.ARMORY.size,
+            next: []
+        },
+        BOOSTER_CLOAK_COMBO: {
+            variant: 6,
+            unitType: 1,
+            unitVariant: 2,
+            name: "Cloaking Device",
+            description: "This hides tanks from enemy towers, only spotters can see the tanks.",
+            cost: 2000,
+            size: BuildingSizes.ARMORY.size,
+            next: [BuildingVariantTypes.ARMORY.PANZER_BOOSTER_CLOAK_COMBO]
+        },
+        PANZER_CLOAK_COMBO: {
+            variant: 7,
+            unitType: 1,
+            unitVariant: 3,
+            name: "Cloaking Device",
+            description: "This hides tanks from enemy towers, only spotters can see the tanks.",
+            cost: 2000,
+            size: BuildingSizes.ARMORY.size,
+            next: [BuildingVariantTypes.ARMORY.PANZER_BOOSTER_CLOAK_COMBO]
+        },
+        PANZER_BOOSTER_CLOAK_COMBO: {
+            variant: 8,
+            unitType: 1,
+            unitVariant: 5,
+            name: "Cloaking Device",
+            description: "This hides tanks from enemy towers, only spotters can see the tanks.",
+            cost: 2000,
+            size: BuildingSizes.ARMORY.size,
+            next: []
+        }
+    },
     BARRACKS: {
         BASIC: {
             variant: BuildingVariantTypes.BARRACKS.BASIC,
@@ -277,7 +394,11 @@ export const BuildingDetails = {
             description: "Trains Soldiers.",
             cost: 150,
             size: BuildingSizes.BARRACKS.size,
-            next: [BuildingVariantTypes.BARRACKS.GREATER_BARRACKS, BuildingVariantTypes.BARRACKS.TANK_FACTORY]
+            next: [
+                BuildingVariantTypes.BARRACKS.GREATER_BARRACKS,
+                BuildingVariantTypes.BARRACKS.TANK_FACTORY,
+                BuildingVariantTypes.BARRACKS.SIEGE_TANK_FACTORY
+            ]
         },
         GREATER_BARRACKS: {
             variant: BuildingVariantTypes.BARRACKS.GREATER_BARRACKS,
@@ -293,7 +414,7 @@ export const BuildingDetails = {
             description: "Produces Tanks over time.",
             cost: 200,
             size: BuildingSizes.BARRACKS.size,
-            next: [BuildingVariantTypes.BARRACKS.HEAVY_TANK_FACTORY, BuildingVariantTypes.BARRACKS.BOOSTER_TANK_FACTORY]
+            next: []
         },
         HEAVY_TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.HEAVY_TANK_FACTORY,
@@ -301,7 +422,7 @@ export const BuildingDetails = {
             description: "Produces Heavy Tanks.",
             cost: 250,
             size: BuildingSizes.BARRACKS.size,
-            next: [BuildingVariantTypes.BARRACKS.CANNON_TANK_FACTORY, BuildingVariantTypes.BARRACKS.SIEGE_TANK_FACTORY]
+            next: []
         },
         BOOSTER_TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.BOOSTER_TANK_FACTORY,
@@ -309,7 +430,7 @@ export const BuildingDetails = {
             description: "Produces Booster Engine Tanks.",
             cost: 250,
             size: BuildingSizes.BARRACKS.size,
-            next: [BuildingVariantTypes.BARRACKS.HEAVY_BOOSTER_TANK_FACTORY, BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_TANK_FACTORY]
+            next: []
         },
         CANNON_TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.CANNON_TANK_FACTORY,
@@ -325,7 +446,7 @@ export const BuildingDetails = {
             description: "Produces Siege Tanks.",
             cost: 300,
             size: BuildingSizes.BARRACKS.size,
-            next: [BuildingVariantTypes.BARRACKS.HEAVY_SIEGE_TANK_FACTORY, BuildingVariantTypes.BARRACKS.BOOSTER_SIEGE_TANK_FACTORY]
+            next: []
         },
         HEAVY_BOOSTER_TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.HEAVY_BOOSTER_TANK_FACTORY,
@@ -333,7 +454,7 @@ export const BuildingDetails = {
             description: "Produces strong, heavily armored Booster Engine Tanks.",
             cost: 300,
             size: BuildingSizes.BARRACKS.size,
-            next: [BuildingVariantTypes.BARRACKS.BOOSTER_SIEGE_TANK_FACTORY]
+            next: []
         },
         BOOSTER_CANNON_TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_TANK_FACTORY,
@@ -349,7 +470,7 @@ export const BuildingDetails = {
             description: "Produces Heavy Armor Siege Tanks.",
             cost: 350,
             size: BuildingSizes.BARRACKS.size,
-            next: [BuildingVariantTypes.BARRACKS.CANNON_SIEGE_TANK_FACTORY, BuildingVariantTypes.BARRACKS.LIGHT_BOOSTER_SIEGE_TANK_FACTORY]
+            next: []
         },
         BOOSTER_SIEGE_TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.BOOSTER_SIEGE_TANK_FACTORY,
@@ -357,7 +478,7 @@ export const BuildingDetails = {
             description: "Produces Booster Engine Siege Tanks.",
             cost: 350,
             size: BuildingSizes.BARRACKS.size,
-            next: [BuildingVariantTypes.BARRACKS.HEAVY_BOOSTER_SIEGE_TANK_FACTORY, BuildingVariantTypes.BARRACKS.BOOSTER_CANNON_SIEGE_TANK_FACTORY]
+            next: []
         },
         CANNON_SIEGE_TANK_FACTORY: {
             variant: BuildingVariantTypes.BARRACKS.CANNON_SIEGE_TANK_FACTORY,
@@ -700,9 +821,26 @@ export function getUnitBulletDetails (unitType, unitVariant) {
 }
 
 
-export function getAvailableBuildingUpgrades (buildingType, buildingVariant) {
+export function getAvailableBuildingUpgrades (buildingType, buildingVariant, purchasedVariants = []) {
     // Find the key corresponding to the buildingType
     const buildingKey = Object.keys(BuildingTypes).find(key => BuildingTypes[key] === buildingType);
+
+    // Armory: allow buying any upgrade without order, hide purchased upgrades.
+    if (buildingType === BuildingTypes.ARMORY) {
+        const purchased = new Set(purchasedVariants);
+        const armoryDetails = Object.values(BuildingDetails[buildingKey]);
+        const visibleArmoryVariants = new Set([
+            BuildingVariantTypes.ARMORY.POWER_ARMOR,
+            BuildingVariantTypes.ARMORY.BOOSTER_ENGINES,
+            BuildingVariantTypes.ARMORY.PANZER_CANNONS,
+            BuildingVariantTypes.ARMORY.CLOAKING_DEVICE
+        ]);
+        return armoryDetails.filter(detail =>
+            detail &&
+            visibleArmoryVariants.has(detail.variant) &&
+            !purchased.has(detail.variant)
+        );
+    }
 
     // Retrieve upgrade details for the buildingType
     const details = Object.values(BuildingDetails[buildingKey])[buildingVariant];

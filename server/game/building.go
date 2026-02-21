@@ -134,19 +134,67 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 			Cost:    550,
 		},
 	},
-	/*ARMORY: {
+	ARMORY: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
 			Health:  Health{Current: 200, Max: 200},
-			Next:    nil,
+			Next:    []BuildingVariant{BuildingVariant(1), BuildingVariant(2), BuildingVariant(3), BuildingVariant(5)},
 			Cost:    150,
 		},
-	},*/
+		BuildingVariant(1): {
+			Variant: BuildingVariant(1),
+			Health:  Health{Current: 200, Max: 200},
+			Next:    []BuildingVariant{BuildingVariant(2), BuildingVariant(3), BuildingVariant(5)},
+			Cost:    500,
+		},
+		BuildingVariant(2): {
+			Variant: BuildingVariant(2),
+			Health:  Health{Current: 200, Max: 200},
+			Next:    []BuildingVariant{BuildingVariant(4), BuildingVariant(6)},
+			Cost:    600,
+		},
+		BuildingVariant(3): {
+			Variant: BuildingVariant(3),
+			Health:  Health{Current: 200, Max: 200},
+			Next:    []BuildingVariant{BuildingVariant(7)},
+			Cost:    1000,
+		},
+		BuildingVariant(4): {
+			Variant: BuildingVariant(4),
+			Health:  Health{Current: 200, Max: 200},
+			Next:    []BuildingVariant{BuildingVariant(8)},
+			Cost:    1000,
+		},
+		BuildingVariant(5): {
+			Variant: BuildingVariant(5),
+			Health:  Health{Current: 200, Max: 200},
+			Next:    nil,
+			Cost:    2000,
+		},
+		BuildingVariant(6): {
+			Variant: BuildingVariant(6),
+			Health:  Health{Current: 200, Max: 200},
+			Next:    []BuildingVariant{BuildingVariant(8)},
+			Cost:    2000,
+		},
+		BuildingVariant(7): {
+			Variant: BuildingVariant(7),
+			Health:  Health{Current: 200, Max: 200},
+			Next:    []BuildingVariant{BuildingVariant(8)},
+			Cost:    2000,
+		},
+		BuildingVariant(8): {
+			Variant: BuildingVariant(8),
+			Health:  Health{Current: 200, Max: 200},
+			Next:    nil,
+			Cost:    2000,
+		},
+	},
 	BARRACKS: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
 			Health:  Health{Current: 150, Max: 150},
-			Next:    []BuildingVariant{GREATER_BARRACKS, TANK_FACTORY},
+			Next:    []BuildingVariant{GREATER_BARRACKS, TANK_FACTORY, SIEGE_TANK_FACTORY},
 			Cost:    150,
 		},
 		GREATER_BARRACKS: {
@@ -158,19 +206,19 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 		TANK_FACTORY: {
 			Variant: TANK_FACTORY,
 			Health:  Health{Current: 150, Max: 150},
-			Next:    []BuildingVariant{HEAVY_TANK_FACTORY, BOOSTER_TANK_FACTORY},
+			Next:    nil,
 			Cost:    200,
 		},
 		HEAVY_TANK_FACTORY: {
 			Variant: HEAVY_TANK_FACTORY,
 			Health:  Health{Current: 150, Max: 150},
-			Next:    []BuildingVariant{CANNON_TANK_FACTORY, SIEGE_TANK_FACTORY},
+			Next:    nil,
 			Cost:    250,
 		},
 		BOOSTER_TANK_FACTORY: {
 			Variant: BOOSTER_TANK_FACTORY,
 			Health:  Health{Current: 150, Max: 150},
-			Next:    []BuildingVariant{HEAVY_BOOSTER_TANK_FACTORY, BOOSTER_CANNON_TANK_FACTORY},
+			Next:    nil,
 			Cost:    250,
 		},
 		CANNON_TANK_FACTORY: {
@@ -182,13 +230,13 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 		SIEGE_TANK_FACTORY: {
 			Variant: SIEGE_TANK_FACTORY,
 			Health:  Health{Current: 150, Max: 150},
-			Next:    []BuildingVariant{HEAVY_SIEGE_TANK_FACTORY, BOOSTER_SIEGE_TANK_FACTORY},
+			Next:    nil,
 			Cost:    300,
 		},
 		HEAVY_BOOSTER_TANK_FACTORY: {
 			Variant: HEAVY_BOOSTER_TANK_FACTORY,
 			Health:  Health{Current: 150, Max: 150},
-			Next:    []BuildingVariant{BOOSTER_SIEGE_TANK_FACTORY},
+			Next:    nil,
 			Cost:    300,
 		},
 		BOOSTER_CANNON_TANK_FACTORY: {
@@ -200,13 +248,13 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 		HEAVY_SIEGE_TANK_FACTORY: {
 			Variant: HEAVY_SIEGE_TANK_FACTORY,
 			Health:  Health{Current: 150, Max: 150},
-			Next:    []BuildingVariant{CANNON_SIEGE_TANK_FACTORY, HEAVY_BOOSTER_SIEGE_TANK_FACTORY},
+			Next:    nil,
 			Cost:    350,
 		},
 		BOOSTER_SIEGE_TANK_FACTORY: {
 			Variant: BOOSTER_SIEGE_TANK_FACTORY,
 			Health:  Health{Current: 150, Max: 150},
-			Next:    []BuildingVariant{HEAVY_BOOSTER_SIEGE_TANK_FACTORY, BOOSTER_CANNON_SIEGE_TANK_FACTORY},
+			Next:    nil,
 			Cost:    350,
 		},
 		CANNON_SIEGE_TANK_FACTORY: {
@@ -262,6 +310,7 @@ var buildingSizes = map[BuildingType]int{
 	WALL:          30,
 	SIMPLE_TURRET: 30,
 	SNIPER_TURRET: 33,
+	ARMORY:        40,
 	BARRACKS:      60,
 	GENERATOR:     40,
 	HOUSE:         35,
@@ -387,6 +436,7 @@ var buildingPolygons = map[BuildingType]Polygon{
 	HOUSE:         GeneratePolygon(ShapePentagon, GetBuildingSize(HOUSE), 0),
 	SIMPLE_TURRET: GeneratePolygon(ShapeCircle, GetBuildingSize(SIMPLE_TURRET), math.Pi/2),
 	SNIPER_TURRET: GeneratePolygon(ShapeCircle, GetBuildingSize(SNIPER_TURRET), math.Pi/2),
+	ARMORY:        GeneratePolygon(ShapeCircle, GetBuildingSize(ARMORY), math.Pi/2),
 	WALL:          GeneratePolygon(ShapeCircle, GetBuildingSize(WALL), math.Pi/2),
 }
 
@@ -458,6 +508,14 @@ func ValidateBuildingType(buildingType BuildingType) bool {
 
 func ValidateUpgradePath(buildingType BuildingType, currentVariant, targetVariant BuildingVariant) bool {
 	if upgrades, ok := buildingTypes[buildingType]; ok {
+		if buildingType == ARMORY {
+			if targetVariant == BASIC_BUILDING || targetVariant == currentVariant {
+				return false
+			}
+			_, exists := upgrades[targetVariant]
+			return exists
+		}
+
 		if currentUpgrade, ok := upgrades[currentVariant]; ok {
 			for _, nextVariant := range currentUpgrade.Next {
 				if nextVariant == targetVariant {

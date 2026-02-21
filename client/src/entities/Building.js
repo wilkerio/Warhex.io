@@ -1,5 +1,6 @@
 import Renderable from "../components/Renderable.js";
 import ThemeManager from "../components/managers/ThemeManager.js";
+import { getBuildingDetails } from "../network/constants.js";
 
 export const SelectionState = {
    NOT_SELECTED: 0,
@@ -20,6 +21,7 @@ export default class Building extends Renderable {
         this.angleToTarget = 0;
         this.rotationOffset = 0;
         this.variant = variant; // Store the current upgrade
+        this.purchasedUpgrades = new Set();
         this.yOffset = 0;
 
         this.selectionState = SelectionState.NOT_SELECTED;
@@ -69,7 +71,8 @@ export default class Building extends Renderable {
 
     setUpgrade (buildingVariant) {
         this.variant = buildingVariant;
-        this.details = getBuildingDetails(this.type, variant);
+        this.details = getBuildingDetails(this.type, buildingVariant);
+        this.purchasedUpgrades.add(buildingVariant);
     }
 
     // Utility Methods

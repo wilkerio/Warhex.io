@@ -6,7 +6,7 @@ import SimpleTurret from "../../entities/building/SimpleTurret.js";
 import SniperTurret from "../../entities/building/SniperTurret.js";
 import Armory from "../../entities/building/Armory.js";
 import BuildingPreview from "../../entities/BuildingPreview.js";
-import { BuildingTypes, getBuildingDetails } from "../../network/constants.js";
+import { BuildingTypes, BuildingVariantTypes, UnitTypes, UnitVariantTypes, getBuildingDetails } from "../../network/constants.js";
 import { QueueType } from "../Renderer.js";
 import { SelectionState } from "../../entities/Building.js";
 
@@ -172,6 +172,61 @@ export class BuildingManager {
                 const onUpgradeClicked = (data) => {
 
                     if (data) {
+                        // Armory unit upgrade flow
+                        if (data.unitType !== undefined && data.unitVariant !== undefined) {
+                            const currentPower = this.core.gameManager.resources.power.current;
+                            if (currentPower < data.cost) {
+                                console.error("Not enough power to build!");
+                                return;
+                            }
+
+                            // Tank upgrades require at least one Tank Factory.
+                            if (data.unitType === UnitTypes.TANK) {
+                                const hasTankFactory = [this.core.gameManager.player, ...this.core.gameManager.capturedNeutrals]
+                                    .some(base => base && base.buildings.some(b =>
+                                        b.type === BuildingTypes.BARRACKS &&
+                                        b.variant === BuildingVariantTypes.BARRACKS.TANK_FACTORY
+                                    ));
+                                if (!hasTankFactory) {
+                                    const playerName = this.core.gameManager.player?.name || "player";
+                                    this.core.uiManager.addChatMessage(
+                                        "System",
+                                        `@${playerName}, you need to build a Tank Factory first.`,
+                                        "#ffcc66"
+                                    );
+                                    return;
+                                }
+                            }
+
+                            this.core.gameManager.subtractResources(data.cost);
+                            this.core.gameManager.applyUnitUpgrade(data.unitType, data.unitVariant);
+
+                            const neutralBaseID = isNeutralBase ? closestBase.id : null;
+                            this.core.networkManager.upgradeBuildings(buildingIDs, data.buildingVariant, neutralBaseID);
+
+                            this.selectedBuildings.forEach(building => {
+                                if (building.type === BuildingTypes.ARMORY) {
+                                    building.variant = data.buildingVariant;
+                                    if (!building.purchasedUpgrades) building.purchasedUpgrades = new Set();
+                                    building.purchasedUpgrades.add(data.buildingVariant);
+                                }
+                            });
+
+                            // Keep the panel open and refresh available upgrades.
+                            this.core.uiManager.showUpgrades({
+                                buildings: this.selectedBuildings,
+                                count: this.selectedBuildings.length,
+                                name: this.selectedBuildings[0].details.name,
+                                type: this.selectedBuildings[0].type,
+                                variant: this.selectedBuildings[0].variant,
+                                color: this.selectedBuildings[0].color,
+                                purchasedUpgrades: this.selectedBuildings[0].purchasedUpgrades,
+                                activated: this.selectedBuildings[0].activated
+                            },
+                            onUpgradeClicked, onDestroyClicked);
+                            return;
+                        }
+
                         const currentPower = this.core.gameManager.resources.power.current;
     
                         // Check if sufficient power is available
@@ -201,6 +256,7 @@ export class BuildingManager {
                     type: this.selectedBuildings[0].type,
                     variant: this.selectedBuildings[0].variant,
                     color: this.selectedBuildings[0].color,
+                    purchasedUpgrades: this.selectedBuildings[0].purchasedUpgrades,
                     activated: this.selectedBuildings[0].activated //! Only used for barracks (count === 1)
                 },
                 onUpgradeClicked, onDestroyClicked);

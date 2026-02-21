@@ -1,22 +1,32 @@
-import { UnitTypes, UnitVariantTypes, darkenColor, getUnitDetails } from "../../network/constants.js";
+import { UnitTypes, UnitVariantTypes, getUnitDetails } from "../../network/constants.js";
 import Unit from "../Unit.js";
 
 export default class Soldier extends Unit {
     constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1) {
         const details = getUnitDetails(UnitTypes.SOLDIER, variant);
+        const baseColor = color;
 
         // Darken the color if the variant requires it
         const variantColorMap = {
             [UnitVariantTypes.SOLDIER.BASIC]: color,
-            [UnitVariantTypes.SOLDIER.LIGHT_ARMOR]: darkenColor(color, 25),
+            [UnitVariantTypes.SOLDIER.LIGHT_ARMOR]: "#9a9a9a",
         };
 
         const adjustedColor = variantColorMap[variant] || color;
 
 
         super(id, UnitTypes.SOLDIER, adjustedColor, details, position, variant);
+        this.baseColor = baseColor;
 
         // Set the upgrade method based on the variant during initialization
+        this.renderUpgrade = this.getUpgradeRenderMethod(variant);
+    }
+
+    setVariant (variant) {
+        this.variant = variant;
+        this.details = getUnitDetails(UnitTypes.SOLDIER, variant);
+        this.size = this.details.size;
+        this.color = variant === UnitVariantTypes.SOLDIER.LIGHT_ARMOR ? "#9a9a9a" : this.baseColor;
         this.renderUpgrade = this.getUpgradeRenderMethod(variant);
     }
 

@@ -15,7 +15,7 @@ class GameManager {
         this.hasCommander = false;
         this.activeBarracks = {
             current: 0,
-            max: 5
+            max: 4
         }
         this.resources = {
             power: {
@@ -76,7 +76,7 @@ class GameManager {
         this.hasCommander = false;
         this.activeBarracks = {
             current: 0,
-            max: 5
+            max: 4
         }
 
         this.updateDynamicMapSize();
@@ -314,6 +314,10 @@ class GameManager {
         this.resources.power.current -= costs;
         this.core.uiManager.updateResources();
 
+    }
+
+    applyUnitUpgrade (unitType, unitVariant) {
+        this.unitUpgrades[unitType] = unitVariant;
     }
 }
 
