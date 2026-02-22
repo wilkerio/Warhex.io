@@ -105,6 +105,72 @@
                 </div>
             </div>
         </div>
+        
+        <div class="dialog" id="privacy-dialog">
+            <div class="menu-card privacy-card">
+                <button id="privacy-dialog-close" class="exit-button">x</button>
+                <h2>Privacy Policy</h2>
+                <p class="privacy-updated">Last updated: February 22, 2026</p>
+                <div class="privacy-content">
+                    <h3>1. Data We Collect</h3>
+                    <p>We collect the data required to run your account and game progression, including your email, nickname, gameplay statistics, and selected cosmetics.</p>
+
+                    <h3>2. Why We Use It</h3>
+                    <p>Your data is used to authenticate your account, save your progress, display leaderboards, and improve gameplay stability and balance.</p>
+
+                    <h3>3. Storage and Security</h3>
+                    <p>Account data is stored in our backend services. We apply technical safeguards, but no online service can guarantee absolute security.</p>
+
+                    <h3>4. Chat and Community</h3>
+                    <p>Chat messages may be moderated automatically to reduce spam and offensive language and to maintain a safer environment for players.</p>
+
+                    <h3>5. Your Choices</h3>
+                    <p>You can play as a guest or create an account. You may stop using the service at any time.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="dialog" id="terms-dialog">
+            <div class="menu-card privacy-card">
+                <button id="terms-dialog-close" class="exit-button">x</button>
+                <h2>Terms of Use</h2>
+                <p class="privacy-updated">Last updated: February 22, 2026</p>
+                <div class="privacy-content">
+                    <h3>1. Fair Play</h3>
+                    <p>Do not cheat, exploit bugs, automate gameplay with unauthorized scripts, or intentionally disrupt matches.</p>
+
+                    <h3>2. Account Responsibility</h3>
+                    <p>You are responsible for activity on your account, including keeping your credentials secure.</p>
+
+                    <h3>3. Community Rules</h3>
+                    <p>Harassment, hate speech, and abusive behavior are not allowed. Moderation actions may be applied when needed.</p>
+
+                    <h3>4. Service Availability</h3>
+                    <p>We may update, pause, or change features at any time to improve performance, security, and gameplay quality.</p>
+
+                    <h3>5. Acceptance</h3>
+                    <p>By using Infinity.io, you agree to these Terms of Use and the Privacy Policy.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="dialog" id="about-dialog">
+            <div class="menu-card privacy-card">
+                <button id="about-dialog-close" class="exit-button">x</button>
+                <h2>About Infinity.io</h2>
+                <p class="privacy-updated">Strategy. Defense. PvP.</p>
+                <div class="privacy-content">
+                    <h3>Game Vision</h3>
+                    <p>Infinity.io is a competitive multiplayer strategy game where players build, defend, and adapt in real-time battles.</p>
+
+                    <h3>Core Features</h3>
+                    <p>Base building, progression systems, account stats, ranked competition, and live tactical decisions in every match.</p>
+
+                    <h3>Community</h3>
+                    <p>We build Infinity.io with player feedback. Your suggestions help shape balance, quality-of-life, and new features.</p>
+                </div>
+            </div>
+        </div>
 
         <div class="dialog" id="skin-library-dialog">
             <div class="menu-card">
@@ -141,25 +207,26 @@
                 </div>
                 <div class="menu-card">
                     <div id="account-container">
-                        <div class="progress-container" id="level-progression">
-                            <div class="progress-icon">1</div>
-                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--progress: 0%;"></div>
-                            <div class="progress-text">0 / 50 XP</div>
-                        </div>
                         <div id="discord-shop-links">
                             <button id="discord-button">Discord</button>
                             <button id="shop-button">Shop</button>
                         </div>
-                        <div id="skin-selector-wrapper" style="margin-top: 15px;">
+                        <div id="skin-selector-wrapper" style="margin-top: 12px;">
                             <div id="skin-selector" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                                <button id="skin-carousel-prev-menu" class="skin-nav-btn">❮</button>
+                                <button id="skin-carousel-prev-menu" class="skin-nav-btn">&#10094;</button>
                                 <div id="skin-preview-circle" class="skin-circle">
                                     <img id="current-skin-img" src="" alt="Skin" style="display: none;">
                                     <p id="skin-name-display">Default</p>
                                 </div>
-                                <button id="skin-carousel-next-menu" class="skin-nav-btn">❯</button>
+                                <button id="skin-carousel-next-menu" class="skin-nav-btn">&#10095;</button>
                             </div>
                             <button id="skin-use-button" class="skin-use-btn">Use</button>
+                        </div>
+
+                        <div class="progress-container" id="level-progression">
+                            <div class="progress-icon">1</div>
+                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--progress: 0%;"></div>
+                            <div class="progress-text">0 / 50 XP</div>
                         </div>
                         <h1 id="account-handle">@guest</h1>
                         <hr>
@@ -185,6 +252,12 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div id="legal-links-corner">
+            <button id="privacy-open-button" class="legal-link-button">Privacy Policy</button>
+            <button id="terms-open-button" class="legal-link-button">Terms of Use</button>
+            <button id="about-open-button" class="legal-link-button">About</button>
         </div>
     </div>
 
@@ -223,7 +296,6 @@
             </div>
             <div class="settings">
                 <button id="game-settings-exit" class="exit-button">x</button>
-                <h1>Settings</h1>
                 <div class="theme-settings">
                     <p>Theme:</p>
                     <select id="theme-select">

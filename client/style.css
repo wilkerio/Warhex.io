@@ -203,6 +203,84 @@ img {
   transform: scale(1.05);
 }
 
+#privacy-dialog {
+  display: none;
+  z-index: 10020;
+}
+
+#privacy-dialog > .menu-card.privacy-card {
+  width: min(760px, 94vw);
+  max-height: 82vh;
+  overflow: hidden;
+  position: relative;
+}
+
+#privacy-dialog .privacy-card h2,
+#terms-dialog .privacy-card h2,
+#about-dialog .privacy-card h2 {
+  color: #f1f6ff;
+}
+
+#privacy-dialog .privacy-updated {
+  color: #b7c8ff;
+  font-size: 13px;
+  margin-top: -6px;
+}
+
+#terms-dialog .privacy-updated,
+#about-dialog .privacy-updated {
+  color: #b7c8ff;
+  font-size: 13px;
+  margin-top: -6px;
+}
+
+#privacy-dialog .privacy-content {
+  margin-top: 10px;
+  padding-right: 10px;
+  overflow-y: auto;
+  max-height: calc(82vh - 130px);
+}
+
+#terms-dialog .privacy-content,
+#about-dialog .privacy-content {
+  margin-top: 10px;
+  padding-right: 10px;
+  overflow-y: auto;
+  max-height: calc(82vh - 130px);
+}
+
+#privacy-dialog .privacy-content h3 {
+  margin: 12px 0 6px 0;
+  color: #d9e7ff;
+  font-size: 16px;
+}
+
+#terms-dialog .privacy-content h3,
+#about-dialog .privacy-content h3 {
+  margin: 12px 0 6px 0;
+  color: #d9e7ff;
+  font-size: 16px;
+}
+
+#privacy-dialog .privacy-content p {
+  color: #e5ecff;
+  line-height: 1.45;
+  font-size: 14px;
+}
+
+#terms-dialog .privacy-content p,
+#about-dialog .privacy-content p {
+  color: #e5ecff;
+  line-height: 1.45;
+  font-size: 14px;
+}
+
+#terms-dialog,
+#about-dialog {
+  display: none;
+  z-index: 10020;
+}
+
 #guest-button {
   background-color: #f0f0f0;
   color: #333;
@@ -942,6 +1020,7 @@ img {
 }
 
 #game-settings .slider {
+  display: none !important;
   display: flex;
   position: fixed;
   top: 340px;
@@ -980,10 +1059,12 @@ img {
   display: none;
   position: fixed;
   top: 340px;
-  height: 115px;
+  min-height: 160px;
+  height: auto;
   width: 250px;
   left: 8px;
   flex-direction: column;
+  gap: 10px;
   background: rgba(20, 10, 40, 0.6); /* Modernized background */
   border: 1px solid rgba(180, 160, 255, 0.3); /* Added border */
   padding: 15px; /* Adjusted padding */
@@ -1016,6 +1097,12 @@ img {
   font-size: 20px;
 }
 
+#game-settings .theme-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 #theme-select {
   width: 100%;
   padding: 8px 12px;
@@ -1039,19 +1126,20 @@ img {
 }
 
 .misc-settings {
-  margin-top: 15px;
+  margin-top: 0;
 }
 
 .misc-settings label {
   display: flex;
   align-items: center;
+  gap: 8px;
   font-size: 16px;
   color: #fff;
   cursor: pointer;
 }
 
 .misc-settings input[type="checkbox"] {
-  margin-right: 8px;
+  margin-right: 0;
   width: 16px;
   height: 16px;
   accent-color: #4a90e2;
@@ -1337,8 +1425,9 @@ img {
   left: 8px;
   bottom: 30px;
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   z-index: 1001;
   zoom: 0.7;
 }
@@ -2103,12 +2192,16 @@ button:hover {
 }
 
 #chat .chat-button {
-    padding: 6px 12px;
+    padding: 4px 10px;
+    min-width: 72px;
+    max-width: 84px;
     border: none;
     border-radius: 12px;
     background: rgba(180, 160, 255, 0.25);
     color: #e0d6ff;
     font-weight: bold;
+    font-size: 12px;
+    line-height: 1;
     cursor: pointer;
     transition: background 0.3s ease, transform 0.2s ease;
 }
@@ -2136,39 +2229,47 @@ button:hover {
 }
 
 #unit-controls-container {
-  position: fixed;
+  position: static;
   display: flex;
-  bottom: 8px;
-  left: calc(50% - 400px);
-  transform: translateX(-100%);
-  zoom: 0.7;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  z-index: 1001;
+  zoom: 1;
 }
 
 .unit-control-button {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  height: 80px;
-  width: 80px;
-  border-radius: 10px;
-  background-color: rgba(0, 0, 0, 0.1);
-  margin-right: 10px;
+  height: 40px;
+  min-width: 150px;
+  border-radius: 12px;
+  background: rgba(20, 10, 40, 0.66);
+  border: 1px solid rgba(180, 160, 255, 0.32);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
+  margin-right: 0;
   cursor: pointer;
-  transition: ease-in-out 100ms;
-  color: white;
-  font-size: 16px;
+  transition: transform 0.18s ease, box-shadow 0.25s ease, background 0.25s ease;
+  color: #e7dcff;
+  font-size: 14px;
   font-weight: 700;
-  border: 2px solid transparent;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
 }
 
 .unit-control-button:hover {
-  transform: scale(1.05);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+  background: rgba(28, 14, 56, 0.72);
 }
 
 .unit-control-button.active {
-  background-color: rgba(100, 255, 100, 0.2);
-  border-color: rgba(100, 255, 100, 0.5);
+  background: rgba(68, 172, 255, 0.22);
+  border-color: rgba(101, 197, 255, 0.6);
+  color: #dff4ff;
 }
 
 #toolbar-container {
@@ -2406,6 +2507,57 @@ button:hover {
   box-shadow: 0 16px 40px rgba(180,160,255,0.35);
 }
 
+#legal-links-corner {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  z-index: 25;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: rgba(8, 10, 28, 0.75);
+  border: 1px solid rgba(126, 165, 255, 0.35);
+  border-radius: 12px;
+  padding: 8px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.legal-link-button {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(126, 165, 255, 0.45);
+  background: linear-gradient(180deg, rgba(44, 76, 150, 0.92) 0%, rgba(20, 42, 100, 0.92) 100%);
+  color: #e8f1ff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.legal-link-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(95, 150, 255, 0.25);
+  filter: brightness(1.05);
+}
+
+@media (max-width: 700px) {
+  #legal-links-corner {
+    left: 6px;
+    right: 6px;
+    bottom: 6px;
+    gap: 6px;
+    justify-content: space-between;
+  }
+
+  .legal-link-button {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+  }
+}
+
 /* Player Settings Container - horizontal layout */
 .player-input-container {
   display: flex;
@@ -2474,30 +2626,37 @@ button:hover {
   transform: scale(1.05);
 }
 
-
 /* Discord and Shop Links */
 #discord-shop-links {
   display: flex;
-  justify-content: space-around;
-  gap: 15px;
-  margin-top: 20px;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 0;
+  margin-bottom: 10px;
+  width: 100%;
 }
 
 #discord-button,
 #shop-button {
-  flex: 1;
-  padding: 10px 15px;
+  flex: 0 0 auto;
+  min-width: 132px;
+  padding: 9px 14px;
   border-radius: 12px;
   font-size: 1.0em;
   font-weight: bold;
   cursor: pointer;
   transition: background 0.3s ease, transform 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 #discord-button {
-  background: #7289da; /* Discord brand color */
+  background: linear-gradient(135deg, #6f88de 0%, #5f79d0 100%);
   color: #ffffff;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(85, 105, 180, 0.35);
 }
 
 #discord-button:hover {
@@ -2507,9 +2666,9 @@ button:hover {
 }
 
 #shop-button {
-  background: #2ecc71; /* Green color for shop */
+  background: linear-gradient(135deg, #31cf7a 0%, #22b565 100%);
   color: #ffffff;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(24, 120, 70, 0.35);
 }
 
 #shop-button:hover {

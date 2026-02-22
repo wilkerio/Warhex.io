@@ -20,6 +20,8 @@ export default class UIManager {
         this.loadingOverlay = null;
         this.timerInterval = null;
         this.lastSendMessage = "";
+        this.lastSendMessageAt = 0;
+        this.chatSendHistory = [];
         this.isDraggingChat = false;
         this.isChatInputFocused = false;
         this.upgradePreviewRotation = 0;
@@ -35,6 +37,10 @@ export default class UIManager {
         this.baseLayoutDialogElement = null;
         this.x1StatusElement = null;
         this.x1StatusInterval = null;
+        this._pinAutoBuildMenuOpen = false;
+        this._autoBuildShowActions = null;
+        this._autoBuildShowMenu = null;
+        this._startupRandomSkinApplied = false;
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -52,10 +58,23 @@ export default class UIManager {
         this.addSkinUseButtonListener(); // New: Use button
         this.addSkinCircleClickListener(); // New: click on circle to open library
         this.addSkinLibraryButtonListener();
+        this.addMenuShortcutLinks();
+        this.addLegalDialogListeners();
         this.addSettingsPanelListener();
         this.addChatButtonElementListener();
         this.addUnitControlsListener();
         this.addAutoBuildMenuButtons();
+        this.placeGroupTroopsBesidePower();
+    }
+
+    placeGroupTroopsBesidePower () {
+        const resourceContainer = this.DOM?.game?.resources?.container;
+        const unitControls = this.DOM?.game?.unitControls?.container;
+        if (!resourceContainer || !unitControls) return;
+
+        if (unitControls.parentElement !== resourceContainer) {
+            resourceContainer.appendChild(unitControls);
+        }
     }
 
     // Initialize skins from localStorage cache immediately (no async wait)
@@ -90,6 +109,7 @@ export default class UIManager {
                     // Update UI immediately
                     this.updateSkinCircle();
                     this.updateUseButton();
+                    this.applyStartupRandomSkin();
                     return;
                 }
             }
@@ -103,6 +123,7 @@ export default class UIManager {
         this.currentSkinIndex = 0;
         this.updateSkinCircle();
         this.updateUseButton();
+        this.applyStartupRandomSkin();
     }
 
     buildAvailableSkins(rawSkins) {
@@ -201,6 +222,7 @@ export default class UIManager {
                 this.updateSkinCircle();
                 this.updateUseButton();
                 this.populateSkinLibrary();
+                this.applyStartupRandomSkin();
             } else if (this.availableSkins.length <= 1) {
                 const fallbackSkins = this.getFallbackCatalogSkins();
                 if (fallbackSkins.length > 0) {
@@ -208,6 +230,7 @@ export default class UIManager {
                     this.currentSkinIndex = Math.min(this.currentSkinIndex, this.availableSkins.length - 1);
                     this.updateSkinCircle();
                     this.updateUseButton();
+                    this.applyStartupRandomSkin();
                 } else {
                     console.warn('No Supabase skins found - using cached or default');
                 }
@@ -221,9 +244,25 @@ export default class UIManager {
                     this.currentSkinIndex = 0;
                     this.updateSkinCircle();
                     this.updateUseButton();
+                    this.applyStartupRandomSkin();
                 }
             }
         }
+    }
+
+    applyStartupRandomSkin() {
+        if (this._startupRandomSkinApplied) return;
+        if (!Array.isArray(this.availableSkins) || this.availableSkins.length === 0) return;
+
+        const minIndex = this.availableSkins.length > 1 ? 1 : 0; // Prefer non-default skin when available
+        const maxIndex = this.availableSkins.length - 1;
+        const randomIndex = Math.floor(Math.random() * (maxIndex - minIndex + 1)) + minIndex;
+
+        this.currentSkinIndex = randomIndex;
+        this._startupRandomSkinApplied = true;
+
+        // Auto-equip the random skin so player doesn't need to press "Equipped".
+        this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
     }
 
     initializeUIElements () {
@@ -317,6 +356,18 @@ export default class UIManager {
                     progressBar: "#level-progression .progress-bar",
                     progressText: "#level-progression .progress-text"
                 }
+            },
+
+            legal: {
+                privacyOpenButton: "privacy-open-button",
+                privacyDialog: "privacy-dialog",
+                privacyCloseButton: "privacy-dialog-close",
+                termsOpenButton: "terms-open-button",
+                termsDialog: "terms-dialog",
+                termsCloseButton: "terms-dialog-close",
+                aboutOpenButton: "about-open-button",
+                aboutDialog: "about-dialog",
+                aboutCloseButton: "about-dialog-close",
             },
 
             // Skins
@@ -413,6 +464,7 @@ export default class UIManager {
             this.DOM.settings.removeGridCheckbox.addEventListener('change', (e) => {
                 localStorage.setItem('showGrid', e.target.checked ? 'false' : 'true');
                 // No need to reapply theme, grid is rendered every frame
+                this.closeSettingsAfterChoice();
             });
         }
     }
@@ -811,35 +863,9 @@ export default class UIManager {
         this.DOM.account.progression.progressBar.style.width = `${progressPercentage}%`;
         this.DOM.account.progression.progressBar.style.backgroundColor = progressBarColor;
 
-        // Fetch the equipped skin from SkinCache
-        const previewButton = this.DOM?.skins?.previewButton;
-        const equipped = userData.selected_skin
-            ?? userData.skins?.equipped
-            ?? localStorage.getItem('equippedSkin')
-            ?? null;
-
-        if (previewButton && equipped) {
-            // Load either Supabase (string) or legacy (numeric) skins
-            const skinImageData = typeof equipped === 'string'
-                ? await SkinCache.getSkinByName(equipped)
-                : await SkinCache.getSkin(equipped);
-
-            if (skinImageData && skinImageData.image) {
-                const img = document.createElement('img');
-                img.src = skinImageData.image.src;
-
-                previewButton.innerHTML = '';
-                previewButton.appendChild(img);
-
-                const plusDiv = document.createElement('div');
-                plusDiv.textContent = '+';
-                previewButton.appendChild(plusDiv);
-            }
-        } else if (previewButton) {
-            previewButton.innerHTML = '<p>Skins</p>';
-            const plusDiv = document.createElement('div');
-            plusDiv.textContent = '+';
-            previewButton.appendChild(plusDiv);
+        // Keep the existing skin carousel DOM intact; only refresh its data/state.
+        if (this.DOM?.skins?.previewButton) {
+            this.updateSkinCircle();
         }
 
         // Clear previous stats
@@ -866,6 +892,7 @@ export default class UIManager {
         const statsData = [
             { label: 'Highscore', value: formatScore(userData.statistics?.highscore) || "0" },
             { label: 'Playtime', value: formatPlaytime(userData.statistics?.playtime) },
+            { label: 'XP', value: level < MAX_LEVEL ? `${userXP} / ${requiredXP}` : "Max Level" },
             { label: 'Total Kills', value: userData.statistics?.kills || "0" }
         ];
 
@@ -910,13 +937,28 @@ export default class UIManager {
 
     async updateSkinCircle() {
         const circle = document.getElementById('skin-preview-circle');
-        const img = document.getElementById('current-skin-img');
-        const nameDisplay = document.getElementById('skin-name-display');
+        let img = document.getElementById('current-skin-img');
+        let nameDisplay = document.getElementById('skin-name-display');
         const prevBtn = document.getElementById('skin-carousel-prev-menu');
         const nextBtn = document.getElementById('skin-carousel-next-menu');
         
-        if (!circle || !img || !nameDisplay) {
+        if (!circle) {
             return; // Elements not ready yet
+        }
+
+        // Self-heal preview structure in case another UI flow replaced circle.innerHTML.
+        if (!img) {
+            img = document.createElement('img');
+            img.id = 'current-skin-img';
+            img.alt = 'Skin';
+            img.style.display = 'none';
+            circle.appendChild(img);
+        }
+        if (!nameDisplay) {
+            nameDisplay = document.createElement('p');
+            nameDisplay.id = 'skin-name-display';
+            nameDisplay.textContent = 'Default';
+            circle.appendChild(nameDisplay);
         }
         
         const currentSkin = this.availableSkins[this.currentSkinIndex];
@@ -963,6 +1005,9 @@ export default class UIManager {
         const useBtn = document.getElementById('skin-use-button');
         if (!useBtn) return;
 
+        // Auto-equip flow: keep button hidden.
+        useBtn.style.display = 'none';
+
         const currentSkin = this.availableSkins[this.currentSkinIndex];
         const dbSelected = this.core?.networkManager?.userData?.selected_skin ?? null;
         const localSelected = localStorage.getItem('equippedSkinName') || '';
@@ -980,7 +1025,7 @@ export default class UIManager {
         this.bindSkinNavButtons();
     }
 
-    goPrevSkin(e) {
+    async goPrevSkin(e) {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -988,10 +1033,10 @@ export default class UIManager {
         const total = this.availableSkins.length;
         if (total <= 1) return;
         this.currentSkinIndex = (this.currentSkinIndex - 1 + total) % total;
-        this.updateSkinCircle();
+        await this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
     }
 
-    goNextSkin(e) {
+    async goNextSkin(e) {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -999,7 +1044,7 @@ export default class UIManager {
         const total = this.availableSkins.length;
         if (total <= 1) return;
         this.currentSkinIndex = (this.currentSkinIndex + 1) % total;
-        this.updateSkinCircle();
+        await this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
     }
 
     bindSkinNavButtons() {
@@ -1641,6 +1686,42 @@ export default class UIManager {
         tabContainer.innerHTML = ""; // Clear existing tabs
     }
 
+    _maskProfanity (text) {
+        if (!text || typeof text !== "string") return text;
+
+        // Client-side profanity masking for common PT-BR insults/slurs.
+        const patterns = [
+            /filha\s*da\s*puta/gi,
+            /filho\s*da\s*puta/gi,
+            /filh[ao]\s*da\s*\w+/gi,
+            /\bputa\b/gi,
+            /\bputo\b/gi,
+            /\bcaralho\b/gi,
+            /\bporra\b/gi,
+            /\bmerda\b/gi,
+            /\bcu\b/gi,
+            /\bfdp\b/gi,
+            /\bidiota\b/gi,
+            /\botario\b/gi,
+            /\barrombado\b/gi,
+            /\bdesgracado\b/gi,
+            /\bvagabundo\b/gi,
+            /\bimbecil\b/gi,
+            /\bburro\b/gi
+        ];
+
+        const mask = (match) => {
+            const firstVisible = (match.match(/[A-Za-z0-9]/) || ["*"])[0];
+            return `${firstVisible}****`;
+        };
+
+        let output = text;
+        patterns.forEach((pattern) => {
+            output = output.replace(pattern, mask);
+        });
+        return output;
+    }
+
     _updateCost () {
         this.upgradeCostElements.forEach(i => {
             const { cost, element } = i;
@@ -1678,13 +1759,14 @@ export default class UIManager {
 
     addChatMessage (username, message, color, player = null) {
         if (!this.DOM.chat.messages) return;
+        const safeMessage = this._maskProfanity(message);
 
         // Create a new chat message div
         const messageDiv = document.createElement("div");
         messageDiv.classList.add("message");
 
         // Check for mention
-        if (this.core.gameManager.player && message.includes('@' + this.core.gameManager.player.name)) {
+        if (this.core.gameManager.player && safeMessage.includes('@' + this.core.gameManager.player.name)) {
             messageDiv.classList.add("mention-highlight");
         }
 
@@ -1702,7 +1784,7 @@ export default class UIManager {
         // Create and set message span
         const messageSpan = document.createElement("span");
         messageSpan.classList.add("text");
-        messageSpan.textContent = message;
+        messageSpan.textContent = safeMessage;
 
         // Append username and message spans to message div
         messageDiv.appendChild(usernameSpan);
@@ -1735,19 +1817,24 @@ export default class UIManager {
         if (!this.DOM.game.unitControls.groupUnitsButton) return;
 
         this.groupUnitsActive = false;
-        this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Off";
+        this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Troops Off";
 
         this.DOM.game.unitControls.groupUnitsButton.addEventListener("click", () => {
             this.groupUnitsActive = !this.groupUnitsActive;
             if (this.groupUnitsActive) {
                 this.DOM.game.unitControls.groupUnitsButton.classList.add("active");
-                this.DOM.game.unitControls.groupUnitsButton.innerText = "Group On";
+                this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Troops On";
             } else {
                 this.DOM.game.unitControls.groupUnitsButton.classList.remove("active");
-                this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Off";
+                this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Troops Off";
             }
     
             this.core.networkManager.sendToggleGroupUnits(this.groupUnitsActive);
+
+            const topGroupToggle = document.getElementById("top-group-toggle-btn");
+            if (topGroupToggle) {
+                topGroupToggle.textContent = this.groupUnitsActive ? "Group Troops On" : "Group Troops Off";
+            }
         });
     }
 
@@ -1763,8 +1850,8 @@ export default class UIManager {
         container.style.left = "50%";
         container.style.transform = "translateX(-50%)";
         container.style.display = "none";
-        container.style.width = "560px";
-        container.style.height = "46px";
+        container.style.width = "min(980px, calc(100vw - 24px))";
+        container.style.height = "92px";
         container.style.zIndex = "30";
         container.style.pointerEvents = "auto";
 
@@ -1789,12 +1876,14 @@ export default class UIManager {
 
         const actionsPanel = document.createElement("div");
         actionsPanel.style.position = "absolute";
-        actionsPanel.style.left = "0";
+        actionsPanel.style.left = "50%";
+        actionsPanel.style.transform = "translateX(-50%)";
         actionsPanel.style.top = "0";
-        actionsPanel.style.width = "760px";
-        actionsPanel.style.height = "46px";
+        actionsPanel.style.width = "100%";
+        actionsPanel.style.maxWidth = "min(980px, calc(100vw - 24px))";
+        actionsPanel.style.height = "90px";
         actionsPanel.style.display = "none";
-        actionsPanel.style.padding = "2px";
+        actionsPanel.style.padding = "4px";
         actionsPanel.style.boxSizing = "border-box";
         actionsPanel.style.borderRadius = "14px";
         actionsPanel.style.border = "1px solid rgba(132, 170, 255, 0.35)";
@@ -1802,16 +1891,17 @@ export default class UIManager {
         actionsPanel.style.boxShadow = "0 8px 22px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.08)";
         actionsPanel.style.backdropFilter = "blur(3px)";
         actionsPanel.style.gap = "6px";
-        actionsPanel.style.alignItems = "center";
-        actionsPanel.style.justifyContent = "center";
+        actionsPanel.style.gridTemplateColumns = "repeat(6, minmax(0, 1fr))";
+        actionsPanel.style.gridAutoRows = "40px";
+        actionsPanel.style.alignItems = "stretch";
 
         const createActionButton = (label, onClick) => {
             const button = document.createElement("button");
             button.type = "button";
             button.textContent = label;
-            button.style.flex = "1 1 0";
-            button.style.maxWidth = "122px";
-            button.style.height = "46px";
+            button.style.width = "100%";
+            button.style.maxWidth = "none";
+            button.style.height = "40px";
             button.style.padding = "0";
             button.style.border = "1px solid #5a8ee0";
             button.style.borderRadius = "12px";
@@ -1820,7 +1910,9 @@ export default class UIManager {
             button.style.cursor = "pointer";
             button.style.fontWeight = "700";
             button.style.letterSpacing = "0.2px";
+            button.style.fontSize = "16px";
             button.style.userSelect = "none";
+            button.style.whiteSpace = "nowrap";
             button.addEventListener("click", onClick);
             return button;
         };
@@ -1840,28 +1932,72 @@ export default class UIManager {
         const loadBaseBtn = createActionButton("Load Base", () => {
             this.showLoadBaseLayoutDialog();
         });
+        const groupTroopsBtn = createActionButton(this.groupUnitsActive ? "Group Troops On" : "Group Troops Off", () => {
+            this.DOM?.game?.unitControls?.groupUnitsButton?.click();
+        });
+        groupTroopsBtn.id = "top-group-toggle-btn";
+
+        const themeBtn = createActionButton("Theme", () => {
+            this.positionSettingsPanelForTopMenu(themeBtn);
+            this._pinAutoBuildMenuOpen = true;
+            if (typeof this._autoBuildShowActions === "function") {
+                this._autoBuildShowActions();
+            }
+            this.showGameSettingsButton(false);
+            this.showGameSettingsPanel(true);
+        });
+        themeBtn.style.height = "36px";
+        themeBtn.style.gridColumn = "3 / span 2";
 
         const showActions = () => {
             pullTab.style.display = "none";
-            actionsPanel.style.display = "flex";
+            actionsPanel.style.display = "grid";
         };
         const showMenu = () => {
+            if (this._pinAutoBuildMenuOpen) return;
             actionsPanel.style.display = "none";
             pullTab.style.display = "block";
         };
 
-        // Hover swap behavior: MENU is replaced by action buttons in the same area.
-        container.addEventListener("mouseenter", showActions);
+        // Pull-tab behavior: starts collapsed and only opens when player clicks MENU.
+        pullTab.addEventListener("click", showActions);
         container.addEventListener("mouseleave", showMenu);
+        this._autoBuildShowActions = showActions;
+        this._autoBuildShowMenu = showMenu;
 
         actionsPanel.appendChild(autogensBtn);
         actionsPanel.appendChild(externatkBtn);
         actionsPanel.appendChild(defendBtn);
         actionsPanel.appendChild(saveBaseBtn);
         actionsPanel.appendChild(loadBaseBtn);
+        actionsPanel.appendChild(groupTroopsBtn);
+        actionsPanel.appendChild(themeBtn);
         container.appendChild(pullTab);
         container.appendChild(actionsPanel);
         gameContainer.appendChild(container);
+    }
+
+    positionSettingsPanelForTopMenu (anchorElement) {
+        if (!this.DOM?.settings?.panel || !anchorElement) return;
+
+        const anchorRect = anchorElement.getBoundingClientRect();
+        const panel = this.DOM.settings.panel;
+        const panelWidth = panel.offsetWidth || 250;
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+
+        let left = anchorRect.left + (anchorRect.width / 2) - (panelWidth / 2);
+        left = Math.max(8, Math.min(left, viewportWidth - panelWidth - 8));
+
+        panel.style.left = `${Math.round(left)}px`;
+        panel.style.top = `${Math.round(anchorRect.bottom + 10)}px`;
+    }
+
+    closeSettingsAfterChoice () {
+        this.showGameSettingsPanel(false);
+        this._pinAutoBuildMenuOpen = false;
+        if (typeof this._autoBuildShowMenu === "function") {
+            this._autoBuildShowMenu();
+        }
     }
 
     addChatButtonElementListener () {
@@ -1869,17 +2005,39 @@ export default class UIManager {
 
         this.DOM.chat.button.addEventListener("click", () => {
             const message = this.DOM.chat.input.value.trim();
-            if (message === this.lastSendMessage) {
-                this.DOM.chat.input.value = ""; // Clear input
-                this.addChatMessage("System", "Stop Spamming!");
-                this.disableChatButtonElementForSeconds(5); // Disable button for 5 seconds
+            if (!message) return;
 
-            } else if (message) {
-                this.DOM.chat.input.value = ""; // Clear input
-                this.core.networkManager.sendChatMessage(message);
-                this.lastSendMessage = message;
-                this.disableChatButtonElementForSeconds(5); // Disable button for 5 seconds
+            const now = Date.now();
+            const normalized = message.toLowerCase().replace(/\s+/g, " ").trim();
+
+            // Keep only recent entries for spam checks.
+            this.chatSendHistory = this.chatSendHistory.filter((entry) => now - entry.time <= 20000);
+
+            // Repeated same message too soon.
+            if (normalized === this.lastSendMessage && (now - this.lastSendMessageAt) < 3000) {
+                this.addChatMessage("System", "Please avoid repeating the same message.");
+                return;
             }
+
+            // Flood protection: too many messages in short interval.
+            const shortWindow = this.chatSendHistory.filter((entry) => now - entry.time <= 2500);
+            if (shortWindow.length >= 4) {
+                this.addChatMessage("System", "You're sending messages too fast.");
+                return;
+            }
+
+            // Repeated message pattern in a longer window.
+            const sameCount = this.chatSendHistory.filter((entry) => entry.text === normalized).length;
+            if (sameCount >= 2) {
+                this.addChatMessage("System", "Spam detected. Try a different message.");
+                return;
+            }
+
+            this.DOM.chat.input.value = ""; // Clear input
+            this.core.networkManager.sendChatMessage(message);
+            this.lastSendMessage = normalized;
+            this.lastSendMessageAt = now;
+            this.chatSendHistory.push({ text: normalized, time: now });
         });
 
         this.DOM.chat.input.addEventListener("keypress", (event) => {
@@ -1966,6 +2124,42 @@ export default class UIManager {
         }
     }
 
+    addMenuShortcutLinks () {
+        const discordButton = document.getElementById("discord-button");
+        if (discordButton) {
+            discordButton.addEventListener("click", () => {
+                window.open("https://discord.gg/YAEG9qJGMh", "_blank", "noopener,noreferrer");
+            });
+        }
+    }
+
+    addLegalDialogListeners () {
+        const legal = this.DOM?.legal;
+        if (!legal) return;
+
+        const bindDialog = (openBtn, dialog, closeBtn) => {
+            if (!openBtn || !dialog) return;
+            const closeDialog = () => {
+                dialog.style.display = "none";
+            };
+            openBtn.addEventListener("click", () => {
+                dialog.style.display = "flex";
+            });
+            if (closeBtn) {
+                closeBtn.addEventListener("click", closeDialog);
+            }
+            dialog.addEventListener("click", (event) => {
+                if (event.target === dialog) {
+                    closeDialog();
+                }
+            });
+        };
+
+        bindDialog(legal.privacyOpenButton, legal.privacyDialog, legal.privacyCloseButton);
+        bindDialog(legal.termsOpenButton, legal.termsDialog, legal.termsCloseButton);
+        bindDialog(legal.aboutOpenButton, legal.aboutDialog, legal.aboutCloseButton);
+    }
+
     addSettingsPanelListener () {
         // menu settings button should open the same settings panel
         if (this.DOM.menu.menuSettingsButton) {
@@ -1983,13 +2177,14 @@ export default class UIManager {
 
         if (this.DOM.settings.exitButton) {
             this.DOM.settings.exitButton.addEventListener("click", () => {
-                this.showGameSettingsButton(true)
-                this.showGameSettingsPanel(false)
+                this.showGameSettingsButton(false)
+                this.closeSettingsAfterChoice()
             });
         }
 
         this.DOM.settings.themeSelect.addEventListener("change", (event) => {
             this.core.themeManager.applyTheme(event.target.value);
+            this.closeSettingsAfterChoice();
         });
     }
 
@@ -2186,11 +2381,13 @@ export default class UIManager {
     }
 
     showMetrics (show) {
-        this.DOM.game.metrics.style.display = show ? "flex" : "none";
+        // Metrics (FPS/Bps) hidden by request.
+        this.DOM.game.metrics.style.display = "none";
     }
 
     showGameSettingsButton (show) {
-        this.DOM.settings.button.style.display = show ? "flex" : "none";
+        // Settings are accessed from the top action menu; keep the legacy side slider hidden.
+        this.DOM.settings.button.style.display = "none";
     }
 
     showGameSettingsPanel (show) {

@@ -416,14 +416,17 @@ export class Renderer {
             context.strokeStyle = "rgba(160, 220, 255, 0.7)";
             context.stroke();
 
-            context.font = "700 28px 'Ubuntu', sans-serif";
-            context.textAlign = "center";
-            context.textBaseline = "bottom";
-            context.lineWidth = 3;
-            context.strokeStyle = "rgba(20, 32, 52, 0.95)";
-            context.fillStyle = "rgba(190, 235, 255, 0.95)";
-            context.strokeText("Empty base - relocate", slotX, slotY - 150);
-            context.fillText("Empty base - relocate", slotX, slotY - 150);
+            const isMenuOpen = Boolean(this.core?.uiManager?.menuOpen);
+            if (!isMenuOpen) {
+                context.font = "700 28px 'Ubuntu', sans-serif";
+                context.textAlign = "center";
+                context.textBaseline = "bottom";
+                context.lineWidth = 3;
+                context.strokeStyle = "rgba(20, 32, 52, 0.95)";
+                context.fillStyle = "rgba(190, 235, 255, 0.95)";
+                context.strokeText("Empty base - relocate", slotX, slotY - 150);
+                context.fillText("Empty base - relocate", slotX, slotY - 150);
+            }
 
             context.setLineDash([14, 12]);
             context.strokeStyle = "rgba(160, 220, 255, 0.45)";
@@ -600,12 +603,13 @@ export class Renderer {
             }
         }
 
-        spawningUnitsOver.forEach(unit => unit.render(context, camera, deltaTime));
-        unitsOver.forEach(unit => unit.render(context, camera, deltaTime));
-
         for (const player of this.visiblePlayers) {
             player.render(this.context, this.camera, deltaTime);
         }
+
+        // Draw active units above player/base structures so new buildings do not hide them.
+        spawningUnitsOver.forEach(unit => unit.render(context, camera, deltaTime));
+        unitsOver.forEach(unit => unit.render(context, camera, deltaTime));
 
         context.save();
         context.globalCompositeOperation = 'destination-over';

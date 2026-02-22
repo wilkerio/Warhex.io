@@ -52,6 +52,7 @@ type Player struct {
 	UnitBulletSpawning []*BulletSpawning
 	UnitSpawningLimit  Capacity
 	HasCommander       bool
+	HasSoldierArmor    bool
 	HasTankBooster     bool
 	HasTankCannon      bool
 	HasTankCloak       bool
@@ -444,6 +445,13 @@ func (p *Player) AddUnitSpawning(barracks *Building, setActive bool) bool {
 			spawning.UnitVariant = BASIC_UNIT
 		}
 	}
+	if spawning.UnitType == SOLDIER {
+		if p.HasSoldierArmor {
+			spawning.UnitVariant = LIGHT_ARMOR_SOLDIER
+		} else {
+			spawning.UnitVariant = BASIC_UNIT
+		}
+	}
 
 	// If the spawning is activated, increment the limit
 	if setActive {
@@ -587,6 +595,7 @@ func (p *Player) ApplySoldierArmorUpgrade(enabled bool) {
 	}
 
 	p.Lock()
+	p.HasSoldierArmor = enabled
 	for _, spawning := range p.UnitSpawning {
 		if spawning.UnitType == SOLDIER {
 			spawning.UnitVariant = targetVariant
