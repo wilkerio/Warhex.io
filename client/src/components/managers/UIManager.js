@@ -1,7 +1,7 @@
 import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
-import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin } from "../../network/supabaseClient.js";
+import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -2864,6 +2864,26 @@ export default class UIManager {
         input.style.padding = "0 12px";
         input.style.outline = "none";
 
+        const publishRow = document.createElement("label");
+        publishRow.style.display = "flex";
+        publishRow.style.alignItems = "center";
+        publishRow.style.gap = "8px";
+        publishRow.style.marginTop = "10px";
+        publishRow.style.fontSize = "13px";
+        publishRow.style.opacity = "0.95";
+
+        const publishCheckbox = document.createElement("input");
+        publishCheckbox.type = "checkbox";
+        publishCheckbox.checked = false;
+        publishCheckbox.style.width = "16px";
+        publishCheckbox.style.height = "16px";
+        publishCheckbox.style.cursor = "pointer";
+
+        const publishText = document.createElement("span");
+        publishText.textContent = "Make this base public (other players can load it)";
+        publishRow.appendChild(publishCheckbox);
+        publishRow.appendChild(publishText);
+
         let previewElement = null;
         if (snapshot) {
             const preview = document.createElement("img");
@@ -2912,8 +2932,28 @@ export default class UIManager {
             }
             const existing = this.getSavedBaseLayouts().slice(0, 29);
             this.setSavedBaseLayouts([layout, ...existing]);
-            this.hideBaseLayoutDialog();
             this.addChatMessage("System", `Base "${layout.name}" saved.`, "#60c1ff");
+
+            if (publishCheckbox.checked) {
+                const userId = this.core.networkManager?.userId || null;
+                const authorName = this.core.gameManager?.player?.name || this.core.networkManager?.userData?.nickname || "Guest";
+                publishBaseLayout({
+                    userId,
+                    authorName,
+                    name: layout.name,
+                    snapshot: layout.snapshot,
+                    buildings: layout.buildings,
+                    isPublic: true
+                }).then(result => {
+                    if (result.success) {
+                        this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
+                    } else {
+                        this.addChatMessage("System", "Could not publish base (check DB table/config).", "#ffcc66");
+                    }
+                });
+            }
+
+            this.hideBaseLayoutDialog();
         });
 
         actions.appendChild(cancel);
@@ -2921,6 +2961,7 @@ export default class UIManager {
         card.appendChild(title);
         card.appendChild(subtitle);
         card.appendChild(input);
+        card.appendChild(publishRow);
         if (previewElement) {
             card.appendChild(previewElement);
         }
@@ -2935,7 +2976,10 @@ export default class UIManager {
     showLoadBaseLayoutDialog () {
         this.hideBaseLayoutDialog();
 
-        const layouts = this.getSavedBaseLayouts();
+        const localLayouts = this.getSavedBaseLayouts();
+        let publicLayouts = [];
+        let activeSource = "local";
+
         const overlay = document.createElement("div");
         overlay.style.position = "fixed";
         overlay.style.inset = "0";
@@ -2965,10 +3009,60 @@ export default class UIManager {
         title.style.color = "#9fe8ff";
 
         const subtitle = document.createElement("div");
-        subtitle.textContent = "Saved layouts are local to this browser. Pick one to load.";
+        subtitle.textContent = "Pick a source and load a base layout.";
         subtitle.style.marginTop = "6px";
         subtitle.style.fontSize = "13px";
         subtitle.style.opacity = "0.92";
+
+        const tabsRow = document.createElement("div");
+        tabsRow.style.marginTop = "10px";
+        tabsRow.style.display = "flex";
+        tabsRow.style.gap = "8px";
+
+        const createTabButton = (label, source) => {
+            const btn = document.createElement("button");
+            btn.textContent = label;
+            btn.style.border = "1px solid rgba(120, 180, 255, 0.55)";
+            btn.style.background = "rgba(10,22,48,0.65)";
+            btn.style.color = "#eaf6ff";
+            btn.style.padding = "7px 12px";
+            btn.style.borderRadius = "9px";
+            btn.style.cursor = "pointer";
+            btn.style.fontWeight = "700";
+            btn.addEventListener("click", async () => {
+                activeSource = source;
+                updateTabStyles();
+                await renderLayouts(searchInput.value);
+            });
+            return btn;
+        };
+
+        const localTab = createTabButton("Local", "local");
+        const publicTab = createTabButton("Public", "public");
+        tabsRow.appendChild(localTab);
+        tabsRow.appendChild(publicTab);
+
+        const updateTabStyles = () => {
+            const activeStyle = "linear-gradient(135deg, rgba(33, 180, 118, 0.45), rgba(41, 225, 132, 0.25))";
+            const inactiveStyle = "rgba(10,22,48,0.65)";
+            localTab.style.background = activeSource === "local" ? activeStyle : inactiveStyle;
+            publicTab.style.background = activeSource === "public" ? activeStyle : inactiveStyle;
+        };
+        updateTabStyles();
+
+        const searchInput = document.createElement("input");
+        searchInput.type = "text";
+        searchInput.placeholder = "Search base layout...";
+        searchInput.style.width = "100%";
+        searchInput.style.marginTop = "10px";
+        searchInput.style.height = "38px";
+        searchInput.style.borderRadius = "10px";
+        searchInput.style.border = "1px solid rgba(120, 180, 255, 0.55)";
+        searchInput.style.background = "rgba(8,18,40,0.65)";
+        searchInput.style.color = "#eaf6ff";
+        searchInput.style.padding = "0 12px";
+        searchInput.style.outline = "none";
+        searchInput.style.boxSizing = "border-box";
 
         const list = document.createElement("div");
         list.style.marginTop = "12px";
@@ -2978,16 +3072,57 @@ export default class UIManager {
         list.style.gap = "10px";
         list.style.paddingRight = "4px";
 
-        if (layouts.length === 0) {
-            const empty = document.createElement("div");
-            empty.textContent = "No saved layouts yet.";
-            empty.style.padding = "14px";
-            empty.style.border = "1px dashed rgba(120, 180, 255, 0.45)";
-            empty.style.borderRadius = "10px";
-            empty.style.opacity = "0.9";
-            list.appendChild(empty);
-        } else {
-            layouts.forEach((layout) => {
+        const normalizeLayout = (layout) => ({
+            id: layout.id,
+            name: layout.name || "Unnamed Base",
+            snapshot: layout.snapshot || null,
+            createdAt: layout.createdAt || layout.created_at || null,
+            authorName: layout.author_name || "",
+            buildings: Array.isArray(layout.buildings)
+                ? layout.buildings
+                : (Array.isArray(layout?.layout_json?.buildings) ? layout.layout_json.buildings : [])
+        });
+
+        const renderLayouts = async (queryText = "") => {
+            list.innerHTML = "";
+            const query = (queryText || "").trim();
+            let filtered = [];
+
+            if (activeSource === "public") {
+                const response = await fetchPublicBaseLayouts(query, 40);
+                if (!response.success) {
+                    const errorInfo = document.createElement("div");
+                    errorInfo.textContent = "Could not load public bases.";
+                    errorInfo.style.padding = "14px";
+                    errorInfo.style.border = "1px dashed rgba(255, 140, 140, 0.45)";
+                    errorInfo.style.borderRadius = "10px";
+                    errorInfo.style.opacity = "0.9";
+                    list.appendChild(errorInfo);
+                    return;
+                }
+                publicLayouts = (response.data || []).map(normalizeLayout);
+                filtered = publicLayouts;
+            } else {
+                const q = query.toLowerCase();
+                filtered = !q
+                    ? localLayouts.map(normalizeLayout)
+                    : localLayouts.map(normalizeLayout).filter(layout => layout.name.toLowerCase().includes(q));
+            }
+
+            if (filtered.length === 0) {
+                const empty = document.createElement("div");
+                empty.textContent = (activeSource === "local" ? localLayouts.length : publicLayouts.length) === 0
+                    ? "No saved layouts yet."
+                    : "No layouts match your search.";
+                empty.style.padding = "14px";
+                empty.style.border = "1px dashed rgba(120, 180, 255, 0.45)";
+                empty.style.borderRadius = "10px";
+                empty.style.opacity = "0.9";
+                list.appendChild(empty);
+                return;
+            }
+
+            filtered.forEach((layout) => {
                 const item = document.createElement("div");
                 item.style.display = "grid";
                 item.style.gridTemplateColumns = "180px 1fr auto";
@@ -3024,7 +3159,8 @@ export default class UIManager {
                 const meta = document.createElement("div");
                 const created = layout.createdAt ? new Date(layout.createdAt).toLocaleString() : "Unknown date";
                 const count = Array.isArray(layout.buildings) ? layout.buildings.length : 0;
-                meta.textContent = `${count} buildings • ${created}`;
+                const author = layout.authorName ? ` by ${layout.authorName}` : "";
+                meta.textContent = `${count} buildings • ${created}${author}`;
                 meta.style.marginTop = "6px";
                 meta.style.fontSize = "12px";
                 meta.style.opacity = "0.86";
@@ -3049,28 +3185,73 @@ export default class UIManager {
                     this.core.buildingManager.loadBaseLayout(layout);
                 });
 
-                const deleteBtn = document.createElement("button");
-                deleteBtn.textContent = "Delete";
-                deleteBtn.style.border = "1px solid rgba(255, 130, 130, 0.65)";
-                deleteBtn.style.background = "rgba(120, 36, 36, 0.25)";
-                deleteBtn.style.color = "#ffd6d6";
-                deleteBtn.style.padding = "8px 12px";
-                deleteBtn.style.borderRadius = "9px";
-                deleteBtn.style.cursor = "pointer";
-                deleteBtn.addEventListener("click", () => {
-                    const remaining = this.getSavedBaseLayouts().filter(item => item.id !== layout.id);
-                    this.setSavedBaseLayouts(remaining);
-                    this.showLoadBaseLayoutDialog();
-                });
-
                 actions.appendChild(loadBtn);
-                actions.appendChild(deleteBtn);
+                if (activeSource === "local") {
+                    const publishBtn = document.createElement("button");
+                    publishBtn.textContent = "Publish";
+                    publishBtn.style.border = "1px solid rgba(120, 205, 255, 0.7)";
+                    publishBtn.style.background = "linear-gradient(135deg, rgba(43, 122, 255, 0.5), rgba(72, 184, 255, 0.35))";
+                    publishBtn.style.color = "#eaf6ff";
+                    publishBtn.style.padding = "8px 12px";
+                    publishBtn.style.borderRadius = "9px";
+                    publishBtn.style.cursor = "pointer";
+                    publishBtn.style.fontWeight = "700";
+                    publishBtn.addEventListener("click", async () => {
+                        publishBtn.disabled = true;
+                        const oldText = publishBtn.textContent;
+                        publishBtn.textContent = "Publishing...";
+                        try {
+                            const userId = this.core.networkManager?.userId || null;
+                            const authorName = this.core.gameManager?.player?.name || this.core.networkManager?.userData?.nickname || "Guest";
+                            const result = await publishBaseLayout({
+                                userId,
+                                authorName,
+                                name: layout.name,
+                                snapshot: layout.snapshot,
+                                buildings: layout.buildings,
+                                isPublic: true
+                            });
+                            if (result?.success) {
+                                this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
+                            } else {
+                                this.addChatMessage("System", "Could not publish base (check DB table/config).", "#ffcc66");
+                            }
+                        } catch (error) {
+                            this.addChatMessage("System", "Could not publish base (network error).", "#ffcc66");
+                        } finally {
+                            publishBtn.disabled = false;
+                            publishBtn.textContent = oldText;
+                        }
+                    });
+
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.textContent = "Delete";
+                    deleteBtn.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+                    deleteBtn.style.background = "rgba(120, 36, 36, 0.25)";
+                    deleteBtn.style.color = "#ffd6d6";
+                    deleteBtn.style.padding = "8px 12px";
+                    deleteBtn.style.borderRadius = "9px";
+                    deleteBtn.style.cursor = "pointer";
+                    deleteBtn.addEventListener("click", () => {
+                        const remaining = this.getSavedBaseLayouts().filter(item => item.id !== layout.id);
+                        this.setSavedBaseLayouts(remaining);
+                        this.showLoadBaseLayoutDialog();
+                    });
+                    actions.appendChild(publishBtn);
+                    actions.appendChild(deleteBtn);
+                }
+
                 item.appendChild(preview);
                 item.appendChild(info);
                 item.appendChild(actions);
                 list.appendChild(item);
             });
-        }
+        };
+
+        searchInput.addEventListener("input", async () => {
+            await renderLayouts(searchInput.value);
+        });
+        renderLayouts();
 
         const closeRow = document.createElement("div");
         closeRow.style.marginTop = "12px";
@@ -3090,11 +3271,14 @@ export default class UIManager {
 
         card.appendChild(title);
         card.appendChild(subtitle);
+        card.appendChild(tabsRow);
+        card.appendChild(searchInput);
         card.appendChild(list);
         card.appendChild(closeRow);
         overlay.appendChild(card);
         document.body.appendChild(overlay);
         this.baseLayoutDialogElement = overlay;
+        searchInput.focus();
     }
 
     showRelocateBasePrompt(cost, onConfirm, onCancel) {

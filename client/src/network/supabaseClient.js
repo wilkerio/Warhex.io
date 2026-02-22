@@ -296,3 +296,61 @@ export async function purchaseSkin(userId, skinName, price) {
         return { success: false, error };
     }
 }
+
+const BASE_LAYOUTS_TABLE = "base_layouts";
+
+export async function publishBaseLayout({ userId, authorName, name, snapshot, buildings, isPublic = true }) {
+    try {
+        const payload = {
+            user_id: userId || null,
+            author_name: authorName || "Guest",
+            name: (name || "Unnamed Base").trim(),
+            snapshot: snapshot || null,
+            layout_json: { buildings: Array.isArray(buildings) ? buildings : [] },
+            is_public: Boolean(isPublic)
+        };
+
+        const { data, error } = await supabase
+            .from(BASE_LAYOUTS_TABLE)
+            .insert(payload)
+            .select("id, name, author_name, snapshot, created_at, layout_json, is_public")
+            .single();
+
+        if (error) {
+            console.error("Error publishing base layout:", error);
+            return { success: false, error };
+        }
+
+        return { success: true, data };
+    } catch (error) {
+        console.error("Error in publishBaseLayout:", error);
+        return { success: false, error };
+    }
+}
+
+export async function fetchPublicBaseLayouts(searchText = "", limit = 30) {
+    try {
+        let query = supabase
+            .from(BASE_LAYOUTS_TABLE)
+            .select("id, name, author_name, snapshot, created_at, layout_json")
+            .eq("is_public", true)
+            .order("created_at", { ascending: false })
+            .limit(Math.max(1, Math.min(100, limit)));
+
+        const term = (searchText || "").trim();
+        if (term) {
+            query = query.or(`name.ilike.%${term}%,author_name.ilike.%${term}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) {
+            console.error("Error fetching public base layouts:", error);
+            return { success: false, error, data: [] };
+        }
+
+        return { success: true, data: data || [] };
+    } catch (error) {
+        console.error("Error in fetchPublicBaseLayouts:", error);
+        return { success: false, error, data: [] };
+    }
+}
