@@ -87,6 +87,88 @@ func (u *Unit) IsExplosiv() bool {
 	return u.ExplosionRadius > 0
 }
 
+func projectPointOutsideArenaRect(pos PositionFloat, minX, maxX, minY, maxY, push float32) PositionFloat {
+	leftDist := pos.X - minX
+	rightDist := maxX - pos.X
+	topDist := pos.Y - minY
+	bottomDist := maxY - pos.Y
+
+	nearest := leftDist
+	edge := byte(0) // 0=left,1=right,2=top,3=bottom
+	if rightDist < nearest {
+		nearest = rightDist
+		edge = 1
+	}
+	if topDist < nearest {
+		nearest = topDist
+		edge = 2
+	}
+	if bottomDist < nearest {
+		edge = 3
+	}
+
+	switch edge {
+	case 0:
+		pos.X = minX - push
+	case 1:
+		pos.X = maxX + push
+	case 2:
+		pos.Y = minY - push
+	default:
+		pos.Y = maxY + push
+	}
+
+	return pos
+}
+
+func clampPositionOutsideForeignDuelArenas(pos PositionFloat, ownerID ID) PositionFloat {
+	const edgePadding float32 = 18
+	const pushOutside float32 = 2
+
+	State.RLock()
+	defer State.RUnlock()
+
+	for _, player := range State.Players {
+		if player == nil {
+			continue
+		}
+
+		player.RLock()
+		inDuel := player.InDuel
+		arena := player.DuelArena
+		opponentID := player.DuelOpponentID
+		duelPlayerID := player.ID
+		player.RUnlock()
+
+		if !inDuel || opponentID == 0 {
+			continue
+		}
+		// Process each duel arena once per pair.
+		if duelPlayerID > opponentID {
+			continue
+		}
+		// Duel participants can stay inside their own arena.
+		if ownerID == duelPlayerID || ownerID == opponentID {
+			continue
+		}
+
+		minX := arena.MinX + edgePadding
+		maxX := arena.MaxX - edgePadding
+		minY := arena.MinY + edgePadding
+		maxY := arena.MaxY - edgePadding
+		if minX > maxX || minY > maxY {
+			continue
+		}
+
+		inside := pos.X >= minX && pos.X <= maxX && pos.Y >= minY && pos.Y <= maxY
+		if inside {
+			pos = projectPointOutsideArenaRect(pos, minX, maxX, minY, maxY, pushOutside)
+		}
+	}
+
+	return pos
+}
+
 // Ease-out function: starts fast and slows down as it approaches the target.
 func easeOut(t float64) float64 {
 	return 1 - math.Pow(1-t, 3)
@@ -146,6 +228,7 @@ func (u *Unit) UpdatePosition(deltaTime time.Duration, units []*Unit) bool {
 	// Keep duel units inside protected arena to avoid crossing into forbidden combat zones.
 	if u.Player != nil {
 		u.Player.RLock()
+		ownerID := u.Player.ID
 		inDuel := u.Player.InDuel
 		arena := u.Player.DuelArena
 		u.Player.RUnlock()
@@ -180,6 +263,9 @@ func (u *Unit) UpdatePosition(deltaTime time.Duration, units []*Unit) bool {
 					u.TargetPosition.Y = maxY
 				}
 			}
+		} else {
+			u.Position = clampPositionOutsideForeignDuelArenas(u.Position, ownerID)
+			u.TargetPosition = clampPositionOutsideForeignDuelArenas(u.TargetPosition, ownerID)
 		}
 	}
 	return true

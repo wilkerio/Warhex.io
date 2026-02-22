@@ -383,60 +383,60 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	dy := float64(position.Y - float32(basePosition.Y))
 	distance := math.Sqrt(dx*dx + dy*dy)
 
-		// Define maximum and minimum allowed distances (radii)
-		maxRadius := game.PLAYER_MAX_BUILDING_RADIUS
-		minRadius := game.PLAYER_MIN_BUILDING_RADIUS
-		maxRadiusNeutralBase := game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
-		minRadiusNeutralBase := game.NEUTRAL_BASE_MIN_BUILDING_RADIUS
-		maxRadiusByType := maxRadius
-		maxRadiusNeutralByType := maxRadiusNeutralBase
+	// Define maximum and minimum allowed distances (radii)
+	maxRadius := game.PLAYER_MAX_BUILDING_RADIUS
+	minRadius := game.PLAYER_MIN_BUILDING_RADIUS
+	maxRadiusNeutralBase := game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
+	minRadiusNeutralBase := game.NEUTRAL_BASE_MIN_BUILDING_RADIUS
+	maxRadiusByType := maxRadius
+	maxRadiusNeutralByType := maxRadiusNeutralBase
 
-		switch buildingType {
-		case game.BARRACKS:
-			minRadius = game.PLAYER_MAX_BUILDING_RADIUS
-			minRadiusNeutralBase = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
-			// Barracks fixed slightly outside the ring.
-			maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
-			maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
-		case game.WALL:
-			size := game.GetBuildingSize(buildingType)
-			minRadius += size
-			minRadiusNeutralBase += size
-			// Wall can be placed freely and a bit outside the ring.
-			maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 16
-			maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 16
-		case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.PORTAL, game.GENERATOR, game.HOUSE:
-			// These must remain inside ring: building edge cannot cross max radius.
-			size := game.GetBuildingSize(buildingType)
-			minRadius += size
-			minRadiusNeutralBase += size
-			maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS - size
-			maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS - size
-		default:
-			// Circular shape (Wall, turret, etc.)
-			size := game.GetBuildingSize(buildingType)
-			minRadius += size
-			minRadiusNeutralBase += size
-		}
+	switch buildingType {
+	case game.BARRACKS:
+		minRadius = game.PLAYER_MAX_BUILDING_RADIUS
+		minRadiusNeutralBase = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
+		// Barracks fixed slightly outside the ring.
+		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
+		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
+	case game.WALL:
+		size := game.GetBuildingSize(buildingType)
+		minRadius += size
+		minRadiusNeutralBase += size
+		// Wall can be placed freely and a bit outside the ring.
+		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 16
+		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 16
+	case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.PORTAL, game.GENERATOR, game.HOUSE:
+		// These must remain inside ring: building edge cannot cross max radius.
+		size := game.GetBuildingSize(buildingType)
+		minRadius += size
+		minRadiusNeutralBase += size
+		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS - size
+		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS - size
+	default:
+		// Circular shape (Wall, turret, etc.)
+		size := game.GetBuildingSize(buildingType)
+		minRadius += size
+		minRadiusNeutralBase += size
+	}
 
-		tolerance := 4
-		if buildingType == game.BARRACKS {
-			// Extra buffer for fixed outer-ring placement.
-			tolerance = 12
-		}
+	tolerance := 4
+	if buildingType == game.BARRACKS {
+		// Extra buffer for fixed outer-ring placement.
+		tolerance = 12
+	}
 
 	// Validation for building placement
 	isPlayerRadiusValid := false
 
-		if buildingType == game.BARRACKS {
-			// Walls and barracks must be at the border
-			isPlayerRadiusValid = uint16(math.Floor(distance)) >= uint16(maxRadiusByType-tolerance) &&
-				uint16(math.Ceil(distance)) <= uint16(maxRadiusByType+tolerance)
-		} else {
-			// Other buildings can be within the valid range, including the border
-			isPlayerRadiusValid = !(uint16(math.Floor(distance)) > uint16(maxRadiusByType+tolerance) ||
-				uint16(math.Ceil(distance)) < uint16(minRadius-tolerance))
-		}
+	if buildingType == game.BARRACKS {
+		// Walls and barracks must be at the border
+		isPlayerRadiusValid = uint16(math.Floor(distance)) >= uint16(maxRadiusByType-tolerance) &&
+			uint16(math.Ceil(distance)) <= uint16(maxRadiusByType+tolerance)
+	} else {
+		// Other buildings can be within the valid range, including the border
+		isPlayerRadiusValid = !(uint16(math.Floor(distance)) > uint16(maxRadiusByType+tolerance) ||
+			uint16(math.Ceil(distance)) < uint16(minRadius-tolerance))
+	}
 
 	player.RLock()
 	neutrals := make([]*game.NeutralBase, 0, len(player.CapturedNeutralBases))
@@ -453,7 +453,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 
 			// Calculate the clamped minimum and maximum distances
 			minDistance := float64(minRadiusNeutralBase - tolerance)
-				maxDistance := float64(maxRadiusNeutralByType + tolerance)
+			maxDistance := float64(maxRadiusNeutralByType + tolerance)
 
 			// Check if the distance is valid within the neutral base radii
 			if distanceToNeutralBase >= minDistance && distanceToNeutralBase <= maxDistance {
@@ -728,31 +728,31 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 			player.AddUnitSpawning(building, wasUnitSpawningActive)
 		case game.SIMPLE_TURRET, game.SNIPER_TURRET:
 			base.AddBulletSpawning(building)
-			case game.ARMORY:
-				// Armory upgrades are powerups and must stack.
-				if buildingVariant == game.BuildingVariant(1) {
-					player.ApplySoldierArmorUpgrade(true)
-				}
-				if buildingVariant == game.BuildingVariant(2) ||
-					buildingVariant == game.BuildingVariant(4) ||
-					buildingVariant == game.BuildingVariant(6) ||
-					buildingVariant == game.BuildingVariant(8) {
-					player.ApplyTankBoosterUpgrade(true)
-				}
-				if buildingVariant == game.BuildingVariant(3) ||
-					buildingVariant == game.BuildingVariant(4) ||
-					buildingVariant == game.BuildingVariant(7) ||
-					buildingVariant == game.BuildingVariant(8) {
-					player.ApplyTankCannonUpgrade(true)
-				}
-				if buildingVariant == game.BuildingVariant(5) ||
-					buildingVariant == game.BuildingVariant(6) ||
-					buildingVariant == game.BuildingVariant(7) ||
-					buildingVariant == game.BuildingVariant(8) {
-					player.ApplyTankCloakUpgrade(true)
-				}
+		case game.ARMORY:
+			// Armory upgrades are powerups and must stack.
+			if buildingVariant == game.BuildingVariant(1) {
+				player.ApplySoldierArmorUpgrade(true)
+			}
+			if buildingVariant == game.BuildingVariant(2) ||
+				buildingVariant == game.BuildingVariant(4) ||
+				buildingVariant == game.BuildingVariant(6) ||
+				buildingVariant == game.BuildingVariant(8) {
+				player.ApplyTankBoosterUpgrade(true)
+			}
+			if buildingVariant == game.BuildingVariant(3) ||
+				buildingVariant == game.BuildingVariant(4) ||
+				buildingVariant == game.BuildingVariant(7) ||
+				buildingVariant == game.BuildingVariant(8) {
+				player.ApplyTankCannonUpgrade(true)
+			}
+			if buildingVariant == game.BuildingVariant(5) ||
+				buildingVariant == game.BuildingVariant(6) ||
+				buildingVariant == game.BuildingVariant(7) ||
+				buildingVariant == game.BuildingVariant(8) {
+				player.ApplyTankCloakUpgrade(true)
 			}
 		}
+	}
 
 	// Update the player's last activity timestamp
 	player.SetLastActivity()
@@ -866,6 +866,7 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 	const mapEdgeSafetyMargin int16 = 120
 	targetPosition = game.ClampPositionIntToMap(targetPosition, mapEdgeSafetyMargin)
 	targetPositionFloat := clampTargetToDuelArena(player, game.IntToFloat(targetPosition))
+	targetPositionFloat = clampTargetAgainstForeignDuelArenas(player, targetPositionFloat)
 	targetPosition = game.FloatToInt(targetPositionFloat)
 	offset += 4
 
@@ -998,10 +999,11 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 					targetX += offsetX
 					targetY += offsetY
 
-					// Set the target position for the unit
-						clampedTarget := game.ClampPositionFloatToMap(game.PositionFloat{X: targetX, Y: targetY}, float32(mapEdgeSafetyMargin))
-						clampedTarget = clampTargetToDuelArena(player, clampedTarget)
-						unitsToUpdate[totalUnits].SetTargetPosition(clampedTarget)
+					// Set the target position for the unit.
+					clampedTarget := game.ClampPositionFloatToMap(game.PositionFloat{X: targetX, Y: targetY}, float32(mapEdgeSafetyMargin))
+					clampedTarget = clampTargetToDuelArena(player, clampedTarget)
+					clampedTarget = clampTargetAgainstForeignDuelArenas(player, clampedTarget)
+					unitsToUpdate[totalUnits].SetTargetPosition(clampedTarget)
 
 					// Get the current position of the unit
 					currentPosition := unitsToUpdate[totalUnits].Position
@@ -1192,9 +1194,6 @@ func handleBuyRelocateBase(conn *websocket.Conn, payload []byte) {
 	if player.InDuel {
 		return
 	}
-	if hasActiveUnits(player) {
-		return
-	}
 
 	now := time.Now()
 	canRelocate, remaining := player.CanRelocateNow(now)
@@ -1323,8 +1322,8 @@ type PlayerMessageState struct {
 }
 
 var (
-	messageState = make(map[game.ID]*PlayerMessageState)
-	messageMx    sync.Mutex
+	messageState        = make(map[game.ID]*PlayerMessageState)
+	messageMx           sync.Mutex
 	x1ChallengeRequests = make(map[game.ID]game.ID) // target -> challenger
 	x1ChallengeMx       sync.Mutex
 )
@@ -1433,9 +1432,16 @@ const (
 const x1TargetUnderAttackWindow = 5 * time.Minute
 
 func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
+	if challenger == nil || target == nil || challenger.Base == nil || target.Base == nil {
+		return false
+	}
+
 	dx := float64(target.Base.Position.X - challenger.Base.Position.X)
-	dy := float64(target.Base.Position.Y - challenger.Base.Position.Y)
-	return math.Abs(dx) >= math.Abs(dy)
+	dy := math.Abs(float64(target.Base.Position.Y - challenger.Base.Position.Y))
+
+	// Must be aligned on the same horizontal lane (left/right), not diagonal.
+	const axisTolerance = 250.0
+	return dy <= axisTolerance && math.Abs(dx) > axisTolerance
 }
 
 func hasPendingX1ForPlayerUnsafe(playerID game.ID) bool {
@@ -1445,6 +1451,17 @@ func hasPendingX1ForPlayerUnsafe(playerID game.ID) bool {
 		}
 	}
 	return false
+}
+
+func clearPendingX1ForPlayersUnsafe(playerIDs ...game.ID) {
+	for targetID, challengerID := range x1ChallengeRequests {
+		for _, playerID := range playerIDs {
+			if targetID == playerID || challengerID == playerID {
+				delete(x1ChallengeRequests, targetID)
+				break
+			}
+		}
+	}
 }
 
 func isInProtectedX1(player *game.Player) bool {
@@ -1491,6 +1508,92 @@ func clampTargetToDuelArena(player *game.Player, target game.PositionFloat) game
 		target.Y = minY
 	} else if target.Y > maxY {
 		target.Y = maxY
+	}
+
+	return target
+}
+
+func projectPointOutsideRect(target game.PositionFloat, minX, maxX, minY, maxY, push float32) game.PositionFloat {
+	leftDist := target.X - minX
+	rightDist := maxX - target.X
+	topDist := target.Y - minY
+	bottomDist := maxY - target.Y
+
+	nearest := leftDist
+	edge := byte(0) // 0=left,1=right,2=top,3=bottom
+	if rightDist < nearest {
+		nearest = rightDist
+		edge = 1
+	}
+	if topDist < nearest {
+		nearest = topDist
+		edge = 2
+	}
+	if bottomDist < nearest {
+		edge = 3
+	}
+
+	switch edge {
+	case 0:
+		target.X = minX - push
+	case 1:
+		target.X = maxX + push
+	case 2:
+		target.Y = minY - push
+	default:
+		target.Y = maxY + push
+	}
+	return target
+}
+
+func clampTargetAgainstForeignDuelArenas(player *game.Player, target game.PositionFloat) game.PositionFloat {
+	if player == nil {
+		return target
+	}
+
+	playerID := player.ID
+	const edgePadding float32 = 18
+	const pushOutside float32 = 2
+
+	game.State.RLock()
+	defer game.State.RUnlock()
+
+	for _, p := range game.State.Players {
+		if p == nil {
+			continue
+		}
+
+		p.RLock()
+		inDuel := p.InDuel
+		arena := p.DuelArena
+		opponentID := p.DuelOpponentID
+		ownerID := p.ID
+		p.RUnlock()
+
+		if !inDuel || opponentID == 0 {
+			continue
+		}
+		// Process each duel arena once per pair.
+		if ownerID > opponentID {
+			continue
+		}
+		// Duel participants are allowed inside their own arena.
+		if playerID == ownerID || playerID == opponentID {
+			continue
+		}
+
+		minX := arena.MinX + edgePadding
+		maxX := arena.MaxX - edgePadding
+		minY := arena.MinY + edgePadding
+		maxY := arena.MaxY - edgePadding
+		if minX > maxX || minY > maxY {
+			continue
+		}
+
+		inside := target.X >= minX && target.X <= maxX && target.Y >= minY && target.Y <= maxY
+		if inside {
+			target = projectPointOutsideRect(target, minX, maxX, minY, maxY, pushOutside)
+		}
 	}
 
 	return target
@@ -1551,6 +1654,17 @@ func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
 	x1ChallengeRequests[target.ID] = challenger.ID
 	x1ChallengeMx.Unlock()
 
+	// Re-check duel state right before notifying target to avoid race with duel start.
+	if isInProtectedX1(challenger) || isInProtectedX1(target) {
+		x1ChallengeMx.Lock()
+		if currentChallengerID, exists := x1ChallengeRequests[target.ID]; exists && currentChallengerID == challenger.ID {
+			delete(x1ChallengeRequests, target.ID)
+		}
+		x1ChallengeMx.Unlock()
+		sendX1ChallengeResult(challenger, x1ResultUnavailable, target)
+		return
+	}
+
 	sendX1ChallengeReceived(target, challenger)
 	sendX1ChallengeResult(challenger, x1ResultSent, target)
 }
@@ -1604,6 +1718,10 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 	}
 
 	if accepted {
+		x1ChallengeMx.Lock()
+		clearPendingX1ForPlayersUnsafe(challenger.ID, targetPlayer.ID)
+		x1ChallengeMx.Unlock()
+
 		arena := game.StartProtectedDuel(challenger, targetPlayer)
 		sendX1ChallengeResult(challenger, x1ResultAccepted, targetPlayer)
 		sendX1ChallengeResult(targetPlayer, x1ResultAccepted, challenger)

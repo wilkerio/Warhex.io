@@ -40,6 +40,8 @@ export class BuildingManager {
         this.autogensTimer = null;
         this.autogensRunning = false;
         this.autoBuildMode = null;
+        this.baseLoadTimer = null;
+        this.baseLoadRunning = false;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -79,9 +81,8 @@ export class BuildingManager {
         this.selectedBuildings = [];
     }
 
-    hasActiveOwnedUnits () {
-        const units = this.core.gameManager.player?.units || [];
-        return units.some(unit => unit && !unit.removeFlag);
+    hasSelectedOwnedUnits () {
+        return Boolean(this.core.unitManager?.hasSelectedUnits?.());
     }
 
     isPortalTooCloseToAnyBase (position, portalSize) {
@@ -324,39 +325,6 @@ export class BuildingManager {
                 }, null, onDestroyClicked);
             }
         } else {
-            if (checkForBuildingClicked) {
-                const clickedEmptyBaseSlot = this.getClickedRelocationSlot(mousePosition);
-                if (clickedEmptyBaseSlot) {
-                    if (this.hasActiveOwnedUnits()) {
-                        this.core.uiManager.addChatMessage(
-                            "System",
-                            "You must have no active units to relocate your base.",
-                            "#ffcc66"
-                        );
-                        return;
-                    }
-                    const relocateCost = 4000;
-                    this.core.uiManager.showRelocateBasePrompt(
-                        relocateCost,
-                        () => {
-                            const currentPower = this.core.gameManager.resources.power.current;
-                            if (currentPower < relocateCost) {
-                                this.core.uiManager.addChatMessage(
-                                    "System",
-                                    "Not enough power to relocate base.",
-                                    "#ffcc66"
-                                );
-                                return;
-                            }
-                            this.relocateBaseMode = false;
-                            this.core.uiManager.hideUpgrades();
-                            this.core.networkManager.sendBuyRelocateBase(clickedEmptyBaseSlot);
-                        },
-                        () => { }
-                    );
-                    return;
-                }
-            }
 
             const minBuildingRadius = player.buildingRadius.min;
             const isWithinCoreRadius = Math.sqrt(
@@ -439,8 +407,9 @@ export class BuildingManager {
                         }
 
                         const dx = enemy.position.x - localPlayer.position.x;
-                        const dy = enemy.position.y - localPlayer.position.y;
-                        const isLeftOrRight = Math.abs(dx) >= Math.abs(dy);
+                        const dy = Math.abs(enemy.position.y - localPlayer.position.y);
+                        const axisTolerance = 250;
+                        const isLeftOrRight = dy <= axisTolerance && Math.abs(dx) > axisTolerance;
 
                         if (!isLeftOrRight) {
                             this.core.uiManager.addChatMessage(
@@ -697,10 +666,10 @@ export class BuildingManager {
         if (this.relocateBaseMode) {
             const clickedEmptyBaseSlot = this.getClickedRelocationSlot(mousePosition);
             if (clickedEmptyBaseSlot) {
-                if (this.hasActiveOwnedUnits()) {
+                if (this.hasSelectedOwnedUnits()) {
                     this.core.uiManager.addChatMessage(
                         "System",
-                        "You must have no active units to relocate your base.",
+                        "Deselect your units before relocating your base.",
                         "#ffcc66"
                     );
                     return;
@@ -724,6 +693,38 @@ export class BuildingManager {
                     () => { }
                 );
             }
+            return;
+        }
+
+        const clickedEmptyBaseSlot = this.getClickedRelocationSlot(mousePosition);
+        if (clickedEmptyBaseSlot) {
+            if (this.hasSelectedOwnedUnits()) {
+                this.core.uiManager.addChatMessage(
+                    "System",
+                    "Deselect your units before relocating your base.",
+                    "#ffcc66"
+                );
+                return;
+            }
+
+            const relocateCost = 4000;
+            this.core.uiManager.showRelocateBasePrompt(
+                relocateCost,
+                () => {
+                    const currentPower = this.core.gameManager.resources.power.current;
+                    if (currentPower < relocateCost) {
+                        this.core.uiManager.addChatMessage(
+                            "System",
+                            "Not enough power to relocate base.",
+                            "#ffcc66"
+                        );
+                        return;
+                    }
+                    this.core.networkManager.sendBuyRelocateBase(clickedEmptyBaseSlot);
+                    this.relocateBaseMode = false;
+                },
+                () => { }
+            );
             return;
         }
 
@@ -765,10 +766,10 @@ export class BuildingManager {
             const currentPower = this.core.gameManager.resources.power.current;
 
             if (data.name === "Relocate Base") {
-                if (this.hasActiveOwnedUnits()) {
+                if (this.hasSelectedOwnedUnits()) {
                     this.core.uiManager.addChatMessage(
                         "System",
-                        "You must have no active units to relocate your base.",
+                        "Deselect your units before relocating your base.",
                         "#ffcc66"
                     );
                     return;
@@ -780,18 +781,13 @@ export class BuildingManager {
                 this.core.uiManager.showRelocateBasePrompt(
                     4000,
                     () => {
-                        const latestPower = this.core.gameManager.resources.power.current;
-                        if (latestPower < 4000) {
-                            this.core.uiManager.addChatMessage(
-                                "System",
-                                "Not enough power to relocate base.",
-                                "#ffcc66"
-                            );
-                            return;
-                        }
-                        this.relocateBaseMode = false;
+                        this.relocateBaseMode = true;
                         this.core.uiManager.hideUpgrades();
-                        this.core.networkManager.sendBuyRelocateBase();
+                        this.core.uiManager.addChatMessage(
+                            "System",
+                            "Relocation mode enabled. Click an empty slot to relocate your base.",
+                            "#60c1ff"
+                        );
                     },
                     () => { }
                 );
@@ -854,6 +850,138 @@ export class BuildingManager {
         }
         this.autogensRunning = false;
         this.autoBuildMode = null;
+    }
+
+    exportCurrentBaseLayout (layoutName, snapshotDataUrl = null) {
+        const player = this.core.gameManager.player;
+        if (!player) return null;
+
+        const basePos = player.position;
+        const buildings = (player.buildings || [])
+            .filter(building => building && !building.removeFlag)
+            .map(building => ({
+                type: building.type,
+                variant: building.variant ?? 0,
+                dx: Math.round((building.position.x - basePos.x) * 10) / 10,
+                dy: Math.round((building.position.y - basePos.y) * 10) / 10,
+            }))
+            .sort((a, b) => (a.dx * a.dx + a.dy * a.dy) - (b.dx * b.dx + b.dy * b.dy));
+
+        return {
+            id: `base_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+            name: (layoutName || "My Base").trim() || "My Base",
+            createdAt: Date.now(),
+            snapshot: snapshotDataUrl || null,
+            buildings
+        };
+    }
+
+    stopBaseLayoutLoad () {
+        if (this.baseLoadTimer) {
+            clearInterval(this.baseLoadTimer);
+            this.baseLoadTimer = null;
+        }
+        this.baseLoadRunning = false;
+    }
+
+    loadBaseLayout (layout) {
+        const player = this.core.gameManager.player;
+        if (!player || !layout || !Array.isArray(layout.buildings)) {
+            this.core.uiManager.addChatMessage("System", "Invalid base layout.", "#ffcc66");
+            return;
+        }
+
+        if (this.baseLoadRunning) {
+            this.stopBaseLayoutLoad();
+        }
+
+        const queue = layout.buildings
+            .filter(item => item && Number.isFinite(item.type) && Number.isFinite(item.dx) && Number.isFinite(item.dy))
+            .map(item => ({ ...item }))
+            .sort((a, b) => (a.dx * a.dx + a.dy * a.dy) - (b.dx * b.dx + b.dy * b.dy));
+
+        if (queue.length === 0) {
+            this.core.uiManager.addChatMessage("System", "Layout has no buildings to load.", "#ffcc66");
+            return;
+        }
+
+        const collectAllUnits = () => {
+            const allUnits = [];
+            this.core.gameManager.players.forEach(p => allUnits.push(...(p.units || [])));
+            return allUnits;
+        };
+
+        const pendingBuildings = [];
+        let placed = 0;
+        let skipped = 0;
+        let index = 0;
+
+        this.baseLoadRunning = true;
+        this.core.uiManager.addChatMessage("System", `Loading base layout "${layout.name || "Base"}"...`, "#60c1ff");
+
+        this.baseLoadTimer = setInterval(() => {
+            if (!this.baseLoadRunning) return;
+
+            const livePlayer = this.core.gameManager.player;
+            if (!livePlayer) {
+                this.stopBaseLayoutLoad();
+                return;
+            }
+
+            if (index >= queue.length) {
+                this.stopBaseLayoutLoad();
+                this.core.uiManager.addChatMessage(
+                    "System",
+                    `Base loaded: ${placed} placed, ${skipped} skipped.`,
+                    placed > 0 ? "#60c1ff" : "#ffcc66"
+                );
+                return;
+            }
+
+            const item = queue[index++];
+            const type = item.type;
+            const details = getBuildingDetails(type);
+            const size = details?.size || 32;
+            const position = {
+                x: livePlayer.position.x + item.dx,
+                y: livePlayer.position.y + item.dy
+            };
+            const cost = this.getPlacementCost(type);
+
+            if (this.core.gameManager.resources.power.current < cost) {
+                skipped++;
+                return;
+            }
+
+            const allUnits = collectAllUnits();
+            if (!this.canAutoPlaceBuilding(livePlayer, position, allUnits, pendingBuildings, type, size)) {
+                skipped++;
+                return;
+            }
+
+            const ok = this.core.gameManager.increaseBuildingLimit(type);
+            if (!ok) {
+                skipped++;
+                return;
+            }
+
+            const BuildingClass = BuildingManager.getBuildingClassByType(type);
+            if (!BuildingClass) {
+                skipped++;
+                return;
+            }
+
+            this.core.networkManager.placeBuilding(type, position);
+            const predicted = this.prepareAutoPlacementBuilding(
+                new BuildingClass(livePlayer.color, position),
+                livePlayer,
+                position
+            );
+            livePlayer.setBuildingCache(predicted);
+            this.core.gameManager.subtractResources(cost);
+            pendingBuildings.push(predicted);
+            placed++;
+        }, 150);
     }
 
     placeExternalAtkArmory () {

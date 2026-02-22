@@ -17,10 +17,24 @@ export default class EventManager {
             this.core.inputManager.onMouseMove(event);
         });
         // Add mousedown and mouseup listeners
-        window.addEventListener("mousedown", (event) => this.core.inputManager.onMouseDown(event));
-        window.addEventListener("mouseup", (event) => this.core.inputManager.onMouseUp(event));
-        this.core.canvas.addEventListener("click", (event) => this.core.inputManager.onCanvasMouseClick(event));
+        window.addEventListener("mousedown", (event) => {
+            this.lastMouseEvent = event;
+            this.updateMousePosition(event);
+            this.core.inputManager.onMouseDown(event);
+        });
+        window.addEventListener("mouseup", (event) => {
+            this.lastMouseEvent = event;
+            this.updateMousePosition(event);
+            this.core.inputManager.onMouseUp(event);
+        });
+        this.core.canvas.addEventListener("click", (event) => {
+            this.lastMouseEvent = event;
+            this.updateMousePosition(event);
+            this.core.inputManager.onCanvasMouseClick(event);
+        });
         this.core.canvas.addEventListener("contextmenu", (event) => {
+            this.lastMouseEvent = event;
+            this.updateMousePosition(event);
             this.core.inputManager.onCanvasContextMenu(event);
             event.preventDefault();
         });

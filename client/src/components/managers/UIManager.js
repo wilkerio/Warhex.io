@@ -32,6 +32,7 @@ export default class UIManager {
         this.x1SendPromptElement = null;
         this.enemyCoreActionsElement = null;
         this.relocatePromptElement = null;
+        this.baseLayoutDialogElement = null;
         this.x1StatusElement = null;
         this.x1StatusInterval = null;
         
@@ -1736,7 +1737,7 @@ export default class UIManager {
         container.style.left = "50%";
         container.style.transform = "translateX(-50%)";
         container.style.display = "none";
-        container.style.width = "280px";
+        container.style.width = "560px";
         container.style.height = "46px";
         container.style.zIndex = "30";
         container.style.pointerEvents = "auto";
@@ -1764,7 +1765,7 @@ export default class UIManager {
         actionsPanel.style.position = "absolute";
         actionsPanel.style.left = "0";
         actionsPanel.style.top = "0";
-        actionsPanel.style.width = "280px";
+        actionsPanel.style.width = "560px";
         actionsPanel.style.height = "46px";
         actionsPanel.style.display = "none";
         actionsPanel.style.padding = "2px";
@@ -1774,46 +1775,41 @@ export default class UIManager {
         actionsPanel.style.background = "linear-gradient(180deg, rgba(20,36,88,0.78) 0%, rgba(10,20,58,0.78) 100%)";
         actionsPanel.style.boxShadow = "0 8px 22px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.08)";
         actionsPanel.style.backdropFilter = "blur(3px)";
-        actionsPanel.style.gap = "8px";
+        actionsPanel.style.gap = "6px";
         actionsPanel.style.alignItems = "center";
         actionsPanel.style.justifyContent = "center";
 
-        const autogensBtn = document.createElement("button");
-        autogensBtn.type = "button";
-        autogensBtn.textContent = "Autogens";
-        autogensBtn.style.flex = "1 1 0";
-        autogensBtn.style.maxWidth = "136px";
-        autogensBtn.style.height = "46px";
-        autogensBtn.style.padding = "0";
-        autogensBtn.style.border = "1px solid #5a8ee0";
-        autogensBtn.style.borderRadius = "12px";
-        autogensBtn.style.background = "linear-gradient(180deg, rgba(40,80,150,0.95) 0%, rgba(16,45,105,0.95) 100%)";
-        autogensBtn.style.color = "#d9e7ff";
-        autogensBtn.style.cursor = "pointer";
-        autogensBtn.style.fontWeight = "700";
-        autogensBtn.style.letterSpacing = "0.2px";
-        autogensBtn.style.userSelect = "none";
-        autogensBtn.addEventListener("click", () => {
+        const createActionButton = (label, onClick) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = label;
+            button.style.flex = "1 1 0";
+            button.style.maxWidth = "136px";
+            button.style.height = "46px";
+            button.style.padding = "0";
+            button.style.border = "1px solid #5a8ee0";
+            button.style.borderRadius = "12px";
+            button.style.background = "linear-gradient(180deg, rgba(40,80,150,0.95) 0%, rgba(16,45,105,0.95) 100%)";
+            button.style.color = "#d9e7ff";
+            button.style.cursor = "pointer";
+            button.style.fontWeight = "700";
+            button.style.letterSpacing = "0.2px";
+            button.style.userSelect = "none";
+            button.addEventListener("click", onClick);
+            return button;
+        };
+
+        const autogensBtn = createActionButton("Autogens", () => {
             this.core.buildingManager.autoPlaceGenerators();
         });
-
-        const externatkBtn = document.createElement("button");
-        externatkBtn.type = "button";
-        externatkBtn.textContent = "ExternaTK";
-        externatkBtn.style.flex = "1 1 0";
-        externatkBtn.style.maxWidth = "136px";
-        externatkBtn.style.height = "46px";
-        externatkBtn.style.padding = "0";
-        externatkBtn.style.border = "1px solid #5a8ee0";
-        externatkBtn.style.borderRadius = "12px";
-        externatkBtn.style.background = "linear-gradient(180deg, rgba(40,80,150,0.95) 0%, rgba(16,45,105,0.95) 100%)";
-        externatkBtn.style.color = "#d9e7ff";
-        externatkBtn.style.cursor = "pointer";
-        externatkBtn.style.fontWeight = "700";
-        externatkBtn.style.letterSpacing = "0.2px";
-        externatkBtn.style.userSelect = "none";
-        externatkBtn.addEventListener("click", () => {
+        const externatkBtn = createActionButton("ExternaTK", () => {
             this.core.buildingManager.placeExternalAtkArmory();
+        });
+        const saveBaseBtn = createActionButton("Save Base", () => {
+            this.showSaveBaseLayoutDialog();
+        });
+        const loadBaseBtn = createActionButton("Load Base", () => {
+            this.showLoadBaseLayoutDialog();
         });
 
         const showActions = () => {
@@ -1831,6 +1827,8 @@ export default class UIManager {
 
         actionsPanel.appendChild(autogensBtn);
         actionsPanel.appendChild(externatkBtn);
+        actionsPanel.appendChild(saveBaseBtn);
+        actionsPanel.appendChild(loadBaseBtn);
         container.appendChild(pullTab);
         container.appendChild(actionsPanel);
         gameContainer.appendChild(container);
@@ -2748,6 +2746,355 @@ export default class UIManager {
             this.enemyCoreActionsElement.parentNode.removeChild(this.enemyCoreActionsElement);
         }
         this.enemyCoreActionsElement = null;
+    }
+
+    getBaseLayoutStorageKey () {
+        return "saved_base_layouts_v1";
+    }
+
+    getSavedBaseLayouts () {
+        try {
+            const raw = localStorage.getItem(this.getBaseLayoutStorageKey());
+            const parsed = raw ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.error("Could not parse saved base layouts:", error);
+            return [];
+        }
+    }
+
+    setSavedBaseLayouts (layouts) {
+        try {
+            localStorage.setItem(this.getBaseLayoutStorageKey(), JSON.stringify(layouts));
+        } catch (error) {
+            console.error("Could not store saved base layouts:", error);
+        }
+    }
+
+    captureCurrentBaseSnapshot () {
+        const canvas = this.core?.canvas;
+        const player = this.core?.gameManager?.player;
+        const camera = this.core?.camera;
+        if (!canvas) return null;
+
+        try {
+            if (!player || !camera) {
+                return canvas.toDataURL("image/jpeg", 0.75);
+            }
+
+            const zoom = camera.zoom || 1;
+            const centerX = (player.position.x - camera.x) * zoom + canvas.width / 2;
+            const centerY = (player.position.y - camera.y) * zoom + canvas.height / 2;
+            const worldCaptureRadius = 460;
+            const targetSize = Math.max(180, Math.min(canvas.width, canvas.height, Math.round(worldCaptureRadius * 2 * zoom)));
+
+            const sx = Math.max(0, Math.min(canvas.width - targetSize, Math.round(centerX - targetSize / 2)));
+            const sy = Math.max(0, Math.min(canvas.height - targetSize, Math.round(centerY - targetSize / 2)));
+
+            const offscreen = document.createElement("canvas");
+            offscreen.width = targetSize;
+            offscreen.height = targetSize;
+            const context = offscreen.getContext("2d");
+            if (!context) {
+                return canvas.toDataURL("image/jpeg", 0.75);
+            }
+            context.drawImage(canvas, sx, sy, targetSize, targetSize, 0, 0, targetSize, targetSize);
+            return offscreen.toDataURL("image/jpeg", 0.8);
+        } catch (error) {
+            console.error("Could not capture base snapshot:", error);
+            return null;
+        }
+    }
+
+    hideBaseLayoutDialog () {
+        if (this.baseLayoutDialogElement && this.baseLayoutDialogElement.parentNode) {
+            this.baseLayoutDialogElement.parentNode.removeChild(this.baseLayoutDialogElement);
+        }
+        this.baseLayoutDialogElement = null;
+    }
+
+    showSaveBaseLayoutDialog () {
+        this.hideBaseLayoutDialog();
+
+        const snapshot = this.captureCurrentBaseSnapshot();
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.background = "rgba(0, 0, 0, 0.5)";
+        overlay.style.zIndex = "20020";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.pointerEvents = "all";
+
+        const card = document.createElement("div");
+        card.style.width = "min(560px, 94vw)";
+        card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.97), rgba(16,30,58,0.97))";
+        card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
+        card.style.borderRadius = "14px";
+        card.style.padding = "18px";
+        card.style.color = "#eaf6ff";
+        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "SAVE BASE";
+        title.style.fontSize = "20px";
+        title.style.fontWeight = "900";
+        title.style.letterSpacing = "1px";
+        title.style.color = "#9fe8ff";
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = "Name your base layout and save it for later use.";
+        subtitle.style.marginTop = "6px";
+        subtitle.style.fontSize = "14px";
+        subtitle.style.opacity = "0.92";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = "Layout name (e.g. Aggro Ring)";
+        input.maxLength = 30;
+        input.value = `Base ${new Date().toLocaleTimeString()}`;
+        input.style.width = "100%";
+        input.style.marginTop = "12px";
+        input.style.height = "40px";
+        input.style.borderRadius = "10px";
+        input.style.border = "1px solid rgba(120, 180, 255, 0.55)";
+        input.style.background = "rgba(8,18,40,0.65)";
+        input.style.color = "#eaf6ff";
+        input.style.padding = "0 12px";
+        input.style.outline = "none";
+
+        let previewElement = null;
+        if (snapshot) {
+            const preview = document.createElement("img");
+            preview.src = snapshot;
+            preview.alt = "Base snapshot";
+            preview.style.display = "block";
+            preview.style.width = "100%";
+            preview.style.maxHeight = "260px";
+            preview.style.objectFit = "cover";
+            preview.style.marginTop = "12px";
+            preview.style.borderRadius = "10px";
+            preview.style.border = "1px solid rgba(120, 180, 255, 0.45)";
+            previewElement = preview;
+        }
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "14px";
+        actions.style.display = "flex";
+        actions.style.gap = "10px";
+        actions.style.justifyContent = "flex-end";
+
+        const cancel = document.createElement("button");
+        cancel.textContent = "Cancel";
+        cancel.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+        cancel.style.background = "rgba(120, 36, 36, 0.25)";
+        cancel.style.color = "#ffd6d6";
+        cancel.style.padding = "10px 14px";
+        cancel.style.borderRadius = "10px";
+        cancel.style.cursor = "pointer";
+        cancel.addEventListener("click", () => this.hideBaseLayoutDialog());
+
+        const save = document.createElement("button");
+        save.textContent = "Save";
+        save.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+        save.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+        save.style.color = "#e8ffef";
+        save.style.padding = "10px 16px";
+        save.style.borderRadius = "10px";
+        save.style.cursor = "pointer";
+        save.style.fontWeight = "800";
+        save.addEventListener("click", () => {
+            const layout = this.core.buildingManager.exportCurrentBaseLayout(input.value, snapshot);
+            if (!layout) {
+                this.addChatMessage("System", "Could not save base right now.", "#ffcc66");
+                return;
+            }
+            const existing = this.getSavedBaseLayouts().slice(0, 29);
+            this.setSavedBaseLayouts([layout, ...existing]);
+            this.hideBaseLayoutDialog();
+            this.addChatMessage("System", `Base "${layout.name}" saved.`, "#60c1ff");
+        });
+
+        actions.appendChild(cancel);
+        actions.appendChild(save);
+        card.appendChild(title);
+        card.appendChild(subtitle);
+        card.appendChild(input);
+        if (previewElement) {
+            card.appendChild(previewElement);
+        }
+        card.appendChild(actions);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+        this.baseLayoutDialogElement = overlay;
+        input.focus();
+        input.select();
+    }
+
+    showLoadBaseLayoutDialog () {
+        this.hideBaseLayoutDialog();
+
+        const layouts = this.getSavedBaseLayouts();
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.background = "rgba(0, 0, 0, 0.5)";
+        overlay.style.zIndex = "20020";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.pointerEvents = "all";
+
+        const card = document.createElement("div");
+        card.style.width = "min(760px, 96vw)";
+        card.style.maxHeight = "86vh";
+        card.style.overflow = "hidden";
+        card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.97), rgba(16,30,58,0.97))";
+        card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
+        card.style.borderRadius = "14px";
+        card.style.padding = "16px";
+        card.style.color = "#eaf6ff";
+        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "LOAD BASE";
+        title.style.fontSize = "20px";
+        title.style.fontWeight = "900";
+        title.style.letterSpacing = "1px";
+        title.style.color = "#9fe8ff";
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = "Saved layouts are local to this browser. Pick one to load.";
+        subtitle.style.marginTop = "6px";
+        subtitle.style.fontSize = "13px";
+        subtitle.style.opacity = "0.92";
+
+        const list = document.createElement("div");
+        list.style.marginTop = "12px";
+        list.style.maxHeight = "62vh";
+        list.style.overflowY = "auto";
+        list.style.display = "grid";
+        list.style.gap = "10px";
+        list.style.paddingRight = "4px";
+
+        if (layouts.length === 0) {
+            const empty = document.createElement("div");
+            empty.textContent = "No saved layouts yet.";
+            empty.style.padding = "14px";
+            empty.style.border = "1px dashed rgba(120, 180, 255, 0.45)";
+            empty.style.borderRadius = "10px";
+            empty.style.opacity = "0.9";
+            list.appendChild(empty);
+        } else {
+            layouts.forEach((layout) => {
+                const item = document.createElement("div");
+                item.style.display = "grid";
+                item.style.gridTemplateColumns = "180px 1fr auto";
+                item.style.gap = "10px";
+                item.style.alignItems = "center";
+                item.style.padding = "10px";
+                item.style.border = "1px solid rgba(120, 180, 255, 0.4)";
+                item.style.borderRadius = "10px";
+                item.style.background = "rgba(10, 22, 48, 0.55)";
+
+                const preview = document.createElement("div");
+                preview.style.width = "180px";
+                preview.style.height = "100px";
+                preview.style.borderRadius = "8px";
+                preview.style.overflow = "hidden";
+                preview.style.border = "1px solid rgba(120, 180, 255, 0.35)";
+                preview.style.background = "rgba(4, 12, 28, 0.7)";
+
+                if (layout.snapshot) {
+                    const img = document.createElement("img");
+                    img.src = layout.snapshot;
+                    img.alt = layout.name || "Base";
+                    img.style.width = "100%";
+                    img.style.height = "100%";
+                    img.style.objectFit = "cover";
+                    preview.appendChild(img);
+                }
+
+                const info = document.createElement("div");
+                const name = document.createElement("div");
+                name.textContent = layout.name || "Unnamed Base";
+                name.style.fontSize = "16px";
+                name.style.fontWeight = "800";
+                const meta = document.createElement("div");
+                const created = layout.createdAt ? new Date(layout.createdAt).toLocaleString() : "Unknown date";
+                const count = Array.isArray(layout.buildings) ? layout.buildings.length : 0;
+                meta.textContent = `${count} buildings • ${created}`;
+                meta.style.marginTop = "6px";
+                meta.style.fontSize = "12px";
+                meta.style.opacity = "0.86";
+                info.appendChild(name);
+                info.appendChild(meta);
+
+                const actions = document.createElement("div");
+                actions.style.display = "grid";
+                actions.style.gap = "8px";
+
+                const loadBtn = document.createElement("button");
+                loadBtn.textContent = "Load";
+                loadBtn.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+                loadBtn.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+                loadBtn.style.color = "#e8ffef";
+                loadBtn.style.padding = "8px 12px";
+                loadBtn.style.borderRadius = "9px";
+                loadBtn.style.cursor = "pointer";
+                loadBtn.style.fontWeight = "800";
+                loadBtn.addEventListener("click", () => {
+                    this.hideBaseLayoutDialog();
+                    this.core.buildingManager.loadBaseLayout(layout);
+                });
+
+                const deleteBtn = document.createElement("button");
+                deleteBtn.textContent = "Delete";
+                deleteBtn.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+                deleteBtn.style.background = "rgba(120, 36, 36, 0.25)";
+                deleteBtn.style.color = "#ffd6d6";
+                deleteBtn.style.padding = "8px 12px";
+                deleteBtn.style.borderRadius = "9px";
+                deleteBtn.style.cursor = "pointer";
+                deleteBtn.addEventListener("click", () => {
+                    const remaining = this.getSavedBaseLayouts().filter(item => item.id !== layout.id);
+                    this.setSavedBaseLayouts(remaining);
+                    this.showLoadBaseLayoutDialog();
+                });
+
+                actions.appendChild(loadBtn);
+                actions.appendChild(deleteBtn);
+                item.appendChild(preview);
+                item.appendChild(info);
+                item.appendChild(actions);
+                list.appendChild(item);
+            });
+        }
+
+        const closeRow = document.createElement("div");
+        closeRow.style.marginTop = "12px";
+        closeRow.style.display = "flex";
+        closeRow.style.justifyContent = "flex-end";
+
+        const closeButton = document.createElement("button");
+        closeButton.textContent = "Close";
+        closeButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+        closeButton.style.background = "rgba(120, 36, 36, 0.25)";
+        closeButton.style.color = "#ffd6d6";
+        closeButton.style.padding = "10px 16px";
+        closeButton.style.borderRadius = "10px";
+        closeButton.style.cursor = "pointer";
+        closeButton.addEventListener("click", () => this.hideBaseLayoutDialog());
+        closeRow.appendChild(closeButton);
+
+        card.appendChild(title);
+        card.appendChild(subtitle);
+        card.appendChild(list);
+        card.appendChild(closeRow);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+        this.baseLayoutDialogElement = overlay;
     }
 
     showRelocateBasePrompt(cost, onConfirm, onCancel) {
