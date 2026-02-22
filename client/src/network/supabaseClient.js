@@ -3,7 +3,15 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = 'https://sbwotyhotmthlmtysltl.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNid290eWhvdG10aGxtdHlzbHRsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2Njg1NDczNSwiZXhwIjoyMDgyNDMwNzM1fQ.M5na5xG06z_PptrSK5Uxgx9aKN4n7lBB3F6k2JEiST8';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        // Prevent Browser LockManager timeouts in environments with duplicated init/reload.
+        multiTab: false
+    }
+});
 
 const LOCAL_SESSION_KEY = 'blobl_supabase_session';
 
@@ -247,6 +255,79 @@ export async function updateSelectedSkin(userId, skinName) {
         return { success: true };
     } catch (error) {
         console.error('Error in updateSelectedSkin:', error);
+        return { success: false, error };
+    }
+}
+
+// Persist user progression/stats after a round ends.
+export async function updateUserProgressStats(userId, progression, statistics) {
+    try {
+        if (!userId) return { success: false, error: "missing_user_id" };
+
+        // Keep this payload aligned with the current public.users schema.
+        const payload = {
+            highscore: Number(statistics?.highscore || 0),
+            total_kills: Number(statistics?.kills || 0),
+            playtime: Number(statistics?.playtime || 0)
+        };
+
+        const url = `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`;
+        const resp = await fetch(url, {
+            method: "PATCH",
+            headers: {
+                "apikey": supabaseKey,
+                "Authorization": `Bearer ${supabaseKey}`,
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+            const text = await resp.text().catch(() => "");
+            const error = text || resp.statusText || String(resp.status);
+            console.error("Error updating user progression/stats:", error);
+            return { success: false, error };
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error("Error in updateUserProgressStats:", error);
+        return { success: false, error };
+    }
+}
+
+// Same stats update, but resilient during tab close/reload via keepalive fetch.
+export async function updateUserProgressStatsKeepalive(userId, statistics) {
+    try {
+        if (!userId) return { success: false, error: "missing_user_id" };
+
+        const payload = {
+            highscore: Number(statistics?.highscore || 0),
+            total_kills: Number(statistics?.kills || 0),
+            playtime: Number(statistics?.playtime || 0)
+        };
+
+        const url = `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`;
+        const resp = await fetch(url, {
+            method: "PATCH",
+            keepalive: true,
+            headers: {
+                "apikey": supabaseKey,
+                "Authorization": `Bearer ${supabaseKey}`,
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+            const text = await resp.text().catch(() => "");
+            return { success: false, error: text || resp.statusText || String(resp.status) };
+        }
+
+        return { success: true };
+    } catch (error) {
         return { success: false, error };
     }
 }

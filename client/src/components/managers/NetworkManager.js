@@ -13,7 +13,7 @@ import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
-import { fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage } from "../../network/supabaseClient.js";
+import { fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -32,14 +32,170 @@ export default class NetworkManager {
         // Initialize login status and user data
         this.loggedIn = false;
         this.userData = null;
+        this._getUserDataPromise = null;
+        this._statsSyncIntervalId = null;
+        this._statsSyncInFlight = false;
+        this._statsSyncTick = 0;
+        this._lastPlaytimeTickAt = Date.now();
         this.spawnLeaveWatchers = new Map(); // playerID -> playerName
 
         // Use async initialization for login status
         // this.initialize();
 
+        this._bindUnloadStatsSync();
+        this._startStatsAutoSync();
 
         // Monitor bandwidth every second
         this.monitorBandwidth();
+    }
+
+    _bindUnloadStatsSync () {
+        const flush = () => {
+            if (!this.loggedIn || !this.userId || !this.userData) return;
+            const statistics = this.userData.statistics || {
+                highscore: Number(this.userData.highscore || 0),
+                kills: Number(this.userData.total_kills || this.userData.kills || 0),
+                playtime: Number(this.userData.playtime || 0)
+            };
+
+            // Keep local cache in sync first
+            try {
+                const minimal = {
+                    id: this.userData.id || this.userId,
+                    nickname: this.userData.nickname,
+                    skins: this.userData.skins || {},
+                    progression: this.userData.progression || { level: 1, xp: 0 },
+                    statistics,
+                    highscore: statistics.highscore,
+                    total_kills: statistics.kills,
+                    playtime: statistics.playtime
+                };
+                localStorage.setItem("blobl_user_data", JSON.stringify(minimal));
+            } catch (e) {}
+
+            // Best-effort remote flush on reload/close.
+            updateUserProgressStatsKeepalive(this.userId, statistics);
+        };
+
+        window.addEventListener("pagehide", flush);
+        window.addEventListener("beforeunload", flush);
+    }
+
+    _startStatsAutoSync () {
+        if (this._statsSyncIntervalId) {
+            clearInterval(this._statsSyncIntervalId);
+        }
+
+        this._statsSyncIntervalId = setInterval(() => {
+            this._runStatsSyncFiveStep();
+        }, 1000);
+    }
+
+    async _runStatsSyncFiveStep () {
+        // Step 1: authentication gate
+        if (!this.loggedIn || !this.userId) return;
+        // Step 2: data availability gate
+        if (!this.userData) return;
+
+        if (this._statsSyncInFlight) return;
+        this._statsSyncInFlight = true;
+
+        try {
+            this._captureLiveSessionStats();
+            // Step 3: normalize/sanitize stats payload
+            const progression = this.userData.progression || {
+                level: Number(this.userData.level || 1),
+                xp: Number(this.userData.xp || 0)
+            };
+            const statistics = this.userData.statistics || {
+                highscore: Number(this.userData.highscore || 0),
+                kills: Number(this.userData.total_kills || this.userData.kills || 0),
+                playtime: Number(this.userData.playtime || 0)
+            };
+            statistics.highscore = Math.max(0, Number(statistics.highscore || 0));
+            statistics.kills = Math.max(0, Number(statistics.kills || 0));
+            statistics.playtime = Math.max(0, Number(statistics.playtime || 0));
+
+            // Step 4: persist local snapshot for immediate F5 recovery
+            try {
+                const minimal = {
+                    id: this.userData.id || this.userId,
+                    nickname: this.userData.nickname,
+                    skins: this.userData.skins || {},
+                    progression,
+                    statistics,
+                    highscore: statistics.highscore,
+                    total_kills: statistics.kills,
+                    playtime: statistics.playtime,
+                    level: progression.level,
+                    xp: progression.xp
+                };
+                localStorage.setItem("blobl_user_data", JSON.stringify(minimal));
+            } catch (e) {
+                console.warn("Stats auto-sync local write failed:", e);
+            }
+
+            // Step 5: persist remote snapshot with retries
+            let synced = false;
+            let lastError = null;
+            for (let attempt = 1; attempt <= 5; attempt++) {
+                const result = await updateUserProgressStats(this.userId, progression, statistics);
+                if (result?.success) {
+                    synced = true;
+                    break;
+                }
+                lastError = result?.error || lastError;
+            }
+
+            this._statsSyncTick++;
+            if (!synced) {
+                console.warn("Stats auto-sync remote failed after 5 attempts.", lastError);
+            } else if (this._statsSyncTick % 10 === 0) {
+                console.log("Stats auto-sync OK.");
+            }
+        } finally {
+            this._statsSyncInFlight = false;
+        }
+    }
+
+    _captureLiveSessionStats () {
+        if (!this.userData) return;
+
+        const statistics = this.userData.statistics || {
+            highscore: Number(this.userData.highscore || 0),
+            kills: Number(this.userData.total_kills || this.userData.kills || 0),
+            playtime: Number(this.userData.playtime || 0)
+        };
+
+        const now = Date.now();
+        const isInMatch = Boolean(this.core?.gameManager?.player);
+
+        if (isInMatch) {
+            if (!this._lastPlaytimeTickAt) {
+                this._lastPlaytimeTickAt = now;
+            }
+            const elapsedSeconds = Math.floor((now - this._lastPlaytimeTickAt) / 1000);
+            if (elapsedSeconds > 0) {
+                statistics.playtime = Math.max(0, Number(statistics.playtime || 0)) + elapsedSeconds;
+                this._lastPlaytimeTickAt += elapsedSeconds * 1000;
+            }
+        } else {
+            this._lastPlaytimeTickAt = now;
+        }
+
+        const liveScore = Number(this.core?.leaderboard?.getCurrentPlayerScore?.() || 0);
+        if (Number.isFinite(liveScore) && liveScore > Number(statistics.highscore || 0)) {
+            statistics.highscore = liveScore;
+        }
+
+        statistics.highscore = Math.max(0, Number(statistics.highscore || 0));
+        statistics.kills = Math.max(0, Number(statistics.kills || 0));
+        statistics.playtime = Math.max(0, Number(statistics.playtime || 0));
+
+        this.userData.statistics = statistics;
+        this.userData.highscore = statistics.highscore;
+        this.userData.total_kills = statistics.kills;
+        this.userData.playtime = statistics.playtime;
     }
 
     async initialize () {
@@ -66,6 +222,11 @@ export default class NetworkManager {
     }
 
     async getUserData () {
+        if (this._getUserDataPromise) {
+            return this._getUserDataPromise;
+        }
+
+        this._getUserDataPromise = (async () => {
         console.log('getUserData called');
         // In dev mode, still attempt to fetch real user data when logged in.
         // Only use the dev fallback when not logged in.
@@ -83,27 +244,48 @@ export default class NetworkManager {
             const selectPromise = supabase
                 .from('users')
                 .select('*')
-                .eq('id', this.userId);
+                .eq('id', this.userId)
+                .maybeSingle();
 
-            // Timeout helper: fallback gracefully if the network is slow.
-            const timeoutMs = 8000;
-            const timeoutToken = Symbol("supabase_timeout");
-            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(timeoutToken), timeoutMs));
+            // Timeout helper with one retry before local fallback.
+            const runWithTimeout = async (promise, timeoutMs) => {
+                const timeoutToken = Symbol("supabase_timeout");
+                const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(timeoutToken), timeoutMs));
+                const result = await Promise.race([promise, timeoutPromise]);
+                return { timedOut: result === timeoutToken, result };
+            };
 
-            const raceResult = await Promise.race([selectPromise, timeoutPromise]);
-            if (raceResult === timeoutToken) {
-                console.warn(`Supabase select timeout after ${timeoutMs}ms; using cached/local data fallback.`);
+            const firstTry = await runWithTimeout(selectPromise, 15000);
+            let raceResult = firstTry.result;
+
+            if (firstTry.timedOut) {
+                console.warn("Supabase select timed out after 15000ms. Retrying once...");
+                const secondSelectPromise = supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', this.userId)
+                    .maybeSingle();
+
+                const secondTry = await runWithTimeout(secondSelectPromise, 10000);
+                raceResult = secondTry.result;
+
+                if (secondTry.timedOut) {
+                    console.warn("Supabase select timed out again after 10000ms; using cached/local data fallback.");
 
                 const user = await getCurrentUser();
-                if (user && user.user_metadata && user.user_metadata.nickname) {
-                    if (!this.userData) this.userData = {};
-                    if (!this.userData.nickname) {
-                        this.userData.nickname = user.user_metadata.nickname;
-                    }
-                }
+                const fallbackNickname = user?.user_metadata?.nickname || user?.email?.split("@")[0] || "Player";
+                this.userData = {
+                    ...(this.userData || {}),
+                    id: this.userId,
+                    email: user?.email || null,
+                    nickname: this.userData?.nickname || fallbackNickname
+                };
+                this.loggedIn = true;
+                this.core.uiManager.updateAccountButton();
 
                 this.core.uiManager.updateAccount();
                 return;
+                }
             }
 
             const res = raceResult;
@@ -116,8 +298,20 @@ export default class NetworkManager {
                 throw error;
             }
 
-            if (data && data.length > 0) {
-                this.userData = data[0];
+            const row = Array.isArray(data) ? data[0] : data;
+            if (row) {
+                this.userData = row;
+                this.userData.statistics = {
+                    ...(this.userData.statistics || {}),
+                    highscore: Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0),
+                    kills: Number(this.userData.total_kills ?? this.userData.statistics?.kills ?? 0),
+                    playtime: Number(this.userData.playtime ?? this.userData.statistics?.playtime ?? 0)
+                };
+                this.userData.progression = {
+                    ...(this.userData.progression || {}),
+                    level: Number(this.userData.level ?? this.userData.progression?.level ?? 1),
+                    xp: Number(this.userData.xp ?? this.userData.progression?.xp ?? 0)
+                };
                 console.log('User data from table:', this.userData);
                 console.log('Nickname from table:', this.userData?.nickname);
                 try {
@@ -125,7 +319,14 @@ export default class NetworkManager {
                     const minimal = {
                         id: this.userData.id,
                         nickname: this.userData.nickname,
-                        skins: this.userData.skins || {}
+                        skins: this.userData.skins || {},
+                        progression: this.userData.progression,
+                        statistics: this.userData.statistics,
+                        highscore: this.userData.statistics.highscore,
+                        total_kills: this.userData.statistics.kills,
+                        playtime: this.userData.statistics.playtime,
+                        level: this.userData.progression.level,
+                        xp: this.userData.progression.xp
                     };
                     localStorage.setItem('blobl_user_data', JSON.stringify(minimal));
                 } catch (e) {
@@ -157,6 +358,32 @@ export default class NetworkManager {
 
         } catch (error) {
             console.error("Error getting user data:", error);
+            try {
+                const user = await getCurrentUser();
+                if (user && this.userId) {
+                    const fallbackNickname = user.user_metadata?.nickname || user.email?.split("@")[0] || "Player";
+                    this.loggedIn = true;
+                    this.userData = {
+                        ...(this.userData || {}),
+                        id: this.userId,
+                        email: user.email || null,
+                        nickname: this.userData?.nickname || fallbackNickname,
+                        statistics: this.userData?.statistics || { highscore: 0, playtime: 0, kills: 0 },
+                        progression: this.userData?.progression || { level: 1, xp: 0 }
+                    };
+                    this.core.uiManager.updateAccountButton();
+                    this.core.uiManager.updateAccount();
+                }
+            } catch (fallbackErr) {
+                console.error("Fallback user recovery failed:", fallbackErr);
+            }
+        }
+        })();
+
+        try {
+            return await this._getUserDataPromise;
+        } finally {
+            this._getUserDataPromise = null;
         }
     }
 
@@ -176,6 +403,17 @@ export default class NetworkManager {
                             if (rawUser) {
                                 try {
                                     this.userData = JSON.parse(rawUser);
+                                    this.userData.statistics = {
+                                        ...(this.userData.statistics || {}),
+                                        highscore: Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0),
+                                        kills: Number(this.userData.total_kills ?? this.userData.statistics?.kills ?? 0),
+                                        playtime: Number(this.userData.playtime ?? this.userData.statistics?.playtime ?? 0)
+                                    };
+                                    this.userData.progression = {
+                                        ...(this.userData.progression || {}),
+                                        level: Number(this.userData.level ?? this.userData.progression?.level ?? 1),
+                                        xp: Number(this.userData.xp ?? this.userData.progression?.xp ?? 0)
+                                    };
                                     console.log('Restored userData quick (local):', this.userData);
                                     this.core.uiManager.updateAccount();
                                 } catch (e) {
@@ -267,7 +505,14 @@ export default class NetworkManager {
                 const minimal = {
                     id: this.userData.id,
                     nickname: this.userData.nickname,
-                    skins: this.userData.skins || {}
+                    skins: this.userData.skins || {},
+                    progression: this.userData.progression || { level: 1, xp: 0 },
+                    statistics: this.userData.statistics || { highscore: 0, playtime: 0, kills: 0 },
+                    highscore: Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0),
+                    total_kills: Number(this.userData.total_kills ?? this.userData.statistics?.kills ?? 0),
+                    playtime: Number(this.userData.playtime ?? this.userData.statistics?.playtime ?? 0),
+                    level: Number(this.userData.level ?? this.userData.progression?.level ?? 1),
+                    xp: Number(this.userData.xp ?? this.userData.progression?.xp ?? 0)
                 };
                 localStorage.setItem('blobl_user_data', JSON.stringify(minimal));
             } catch (e) {}
@@ -902,11 +1147,26 @@ export default class NetworkManager {
         const VETERAN_SKIN_BASE_ID = 99; // Starting ID for veteran skins
         const LEVEL_UNLOCK_INTERVAL = 5; // Interval for unlocking veteran skins
 
-        let progression = this.userData.progression;
-        let skins = this.userData.skins || {}; // Ensure skins is an object
-        let statistics = this.userData.statistics || {}; // Ensure statistics is an object
+        if (!this.userData) {
+            return;
+        }
 
-        progression.xp += xp;
+        let progression = this.userData.progression || {
+            level: Number(this.userData.level || 1),
+            xp: Number(this.userData.xp || 0)
+        };
+        let skins = this.userData.skins || {}; // Ensure skins is an object
+        let statistics = this.userData.statistics || {
+            highscore: Number(this.userData.highscore || 0),
+            kills: Number(this.userData.total_kills || this.userData.kills || 0),
+            playtime: Number(this.userData.playtime || 0)
+        };
+
+        const safeXP = Number.isFinite(Number(xp)) ? Number(xp) : 0;
+        const safeKills = Number.isFinite(Number(kills)) ? Number(kills) : 0;
+        const safeScore = Number.isFinite(Number(score)) ? Number(score) : 0;
+
+        progression.xp += safeXP;
 
         const calculateRequiredXP = (level) => {
             return Math.round(BASE_XP * Math.pow(level, 1.1));
@@ -941,20 +1201,85 @@ export default class NetworkManager {
         }
 
         // Update kills
-        statistics.kills = (statistics.kills || 0) + kills;
+        statistics.kills = (statistics.kills || 0) + safeKills;
 
         // Update high score if needed
-        if (statistics.highscore === undefined || statistics.highscore < score) {
-            statistics.highscore = score;
+        if (statistics.highscore === undefined || statistics.highscore < safeScore) {
+            statistics.highscore = safeScore;
         }
 
         // Save changes to userData (if necessary)
         this.userData.skins = skins;
         this.userData.statistics = statistics;
         this.userData.progression = progression;
+        this.userData.highscore = statistics.highscore;
+        this.userData.total_kills = statistics.kills;
+        this.userData.playtime = statistics.playtime;
+        this.userData.level = progression.level;
+        this.userData.xp = progression.xp;
+
+        // Persist local snapshot immediately so F5 keeps latest round stats
+        try {
+            const minimal = {
+                id: this.userData.id || this.userId,
+                nickname: this.userData.nickname,
+                skins: this.userData.skins || {},
+                progression,
+                statistics,
+                highscore: statistics.highscore,
+                total_kills: statistics.kills,
+                playtime: statistics.playtime,
+                level: progression.level,
+                xp: progression.xp
+            };
+            localStorage.setItem("blobl_user_data", JSON.stringify(minimal));
+        } catch (e) {
+            console.warn("Could not persist round stats locally:", e);
+        }
 
         // Trigger UI refresh
         this.core.uiManager.updateAccount();
+    }
+
+    async _persistUserDataStats () {
+        if (!this.loggedIn || !this.userId || !this.userData) {
+            return;
+        }
+
+        const progression = this.userData.progression || {
+            level: Number(this.userData.level || 1),
+            xp: Number(this.userData.xp || 0)
+        };
+
+        const statistics = this.userData.statistics || {
+            highscore: Number(this.userData.highscore || 0),
+            kills: Number(this.userData.total_kills || this.userData.kills || 0),
+            playtime: Number(this.userData.playtime || 0)
+        };
+
+        // Keep local cache updated regardless of remote success.
+        try {
+            const minimal = {
+                id: this.userData.id || this.userId,
+                nickname: this.userData.nickname,
+                skins: this.userData.skins || {},
+                progression,
+                statistics,
+                highscore: statistics.highscore,
+                total_kills: statistics.kills,
+                playtime: statistics.playtime,
+                level: progression.level,
+                xp: progression.xp
+            };
+            localStorage.setItem("blobl_user_data", JSON.stringify(minimal));
+        } catch (e) {
+            console.warn("Could not persist user stats to localStorage:", e);
+        }
+
+        const result = await updateUserProgressStats(this.userId, progression, statistics);
+        if (!result?.success) {
+            console.warn("Remote stats sync failed; local stats were kept.");
+        }
     }
 
     handleKilled (payload) {
@@ -967,6 +1292,7 @@ export default class NetworkManager {
         this.core.uiManager.gameOver(killer, score);
 
         this._updateUserDataLocally(score, xp, kills, playtime);
+        this._persistUserDataStats();
     }
 
     handleKickNotification (payload) {
@@ -976,6 +1302,7 @@ export default class NetworkManager {
         this.core.uiManager.kicked(reason, score);
         console.log(payload)
         this._updateUserDataLocally(score, xp, kills, playtime);
+        this._persistUserDataStats();
     }
 
     handleBaseHealthUpdate (payload) {

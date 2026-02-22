@@ -588,10 +588,21 @@ export default class UIManager {
     }
 
     addLoginDialogButtonListener () {
+        const accountButton = this.DOM.account.accountButton || document.getElementById("account-button");
+        const signupButton = this.DOM.account.signupButton || document.getElementById("signup-button");
+        const guestButton = this.DOM.account.guestButton || document.getElementById("guest-button");
+        const signupSubmit = this.DOM.account.signupSubmit || document.getElementById("signup-submit");
+        const signupCancel = this.DOM.account.signupCancel || document.getElementById("signup-cancel");
+        const signinSubmit = this.DOM.account.signinSubmit || document.getElementById("signin-submit");
+        const signinCancel = this.DOM.account.signinCancel || document.getElementById("signin-cancel");
+
         // Account button - opens signin dialog or logs out
-        if (this.DOM.account.accountButton) {
-            this.DOM.account.accountButton.addEventListener("click", () => {
-                if (this.core.networkManager.loggedIn) {
+        if (accountButton && !accountButton.dataset.boundLoginClick) {
+            accountButton.dataset.boundLoginClick = "1";
+            accountButton.addEventListener("click", () => {
+                const buttonText = (accountButton.textContent || "").trim().toLowerCase();
+                const shouldLogout = this.core.networkManager.loggedIn && buttonText === "logout";
+                if (shouldLogout) {
                     this.core.networkManager.logout();
                 } else {
                     this.showSigninDialog(true);
@@ -600,22 +611,25 @@ export default class UIManager {
         }
 
         // Signup button - opens signup dialog
-        if (this.DOM.account.signupButton) {
-            this.DOM.account.signupButton.addEventListener("click", () => {
+        if (signupButton && !signupButton.dataset.boundSignupClick) {
+            signupButton.dataset.boundSignupClick = "1";
+            signupButton.addEventListener("click", () => {
                 this.showSignupDialog(true);
             });
         }
 
         // Guest button - closes login dialog
-        if (this.DOM.account.guestButton) {
-            this.DOM.account.guestButton.addEventListener("click", () => {
+        if (guestButton && !guestButton.dataset.boundGuestClick) {
+            guestButton.dataset.boundGuestClick = "1";
+            guestButton.addEventListener("click", () => {
                 this.showLoginDialog(false);
             });
         }
 
         // Signup dialog handlers
-        if (this.DOM.account.signupSubmit) {
-            this.DOM.account.signupSubmit.addEventListener("click", async () => {
+        if (signupSubmit && !signupSubmit.dataset.boundSignupSubmit) {
+            signupSubmit.dataset.boundSignupSubmit = "1";
+            signupSubmit.addEventListener("click", async () => {
                 const email = this.DOM.account.signupEmail?.value;
                 const nickname = this.DOM.account.signupNickname?.value;
                 const password = this.DOM.account.signupPassword?.value;
@@ -646,15 +660,17 @@ export default class UIManager {
             });
         }
 
-        if (this.DOM.account.signupCancel) {
-            this.DOM.account.signupCancel.addEventListener("click", () => {
+        if (signupCancel && !signupCancel.dataset.boundSignupCancel) {
+            signupCancel.dataset.boundSignupCancel = "1";
+            signupCancel.addEventListener("click", () => {
                 this.showSignupDialog(false);
             });
         }
 
         // Signin dialog handlers
-        if (this.DOM.account.signinSubmit) {
-            this.DOM.account.signinSubmit.addEventListener("click", async () => {
+        if (signinSubmit && !signinSubmit.dataset.boundSigninSubmit) {
+            signinSubmit.dataset.boundSigninSubmit = "1";
+            signinSubmit.addEventListener("click", async () => {
                 const email = this.DOM.account.signinEmail?.value;
                 const password = this.DOM.account.signinPassword?.value;
 
@@ -664,31 +680,41 @@ export default class UIManager {
                 }
 
                 try {
-                    await signIn(email, password);
+                    const authData = await signIn(email, password);
+                    const sessionUserId = authData?.session?.user?.id;
+                    if (sessionUserId) {
+                        this.core.networkManager.loggedIn = true;
+                        this.core.networkManager.userId = sessionUserId;
+                    }
                     this.showSigninDialog(false);
                     await this.core.networkManager.checkLoginStatus();
+                    this.updateAccount();
+                    this.updateAccountButton();
                 } catch (error) {
                     alert("Login failed: " + error.message);
                 }
             });
         }
 
-        if (this.DOM.account.signinCancel) {
-            this.DOM.account.signinCancel.addEventListener("click", () => {
+        if (signinCancel && !signinCancel.dataset.boundSigninCancel) {
+            signinCancel.dataset.boundSigninCancel = "1";
+            signinCancel.addEventListener("click", () => {
                 this.showSigninDialog(false);
             });
         }
     }
 
     showSignupDialog (show) {
-        if (this.DOM.account.signupDialog) {
-            this.DOM.account.signupDialog.style.display = show ? "flex" : "none";
+        const dialog = this.DOM.account.signupDialog || document.getElementById("signup-dialog");
+        if (dialog) {
+            dialog.style.display = show ? "flex" : "none";
         }
     }
 
     showSigninDialog (show) {
-        if (this.DOM.account.signinDialog) {
-            this.DOM.account.signinDialog.style.display = show ? "flex" : "none";
+        const dialog = this.DOM.account.signinDialog || document.getElementById("signin-dialog");
+        if (dialog) {
+            dialog.style.display = show ? "flex" : "none";
         }
     }
 
@@ -2176,7 +2202,10 @@ export default class UIManager {
     }
 
     showLoginDialog (show) {
-        this.DOM.account.loginDialog.style.display = show ? "flex" : "none";
+        const dialog = this.DOM.account.loginDialog || document.getElementById("login-dialog");
+        if (dialog) {
+            dialog.style.display = show ? "flex" : "none";
+        }
     }
 
     formatTime (timestamp) {
