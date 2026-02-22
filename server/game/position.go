@@ -111,11 +111,40 @@ func calculateMapRadius(numPlayers int) int16 {
 	return int16(requiredRadius)
 }
 
+func calculateMapRadiusForActivePlayers(players map[ID]*Player) int16 {
+	const minRadius = 1200
+	const extraBorderPadding = 300
+
+	maxAxis := 0
+	for _, player := range players {
+		if player == nil || player.IsMarkedForRemoval() {
+			continue
+		}
+
+		pos := player.Base.GetPosition()
+		absX := absInt(int(pos.X))
+		absY := absInt(int(pos.Y))
+		if absX > maxAxis {
+			maxAxis = absX
+		}
+		if absY > maxAxis {
+			maxAxis = absY
+		}
+	}
+
+	requiredRadius := maxAxis + int(MIN_BORDER_DISTANCE) + extraBorderPadding
+	if requiredRadius < minRadius {
+		requiredRadius = minRadius
+	}
+
+	return int16(requiredRadius)
+}
+
 func GetCurrentMapRadius() int16 {
 	State.RLock()
-	numPlayers := len(State.Players)
+	players := State.Players
 	State.RUnlock()
-	return calculateMapRadius(numPlayers)
+	return calculateMapRadiusForActivePlayers(players)
 }
 
 func ClampPositionIntToMap(pos PositionInt, padding int16) PositionInt {

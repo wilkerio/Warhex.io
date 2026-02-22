@@ -303,10 +303,10 @@ func (p *Player) AddCommander() (*Unit, bool) {
 		return nil, false
 	}
 	// Create the unit
-	unit := &Unit{
-		Player:         p,
-		ID:             unitID,
-		Type:           COMMANDER,
+		unit := &Unit{
+			Player:         p,
+			ID:             unitID,
+			Type:           COMMANDER,
 		Variant:        0,
 		Position:       IntToFloat(p.Base.Position),
 		Polygon:        polygon,
@@ -317,16 +317,14 @@ func (p *Player) AddCommander() (*Unit, bool) {
 		Size:           unitStats.Size,
 		Speed:          unitStats.Speed,
 
-		ExplosionRadius: int(unitStats.ExplosionRadius),
-		LastDamageTime:  time.Now(),
-	}
+			ExplosionRadius: int(unitStats.ExplosionRadius),
+			LastDamageTime:  time.Now(),
+		}
 
-	// For commanders, push the initial target position 200px down so clients can't override spawn offset
-	if unit.Type == COMMANDER {
-		// Use SetTargetPosition to ensure rotation and timestamps are correctly updated
+		// Commander should spawn with an initial offset below the base.
 		unit.SetTargetPosition(PositionFloat{X: unit.TargetPosition.X, Y: unit.TargetPosition.Y + 200})
-	}
-	p.Lock()
+
+		p.Lock()
 	// Add the unit to the player's list of units
 	p.Units[unitID] = unit
 

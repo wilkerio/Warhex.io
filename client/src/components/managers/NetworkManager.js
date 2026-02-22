@@ -691,6 +691,7 @@ export default class NetworkManager {
         this.core.camera.targetZoom = 0.75;
 
         this.core.gameManager.stats.time = Date.now();
+        this.core.buildingManager.announceDefenseHotkeys();
     }
 
     handleResourceUpdate (payload) {
@@ -738,6 +739,9 @@ export default class NetworkManager {
             // Add without targetPosition
             //? This always handles Commander spawns, because commanders dont spawn in barracks
             //? and doesnt need the layering while spawning
+            if (targetPosition) {
+                unit.setTargetPosition(targetPosition);
+            }
             player.addUnit(unit);
         }
 

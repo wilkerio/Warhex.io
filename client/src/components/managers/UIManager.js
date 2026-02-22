@@ -1765,7 +1765,7 @@ export default class UIManager {
         actionsPanel.style.position = "absolute";
         actionsPanel.style.left = "0";
         actionsPanel.style.top = "0";
-        actionsPanel.style.width = "560px";
+        actionsPanel.style.width = "760px";
         actionsPanel.style.height = "46px";
         actionsPanel.style.display = "none";
         actionsPanel.style.padding = "2px";
@@ -1784,7 +1784,7 @@ export default class UIManager {
             button.type = "button";
             button.textContent = label;
             button.style.flex = "1 1 0";
-            button.style.maxWidth = "136px";
+            button.style.maxWidth = "122px";
             button.style.height = "46px";
             button.style.padding = "0";
             button.style.border = "1px solid #5a8ee0";
@@ -1804,6 +1804,9 @@ export default class UIManager {
         });
         const externatkBtn = createActionButton("ExternaTK", () => {
             this.core.buildingManager.placeExternalAtkArmory();
+        });
+        const defendBtn = createActionButton("Defend", () => {
+            this.core.buildingManager.activateDefendMode();
         });
         const saveBaseBtn = createActionButton("Save Base", () => {
             this.showSaveBaseLayoutDialog();
@@ -1827,6 +1830,7 @@ export default class UIManager {
 
         actionsPanel.appendChild(autogensBtn);
         actionsPanel.appendChild(externatkBtn);
+        actionsPanel.appendChild(defendBtn);
         actionsPanel.appendChild(saveBaseBtn);
         actionsPanel.appendChild(loadBaseBtn);
         container.appendChild(pullTab);

@@ -42,6 +42,14 @@ export class BuildingManager {
         this.autoBuildMode = null;
         this.baseLoadTimer = null;
         this.baseLoadRunning = false;
+        this.defenseProfile = null;
+        this.defensePlacementKey = "v";
+        this.defenseRemountKey = "b";
+        this.defensePlacementActive = false;
+        this.defensePlacementTimer = null;
+        this.defenseRemountActive = false;
+        this.defenseRemountTimer = null;
+        this.defensePlacedWalls = [];
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -850,6 +858,359 @@ export class BuildingManager {
         }
         this.autogensRunning = false;
         this.autoBuildMode = null;
+    }
+
+    stopDefensePlacement () {
+        if (this.defensePlacementTimer) {
+            clearInterval(this.defensePlacementTimer);
+            this.defensePlacementTimer = null;
+        }
+        this.defensePlacementActive = false;
+    }
+
+    stopDefenseRemount () {
+        if (this.defenseRemountTimer) {
+            clearInterval(this.defenseRemountTimer);
+            this.defenseRemountTimer = null;
+        }
+        this.defenseRemountActive = false;
+    }
+
+    syncDefensePlacedWallsWithCurrentState (player, toleranceSq = 14 * 14) {
+        if (!player) return;
+        const currentWalls = (player.buildings || []).filter(
+            b => b && !b.removeFlag && b.type === BuildingTypes.WALL
+        );
+        this.defensePlacedWalls = (this.defensePlacedWalls || []).filter(saved => {
+            return currentWalls.some(wall => {
+                const dx = wall.position.x - saved.x;
+                const dy = wall.position.y - saved.y;
+                return dx * dx + dy * dy <= toleranceSq;
+            });
+        });
+    }
+
+    announceDefenseHotkeys () {
+        this.core.uiManager.addChatMessage(
+            "System",
+            "Defense: use the Defend button to save base and choose defense/remount keys.",
+            "#60c1ff"
+        );
+    }
+
+    stopConflictingAutoActions () {
+        if (this.autogensRunning) {
+            this.stopAutoPlaceGenerators();
+        }
+        if (this.baseLoadRunning) {
+            this.stopBaseLayoutLoad();
+        }
+    }
+
+    activateDefendMode () {
+        const player = this.core.gameManager.player;
+        if (!player) return;
+
+        this.stopConflictingAutoActions();
+        this.stopDefensePlacement();
+        this.stopDefenseRemount();
+
+        const entries = (player.buildings || [])
+            .filter(b => b && !b.removeFlag && b.type !== BuildingTypes.WALL)
+            .map(b => ({
+                type: b.type,
+                position: {
+                    x: Math.round(b.position.x * 10) / 10,
+                    y: Math.round(b.position.y * 10) / 10
+                }
+            }));
+
+        if (entries.length === 0) {
+            this.core.uiManager.addChatMessage("System", "No buildings to save for defend.", "#ffcc66");
+            return;
+        }
+
+        window.alert("You saved defend base.");
+
+        const suggestedDefense = this.defensePlacementKey;
+        const rawDefense = window.prompt("Choose DEFENSE key (single key). Hold this key to place walls.", suggestedDefense);
+        if (rawDefense === null) {
+            this.core.uiManager.addChatMessage("System", "Defend setup canceled.", "#ffcc66");
+            return;
+        }
+
+        const defenseKey = String(rawDefense).trim().toLowerCase();
+        if (!defenseKey || defenseKey.length !== 1) {
+            this.core.uiManager.addChatMessage("System", "Invalid defense key. Use a single key.", "#ffcc66");
+            return;
+        }
+
+        const suggestedRemount = this.defenseRemountKey;
+        const rawRemount = window.prompt("Choose REMOUNT key (single key). Hold this key to rebuild saved slots.", suggestedRemount);
+        if (rawRemount === null) {
+            this.core.uiManager.addChatMessage("System", "Defend setup canceled.", "#ffcc66");
+            return;
+        }
+
+        const remountKey = String(rawRemount).trim().toLowerCase();
+        if (!remountKey || remountKey.length !== 1) {
+            this.core.uiManager.addChatMessage("System", "Invalid remount key. Use a single key.", "#ffcc66");
+            return;
+        }
+
+        if (defenseKey === remountKey) {
+            this.core.uiManager.addChatMessage("System", "Defense and remount keys must be different.", "#ffcc66");
+            return;
+        }
+
+        this.defensePlacementKey = defenseKey;
+        this.defenseRemountKey = remountKey;
+        this.defenseProfile = {
+            createdAt: Date.now(),
+            entries
+        };
+
+        this.core.uiManager.addChatMessage(
+            "System",
+            `Defend base saved.`,
+            "#60c1ff"
+        );
+        this.core.uiManager.addChatMessage(
+            "System",
+            `Hold [${defenseKey.toUpperCase()}] for defense walls. Hold [${remountKey.toUpperCase()}] to remount.`,
+            "#60c1ff"
+        );
+    }
+
+    activateRecoverMode () {
+        const player = this.core.gameManager.player;
+        if (!player) return;
+
+        if (!Array.isArray(this.defensePlacedWalls) || this.defensePlacedWalls.length === 0) {
+            this.core.uiManager.addChatMessage("System", "No defense walls to clear.", "#ffcc66");
+            return;
+        }
+
+        this.stopConflictingAutoActions();
+        this.stopDefensePlacement();
+        this.stopDefenseRemount();
+
+        const positionToleranceSq = 16 * 16;
+        const usedWallIDs = new Set();
+        const wallIDsToRemove = [];
+        const currentWalls = (player.buildings || []).filter(
+            building => building && !building.removeFlag && building.type === BuildingTypes.WALL
+        );
+
+        for (const target of this.defensePlacedWalls) {
+            let chosen = null;
+            let bestDistanceSq = Infinity;
+            for (const wall of currentWalls) {
+                if (usedWallIDs.has(wall.id)) continue;
+                const dx = wall.position.x - target.x;
+                const dy = wall.position.y - target.y;
+                const distanceSq = dx * dx + dy * dy;
+                if (distanceSq <= positionToleranceSq && distanceSq < bestDistanceSq) {
+                    bestDistanceSq = distanceSq;
+                    chosen = wall;
+                }
+            }
+            if (chosen) {
+                usedWallIDs.add(chosen.id);
+                wallIDsToRemove.push(chosen.id);
+            }
+        }
+
+        if (wallIDsToRemove.length > 0) {
+            this.core.networkManager.removeBuildings(wallIDsToRemove);
+        }
+
+        this.defensePlacedWalls = [];
+        this.core.uiManager.addChatMessage(
+            "System",
+            wallIDsToRemove.length > 0
+                ? `Recover complete: removed ${wallIDsToRemove.length} defense wall${wallIDsToRemove.length === 1 ? "" : "s"}.`
+                : "Recover complete: no matching defense walls found.",
+            wallIDsToRemove.length > 0 ? "#60c1ff" : "#ffcc66"
+        );
+    }
+
+    handleDefenseHotkeyDown (key) {
+        if (!this.defenseProfile || !key) return;
+        if (this.core.uiManager.isChatInputFocused) return;
+        if (key === this.defensePlacementKey) {
+            if (this.defensePlacementActive) return;
+            this.stopDefenseRemount();
+            this.defensePlacementActive = true;
+            this.placeOneDefenseWall();
+            this.defensePlacementTimer = setInterval(() => {
+                if (!this.defensePlacementActive) return;
+                this.placeOneDefenseWall();
+            }, 120);
+            return;
+        }
+
+        if (key === this.defenseRemountKey) {
+            if (this.defenseRemountActive) return;
+            this.stopDefensePlacement();
+            this.defenseRemountActive = true;
+            this.remountOneDefenseSlot();
+            this.defenseRemountTimer = setInterval(() => {
+                if (!this.defenseRemountActive) return;
+                this.remountOneDefenseSlot();
+            }, 140);
+        }
+    }
+
+    handleDefenseHotkeyUp (key) {
+        if (!key) return;
+        if (key === this.defensePlacementKey) {
+            this.stopDefensePlacement();
+            return;
+        }
+        if (key === this.defenseRemountKey) {
+            this.stopDefenseRemount();
+        }
+    }
+
+    placeOneDefenseWall () {
+        if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return;
+
+        const player = this.core.gameManager.player;
+        if (!player) return;
+
+        const wallType = BuildingTypes.WALL;
+        const wallSize = getBuildingDetails(wallType)?.size || 30;
+        const cost = this.getPlacementCost(wallType);
+        if (this.core.gameManager.resources.power.current < cost) return;
+
+        const positionToleranceSq = 14 * 14;
+        const currentBuildings = (player.buildings || []).filter(b => b && !b.removeFlag);
+        this.syncDefensePlacedWallsWithCurrentState(player, positionToleranceSq);
+        const currentWalls = currentBuildings.filter(b => b.type === BuildingTypes.WALL);
+        let selectedPosition = null;
+        for (const entry of this.defenseProfile.entries) {
+            const hasOriginalBuilding = currentBuildings.some(b => {
+                if (b.type !== entry.type) return false;
+                const dx = b.position.x - entry.position.x;
+                const dy = b.position.y - entry.position.y;
+                return dx * dx + dy * dy <= positionToleranceSq;
+            });
+            if (hasOriginalBuilding) continue;
+
+            const hasDefenseWallThere = currentWalls.some(w => {
+                const dx = w.position.x - entry.position.x;
+                const dy = w.position.y - entry.position.y;
+                return dx * dx + dy * dy <= positionToleranceSq;
+            });
+            if (hasDefenseWallThere) continue;
+
+            const candidate = { x: entry.position.x, y: entry.position.y };
+            if (!this.canAutoPlaceBuilding(player, candidate, [], [], wallType, wallSize, { ignoreUnits: true })) {
+                continue;
+            }
+            selectedPosition = candidate;
+            break;
+        }
+
+        if (!selectedPosition) return;
+
+        const ok = this.core.gameManager.increaseBuildingLimit(wallType);
+        if (!ok) return;
+
+        this.core.networkManager.placeBuilding(wallType, selectedPosition);
+        const predicted = this.prepareAutoPlacementBuilding(
+            new Wall(player.color, selectedPosition),
+            player,
+            selectedPosition
+        );
+        player.setBuildingCache(predicted);
+        this.core.gameManager.subtractResources(cost);
+        this.defensePlacedWalls.push(selectedPosition);
+        if (this.defensePlacedWalls.length > 240) {
+            this.defensePlacedWalls.splice(0, this.defensePlacedWalls.length - 240);
+        }
+    }
+
+    remountOneDefenseSlot () {
+        if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return;
+        const player = this.core.gameManager.player;
+        if (!player) return;
+
+        const slotToleranceSq = 18 * 18;
+        const wallMatchToleranceSq = 40 * 40;
+        this.syncDefensePlacedWallsWithCurrentState(player, wallMatchToleranceSq);
+        const currentBuildings = (player.buildings || []).filter(b => b && !b.removeFlag);
+
+        const findWallsInSavedSlot = (entry) => {
+            return currentBuildings.filter(b => {
+                if (b.type !== BuildingTypes.WALL) return false;
+                const dx = b.position.x - entry.position.x;
+                const dy = b.position.y - entry.position.y;
+                return dx * dx + dy * dy <= wallMatchToleranceSq;
+            });
+        };
+
+        const isOriginalBuildingPresent = (entry) => currentBuildings.some(b => {
+            if (b.type !== entry.type) return false;
+            const dx = b.position.x - entry.position.x;
+            const dy = b.position.y - entry.position.y;
+            return dx * dx + dy * dy <= slotToleranceSq;
+        });
+
+        const hasOtherBuildingInSlot = (entry) => currentBuildings.some(b => {
+            if (b.type === BuildingTypes.WALL) return false;
+            const dx = b.position.x - entry.position.x;
+            const dy = b.position.y - entry.position.y;
+            return dx * dx + dy * dy <= slotToleranceSq;
+        });
+
+        // First pass: if there is a wall in a saved slot, sell it first.
+        for (const entry of this.defenseProfile.entries) {
+            if (isOriginalBuildingPresent(entry)) continue;
+            if (hasOtherBuildingInSlot(entry)) continue;
+            const matchingWalls = findWallsInSavedSlot(entry);
+            if (matchingWalls.length === 0) continue;
+            this.defensePlacedWalls = this.defensePlacedWalls.filter(w => {
+                const dx = w.x - entry.position.x;
+                const dy = w.y - entry.position.y;
+                return dx * dx + dy * dy > wallMatchToleranceSq;
+            });
+            const wallIDs = [...new Set(matchingWalls.map(w => w.id))];
+            this.core.networkManager.removeBuildings(wallIDs);
+            return;
+        }
+
+        // Second pass: rebuild on the first free saved slot.
+        let targetEntry = null;
+        for (const entry of this.defenseProfile.entries) {
+            if (isOriginalBuildingPresent(entry)) continue;
+            if (hasOtherBuildingInSlot(entry)) continue;
+            targetEntry = entry;
+            break;
+        }
+
+        if (!targetEntry) return;
+
+        const type = targetEntry.type;
+        const cost = this.getPlacementCost(type);
+        if (this.core.gameManager.resources.power.current < cost) return;
+
+        const ok = this.core.gameManager.increaseBuildingLimit(type);
+        if (!ok) return;
+
+        const BuildingClass = BuildingManager.getBuildingClassByType(type);
+        if (!BuildingClass) return;
+
+        const position = { x: targetEntry.position.x, y: targetEntry.position.y };
+        this.core.networkManager.placeBuilding(type, position);
+        const predicted = this.prepareAutoPlacementBuilding(
+            new BuildingClass(player.color, position),
+            player,
+            position
+        );
+        player.setBuildingCache(predicted);
+        this.core.gameManager.subtractResources(cost);
     }
 
     exportCurrentBaseLayout (layoutName, snapshotDataUrl = null) {
@@ -1733,7 +2094,8 @@ export class BuildingManager {
         return bestOrder;
     }
 
-    canAutoPlaceBuilding (base, position, allUnits, pendingBuildings, buildingType, buildingSize) {
+    canAutoPlaceBuilding (base, position, allUnits, pendingBuildings, buildingType, buildingSize, options = {}) {
+        const ignoreUnits = Boolean(options.ignoreUnits);
         const { minRadius, maxRadius } = this.getPlacementRadiusRangeForType(base, buildingType, buildingSize);
         const dx = position.x - base.position.x;
         const dy = position.y - base.position.y;
@@ -1752,6 +2114,7 @@ export class BuildingManager {
         const collisionBuildings = [];
         for (const building of [...existingBuildings, ...(pendingBuildings || [])]) {
             if (!building || !building.position) continue;
+            if (building.removeFlag) continue;
             if (!building.polygon && typeof building.initPolygon === "function") {
                 building.initPolygon();
             }
@@ -1761,7 +2124,7 @@ export class BuildingManager {
             }
             collisionBuildings.push(building);
         }
-        const safeUnits = (allUnits || []).filter(unit => unit && unit.position);
+        const safeUnits = ignoreUnits ? [] : (allUnits || []).filter(unit => unit && unit.position && !unit.isFadingOut);
 
         const previewBuilding = new BuildingClass(this.core.gameManager.player.color, position);
         this.prepareAutoPlacementBuilding(previewBuilding, base, position);

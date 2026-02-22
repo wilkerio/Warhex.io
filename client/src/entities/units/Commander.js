@@ -25,8 +25,6 @@ export default class Commander extends Unit {
         this._updateBulletDetails();
         // Spawn facing down by default.
         this.rotation = Math.PI / 2;
-        // Ao nascer, empurra o comandante um pouco para baixo (200px) para sair das barracas
-        this.setTargetPosition({ x: this.position.x, y: this.position.y + 200 });
     }
 
     _updateBulletDetails () {

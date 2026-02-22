@@ -56,8 +56,21 @@ class GameManager {
 
     updateDynamicMapSize () {
         if (!this.core.renderer) return;
-        const totalPlayers = this.players.length + (this.player ? 1 : 0);
-        this.core.renderer.setMapPlayerCount(totalPlayers);
+        const positions = [];
+        if (this.player?.position) {
+            positions.push(this.player.position);
+        }
+        for (const player of this.players) {
+            if (player?.position) {
+                positions.push(player.position);
+            }
+        }
+
+        if (positions.length > 0) {
+            this.core.renderer.setMapPlayerPositions(positions);
+        } else {
+            this.core.renderer.setMapPlayerCount(1);
+        }
         // Camera uses half-world coordinates internally.
         this.core.camera.mapHalfSize = this.core.renderer.getMapSize() / 4;
     }

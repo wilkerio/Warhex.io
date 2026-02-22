@@ -22,6 +22,9 @@ export default class BuildingPreview extends Renderable {
 
         // Loop through each building
         for (const otherBuilding of buildings) {
+            if (!otherBuilding || otherBuilding.removeFlag) {
+                continue;
+            }
             if (otherBuilding !== this) { // Make sure not to check collision with itself
                 // Calculate the distance between the centers of the buildings
                 const distance = this._getDistance(
@@ -45,20 +48,6 @@ export default class BuildingPreview extends Renderable {
                     this.buildable = false;
                     break; // No need to check further if a collision is found
                 }
-            }
-        }
-
-        // Loop through each unit
-        for (const unit of units) {
-            // Calculate the distance between the building center and the unit center
-            const dx = this.building.position.x - unit.position.x;
-            const dy = this.building.position.y - unit.position.y;
-            const distanceSquared = dx * dx + dy * dy;
-            const radiusSum = this.building.size + unit.size
-            // Check if the distance between centers is less than or equal to the sum of the radii
-            if (distanceSquared <= radiusSum * radiusSum) {
-                this.buildable = false;
-                break;
             }
         }
     }

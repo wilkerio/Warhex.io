@@ -53,6 +53,21 @@ export class Renderer {
         return radius * 2;
     }
 
+    static calculateMapSizeByPlayerPositions (positions) {
+        const minRadius = 1200;
+        const borderDistance = 500;
+        const extraBorderPadding = 300;
+
+        let maxAxis = 0;
+        for (const pos of positions || []) {
+            if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
+            maxAxis = Math.max(maxAxis, Math.abs(pos.x), Math.abs(pos.y));
+        }
+
+        const radius = Math.max(minRadius, maxAxis + borderDistance + extraBorderPadding);
+        return radius * 2;
+    }
+
     static getSpawnGridCell (index) {
         if (index <= 0) {
             return { x: 0, y: 0 };
@@ -95,6 +110,10 @@ export class Renderer {
 
     setMapPlayerCount (playerCount) {
         this.mapSize = Renderer.calculateMapSizeByPlayers(playerCount);
+    }
+
+    setMapPlayerPositions (positions) {
+        this.mapSize = Renderer.calculateMapSizeByPlayerPositions(positions);
     }
 
     getMapSize () {

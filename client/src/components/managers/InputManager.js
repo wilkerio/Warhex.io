@@ -79,12 +79,18 @@ export default class InputManager {
                 }
                 this.core.unitManager.selectAllUnits();
             }
+            if (this.core.buildingManager?.handleDefenseHotkeyDown) {
+                this.core.buildingManager.handleDefenseHotkeyDown(event.key.toLowerCase());
+            }
         });
 
         document.addEventListener("keyup", (event) => {
             this.activeKeys.delete(event.key.toLowerCase()); // Remove key from active keys
             if (event.key === "Shift") {
                 this.shiftPressed = false;
+            }
+            if (this.core.buildingManager?.handleDefenseHotkeyUp) {
+                this.core.buildingManager.handleDefenseHotkeyUp(event.key.toLowerCase());
             }
         });
     }

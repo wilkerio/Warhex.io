@@ -544,12 +544,6 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	if game.CheckBuildingOverlapWithUnits(player, buildingType, position) {
-		player.Resources.Power.Increment(costs)
-		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
-		return
-	}
-
 	// Place the building
 	building, ok := base.AddBuilding(buildingType, position)
 	if !ok {
