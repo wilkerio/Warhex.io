@@ -334,13 +334,13 @@ img {
 
 #skin-grid-container {
   display: grid;
-  grid-template-columns: repeat(3, 1fr); /* Força 3 colunas */
+  grid-template-columns: repeat(3, 1fr); /* Force 3 columns */
   gap: 15px;
   margin-top: 20px;
   padding: 10px;
 }
 
-/* Responsividade: 1 coluna em telas muito pequenas, 2 em médias */
+/* Responsive: 1 column on very small screens, 2 on medium */
 @media (max-width: 600px) {
   #skin-grid-container {
     grid-template-columns: repeat(1, 1fr);
@@ -374,14 +374,14 @@ img {
 .skin-circle img {
   position: absolute;
 
-  /* 🔥 não força 100% */
+  /* Do not force 100% */
   max-width: 120%;
   max-height: 120%;
 
   width: auto;
   height: auto;
 
-  /* força centralização real */
+  /* Keep true centering */
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -537,11 +537,11 @@ img {
 }
 
 #skin-grid-container .skin-item .skin-name {
-  font-size: 12px;
-  color: white;
-  text-align: center;
-  margin: 0;
-  font-weight: 500;
+  display: none;
+}
+
+#skin-grid-container .skin-item p {
+  display: none;
 }
 
 #skin-list {
@@ -830,14 +830,7 @@ img {
 }
 
 #skin-container-menu .skin-item p {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.9);
-  text-align: center;
-  margin: 0;
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: none;
 }
 
 #skin-container-menu .skin-item .skin-lock,
@@ -2221,7 +2214,7 @@ button:hover {
   font-weight: bold;
   font-size: 1.1em;
   color: #b4a0ff;
-  margin-top: 20px; /* adiciona 20px de distância do topo */
+  margin-top: 20px; /* add 20px top spacing */
 }
 
 #resource-container #power span {
@@ -2390,7 +2383,7 @@ button:hover {
   
 }
 
-/* Botão de fechar */
+/* Close button */
 #upgrade-container-exit {
   background: rgba(180, 160, 255, 0.2);
   color: #e0d6ff;
@@ -2955,3 +2948,4 @@ body.menu-active #global-settings-button p.settings-text {
     height: 150px;
     border-radius: 12px;
 }
+

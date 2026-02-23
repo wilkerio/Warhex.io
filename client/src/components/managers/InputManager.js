@@ -21,8 +21,12 @@ export default class InputManager {
             onRemove: [],
         };
 
-        this.registerMouseDownHandler((mousePosition) => this.createSelectionCircle(mousePosition));
-        this.registerMouseUpHandler((mousePosition) => this.removeSelectionCircle(mousePosition));
+        this.registerMouseDownHandler((mousePosition, button) => this.createSelectionCircle(mousePosition, button));
+        this.registerMouseUpHandler((mousePosition, button) => {
+            if (button === 0) {
+                this.removeSelectionCircle(mousePosition);
+            }
+        });
         this.registerMouseMoveHandler((mousePosition) => this.updateSelectionCircle(mousePosition));
 
         this.activityEvents = ['mousemove', 'keydown', 'mousedown'];
@@ -120,7 +124,15 @@ export default class InputManager {
     }
 
     // Creates the selection circle and notifies listeners
-    createSelectionCircle (mousePosition) {
+    createSelectionCircle (mousePosition, button = 0) {
+        if (button !== 0) {
+            return;
+        }
+
+        if (this.core.unitManager?.hasSelectedUnits?.() && !this.shiftPressed) {
+            return;
+        }
+
         if(this.core.gameManager.player === null
             || this.core.buildingManager.buildingToPlace
         ){

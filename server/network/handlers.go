@@ -99,7 +99,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	if len(payload) < 5 || len(payload) > 17 {
+	if len(payload) < 6 || len(payload) > 18 {
 		log.Println("Invalid payload length for join message")
 		return
 	}
@@ -109,11 +109,11 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	// Extract the name (excluding the last 4 bytes for the fingerprint)
-	name := payload[:len(payload)-5]
-
-	// Extract the equippedSkin (the byte immediately after the name)
+	// New join payload layout:
+	// [name...][equippedSkin:1][preferredColorIndex:1][fingerprint:4]
+	name := payload[:len(payload)-6]
 	equippedSkin := payload[len(name)]
+	preferredColorIndex := payload[len(name)+1]
 
 	// Extract the fingerprint (last 4 bytes)
 	fingerprint := uint32(payload[len(payload)-4])<<24 |
@@ -156,8 +156,8 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	var skinData game.SkinData
 	var color []byte
 
-	// Attempt to get the default skin by name
-	skinData, ok = game.GetDefaultSkinByName(cleanName)
+	// Prefer the exact skin selected by client when it's a default catalog skin.
+	skinData, ok = game.GetDefaultSkinByID(equippedSkin)
 	if !ok {
 		// Check for account skins (Premium/Veteran/Other)
 		for _, unlockedSkinId := range userData.Skins.Unlocked {
@@ -172,10 +172,17 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 
 	// If still not found, accept the client-provided skin ID (e.g., Supabase skins)
 	if !ok {
+		colorIndex := int(preferredColorIndex)
+		if len(game.NonSkinColors) > 0 {
+			colorIndex = colorIndex % len(game.NonSkinColors)
+		} else {
+			colorIndex = 0
+		}
+
 		skinData = game.SkinData{
 			ID:           equippedSkin,
 			Name:         "external",
-			BaseColor:    game.NonSkinColors[byte(rand.IntN(len(game.NonSkinColors)))],
+			BaseColor:    game.NonSkinColors[colorIndex],
 			BaseColorHex: "#ffffff",
 		}
 		ok = true
@@ -183,8 +190,13 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 
 	// If skinData is uninitialized, provide a default value
 	if len(skinData.BaseColor) == 0 || skinData.BaseColorHex == "" || skinData.BaseColorHex == "transparent" {
-		// Assign a random color for the base
-		color = game.NonSkinColors[byte(rand.IntN(len(game.NonSkinColors)))]
+		colorIndex := int(preferredColorIndex)
+		if len(game.NonSkinColors) > 0 {
+			colorIndex = colorIndex % len(game.NonSkinColors)
+		} else {
+			colorIndex = 0
+		}
+		color = game.NonSkinColors[colorIndex]
 	} else {
 		// Use the base color from skinData
 		color = skinData.BaseColor
@@ -1015,7 +1027,7 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 				}
 				radius += spacing // Increase the radius for the next layer
 			}
-			// Set the nearest unit's target position to the exact targetPosition if it’s not already set
+			// Set the nearest unit's target position to the exact targetPosition if it's not already set
 			unitsToUpdate[nearestUnitIndex].SetTargetPosition(targetPositionFloat)
 		}
 	}
@@ -1809,3 +1821,4 @@ func getPositionFloatFromPayload(payload []byte) game.PositionFloat {
 		Y: math.Float32frombits(y),
 	}
 }
+

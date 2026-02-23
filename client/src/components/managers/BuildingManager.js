@@ -760,6 +760,11 @@ export class BuildingManager {
             return;
         }
 
+        if (this.core.unitManager?.hasSelectedUnits?.() && !this.buildingToPlace) {
+            // Let UnitManager consume right-click for movement/targeting.
+            return;
+        }
+
         if (this.buildingToPlace) {
             this.removeBuildingToPlace();
         } else {

@@ -2090,7 +2090,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		Units:             make(map[ID]*Unit),
 		AvailableUnitIDs:  InitAvailableIDs(128),
 		Population:        Population{Capacity: PLAYER_INITIAL_POPULATION, Used: 0},
-		UnitSpawningLimit: Capacity{Current: 0, Max: 5},
+		UnitSpawningLimit: Capacity{Current: 0, Max: 4},
 		Resources: Resources{
 			Power: Resource{
 				Current:  initialPower,

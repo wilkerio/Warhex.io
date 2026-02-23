@@ -22,10 +22,14 @@ export default class UnitManager {
         this.selectedUnits = [];
 
         this.lastTargetPosition = { x: Infinity, y: Infinity };
+        this.lastMoveCommandAt = 0;
+        this.minMoveCommandIntervalMs = 80;
+        this.minMoveDistanceSq = 64; // 8px
 
         // Register mouse handlers
         this.core.inputManager.registerMouseDownHandler((mousePosition, button) => this.handleMouseDown(mousePosition, button));
         this.core.inputManager.registerMouseUpHandler((mousePosition, button) => this.handleMouseUp(mousePosition, button));
+        this.core.inputManager.registerRightClickHandler((mousePosition) => this.handleRightClick(mousePosition));
 
         // Register event for when the selection circle is removed
         this.core.inputManager.registerSelectionCircleOnRemoveHandler((selectionCircle) => {
@@ -45,37 +49,53 @@ export default class UnitManager {
         return this.selectedUnits.length > 0;
     }
 
+    clearSelection () {
+        this.selectedUnits.forEach(unit => {
+            unit.isSelected = false;
+        });
+        this.selectedUnits = [];
+    }
+
     handleMouseDown (mousePosition, button) {
         if (button !== 0) return; // If not left click return
         if (this.core.uiManager.isDraggingChat) return;
         if (this.core.uiManager.menuOpen) return;
 
         if (this.hasSelectedUnits()) {
-            const targetPosition = { ...mousePosition };
-            this.updateSelectedUnitsCannonTarget(targetPosition);
+            this.sendMoveCommand(mousePosition);
+        }
+    }
 
-            this.selectedUnits.forEach((unit) => {
-                if (!this.core.inputManager.shiftPressed) {
-                    unit.isSelected = false;  // Deselect units
-                }
-            });
+    handleRightClick (mousePosition) {
+        if (!this.hasSelectedUnits()) return;
+        if (this.core.uiManager.isDraggingChat) return;
+        if (this.core.uiManager.menuOpen) return;
 
-            // If the position has changed, send the move command to the network manager and update the last target position.
-            if (
-                this.lastTargetPosition.x !== targetPosition.x &&
-                this.lastTargetPosition.y !== targetPosition.y
-            ) {
-                this.core.networkManager.moveUnits(this.selectedUnits, targetPosition);
-                this.lastTargetPosition = targetPosition; // Update last position
-            }
+        this.sendMoveCommand(mousePosition);
+    }
 
+    sendMoveCommand (mousePosition) {
+        const targetPosition = { ...mousePosition };
+        this.updateSelectedUnitsCannonTarget(targetPosition);
 
-            if (!this.core.inputManager.shiftPressed) {
-                this.selectedUnits = [];
-            }
-        } else /* No units selected */ {
-            /* Seperate the selection circle mechanisim from this class, 
-               and move this code here out of the UnitManager...*/
+        const now = Date.now();
+        const dx = targetPosition.x - this.lastTargetPosition.x;
+        const dy = targetPosition.y - this.lastTargetPosition.y;
+        const movedEnough = (dx * dx + dy * dy) > this.minMoveDistanceSq;
+        const intervalPassed = (now - this.lastMoveCommandAt) >= this.minMoveCommandIntervalMs;
+
+        if (!movedEnough && !intervalPassed) {
+            return;
+        }
+
+        this.core.networkManager.moveUnits(this.selectedUnits, targetPosition);
+        this.lastTargetPosition = targetPosition;
+        this.lastMoveCommandAt = now;
+
+        // Match previous UX: after issuing a move command, clear selection
+        // unless the user is holding Shift.
+        if (!this.core.inputManager.shiftPressed) {
+            this.clearSelection();
         }
     }
 
@@ -88,12 +108,10 @@ export default class UnitManager {
     }
 
     handleMouseUp (mousePosition, button) {
-        if (button === 2) { // right click
-            this.selectedUnits.forEach((unit) => {
-                unit.isSelected = false;  // Deselect units
-            });
-            this.selectedUnits = [];
-        }
+        if (button !== 2) return;
+        // Fallback: some browsers/input flows may skip canvas contextmenu,
+        // but still fire mouseup with right button.
+        this.handleRightClick(mousePosition);
     }
 
     selectAllUnits(){
@@ -106,6 +124,10 @@ export default class UnitManager {
     }
 
     selectUnits (selectionCircle) {
+        if (!this.core.inputManager.shiftPressed) {
+            this.clearSelection();
+        }
+
         const rc = selectionCircle; // selection rectangle
         const r_left = rc.position.x + this.core.camera.x;
         const r_top = rc.position.y + this.core.camera.y;

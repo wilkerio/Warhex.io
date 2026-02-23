@@ -18,7 +18,7 @@ export default class Message {
         return messageBytes;
     }
 
-    static createJoinMessage (name, equippedSkin, fingerprint) {
+    static createJoinMessage (name, equippedSkin, preferredColorIndex, fingerprint) {
         // Truncate the name if it exceeds 12 characters
         name = name.slice(0, 12);
 
@@ -34,6 +34,15 @@ export default class Message {
         const skinByteArray = new Uint8Array(1);
         skinByteArray[0] = skinByte;
 
+        // Preferred non-skin color index (palette index on server)
+        let colorIndexByte = 0;
+        if (typeof preferredColorIndex === 'number' && !Number.isNaN(preferredColorIndex)) {
+            colorIndexByte = Math.max(0, Math.min(255, preferredColorIndex));
+        }
+
+        const colorByteArray = new Uint8Array(1);
+        colorByteArray[0] = colorIndexByte;
+
         // Convert the fingerprint to a 4-byte Uint8Array (32-bit integer)
         const fingerprintBytes = new Uint8Array(4);
         fingerprintBytes[0] = (fingerprint >> 24) & 0xFF; // Most significant byte
@@ -41,8 +50,9 @@ export default class Message {
         fingerprintBytes[2] = (fingerprint >> 8) & 0xFF;
         fingerprintBytes[3] = fingerprint & 0xFF; // Least significant byte
 
-        // Calculate the total payload size (name length + 1 byte for skin + 4 bytes for fingerprint)
-        const payload = new Uint8Array(nameBytes.length + 1 + fingerprintBytes.length);
+        // Calculate the total payload size:
+        // name + 1 byte skin + 1 byte preferred color + 4 bytes fingerprint
+        const payload = new Uint8Array(nameBytes.length + 1 + 1 + fingerprintBytes.length);
 
         // Copy the name bytes starting from the first byte
         payload.set(nameBytes, 0);
@@ -50,8 +60,11 @@ export default class Message {
         // Copy the skin byte
         payload.set(skinByteArray, nameBytes.length);
 
+        // Copy preferred color byte right after skin byte
+        payload.set(colorByteArray, nameBytes.length + 1);
+
         // Append the fingerprint bytes at the end of the payload
-        payload.set(fingerprintBytes, nameBytes.length + 1);
+        payload.set(fingerprintBytes, nameBytes.length + 2);
 
         // Return the message with the appropriate type and payload
         return new Message(MessageTypes.JOIN, payload);

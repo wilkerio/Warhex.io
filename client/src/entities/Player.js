@@ -262,8 +262,12 @@ export default class Player extends Renderable {
         this.springVelocity *= 1 - this.springDamping;
         this.health.current += this.springVelocity * deltaTime;
 
-        // Clamp the health to ensure it doesn't go below 0 or above the target
-        this.health.current = Math.min(this.health.current, this.targetHealth);
+        // Clamp without snapping instantly to target (keep smooth spring animation).
+        if (this.targetHealth < this.health.current) {
+            this.health.current = Math.max(this.health.current, this.targetHealth);
+        } else {
+            this.health.current = Math.min(this.health.current, this.targetHealth);
+        }
         this.health.current = Math.max(this.health.current, 0);
     }
 
@@ -430,18 +434,27 @@ export default class Player extends Renderable {
                 context.font = `900 ${fontSize}px 'Ubuntu', sans-serif`;
             }
 
-            context.fillStyle = "white";
             context.textAlign = "center";
             context.textBaseline = "middle";
             const nameY = screenY;
-            context.fillText(this.name, screenX, nameY);
 
-            // Set stroke style and draw text border
-            context.strokeStyle = "#666666";
-            context.lineWidth = Math.max(fontSize * 0.07);
-
-
+            context.save();
+            // Outer strong stroke for readability on any background.
+            context.strokeStyle = "rgba(20, 24, 34, 0.95)";
+            context.lineWidth = Math.max(fontSize * 0.24, 3);
             context.strokeText(this.name, screenX, nameY);
+
+            // Inner soft stroke to keep the font edge crisp.
+            context.strokeStyle = "rgba(90, 100, 120, 0.9)";
+            context.lineWidth = Math.max(fontSize * 0.10, 1.6);
+            context.strokeText(this.name, screenX, nameY);
+
+            // Subtle glow matching current player color.
+            context.shadowColor = this.color || "rgba(255,255,255,0.6)";
+            context.shadowBlur = Math.max(fontSize * 0.45, 6);
+            context.fillStyle = "#ffffff";
+            context.fillText(this.name, screenX, nameY);
+            context.restore();
         };
 
         // Update rotation angle

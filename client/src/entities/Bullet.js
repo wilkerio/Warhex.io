@@ -9,8 +9,8 @@ export default class Bullet extends Renderable {
         this.id = id;
         this.type = details.type;
         this.size = details.size;
-        this.targetPosition = position;
-        this.position = position;
+        this.targetPosition = { ...position };
+        this.position = { ...position };
         this.color = color;
         this.speed = details.speed; // Speed in pixels per second
 
@@ -73,7 +73,7 @@ export default class Bullet extends Renderable {
         }
 
         // Update the target position
-        this.targetPosition = targetPosition;
+        this.targetPosition = { ...targetPosition };
     }
 
     update (deltaTime) {
@@ -85,37 +85,39 @@ export default class Bullet extends Renderable {
                 this.alpha = 0;
                 return true; // Mark for removal
             } else {
-                // LERP function for movement during fade-out
-                const lerp = (start, end, t) => start + (end - start) * t;
+                const dx = this.targetPosition.x - this.position.x;
+                const dy = this.targetPosition.y - this.position.y;
+                const distance = Math.hypot(dx, dy);
+                const maxStep = this.speed * 0.5 * (deltaTime / 1000);
 
-                // LERP the current position towards the target position
-                const interpolationRatio = 0.1;
-
-                this.position.x = lerp(this.position.x, this.targetPosition.x, interpolationRatio);
-                this.position.y = lerp(this.position.y, this.targetPosition.y, interpolationRatio);
-
-                // Continue moving in the same direction during fade-out
-                this.position.x += this.directionX * this.speed * 0.5 * deltaTime / 1000;
-                this.position.y += this.directionY * this.speed * 0.5 * deltaTime / 1000;
+                if (distance > 0) {
+                    if (distance <= maxStep) {
+                        this.position.x = this.targetPosition.x;
+                        this.position.y = this.targetPosition.y;
+                    } else {
+                        const invDistance = 1 / distance;
+                        this.position.x += dx * invDistance * maxStep;
+                        this.position.y += dy * invDistance * maxStep;
+                    }
+                }
 
                 this.size += deltaTime / 1000 * this.sizeIncrement;  
             }
         } else {
-            // Define LERP function
-            const lerp = (start, end, t) => start + (end - start) * t;
+            const dx = this.targetPosition.x - this.position.x;
+            const dy = this.targetPosition.y - this.position.y;
+            const distance = Math.hypot(dx, dy);
+            const maxStep = this.speed * (deltaTime / 1000);
 
-            // LERP towards the target position
-            const interpolationRatio = 0.1; 
-
-            // Update position using LERP
-            this.position.x = lerp(this.position.x, this.targetPosition.x, interpolationRatio);
-            this.position.y = lerp(this.position.y, this.targetPosition.y, interpolationRatio);
-
-            // Snap to target if very close
-            if (Math.abs(this.targetPosition.x - this.position.x) < 0.1 &&
-                Math.abs(this.targetPosition.y - this.position.y) < 0.1) {
-                this.position.x = this.targetPosition.x;
-                this.position.y = this.targetPosition.y;
+            if (distance > 0) {
+                if (distance <= maxStep) {
+                    this.position.x = this.targetPosition.x;
+                    this.position.y = this.targetPosition.y;
+                } else {
+                    const invDistance = 1 / distance;
+                    this.position.x += dx * invDistance * maxStep;
+                    this.position.y += dy * invDistance * maxStep;
+                }
             }
         }
 

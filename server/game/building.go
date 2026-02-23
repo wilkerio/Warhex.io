@@ -56,7 +56,7 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 	WALL: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 150, Max: 150},
+			Health:  Health{Current: 100, Max: 100},
 			Damage:  50,
 			Next:    []BuildingVariant{MICRO_GENERATOR, BOULDER},
 			Cost:    60,
@@ -293,7 +293,7 @@ var buildingSizes = map[BuildingType]int{
 	SIMPLE_TURRET: 29,
 	SNIPER_TURRET: 32,
 	ARMORY:        40,
-	BARRACKS:      60,
+	BARRACKS:      64,
 	PORTAL:        40,
 	GENERATOR:     32,
 	HOUSE:         30,

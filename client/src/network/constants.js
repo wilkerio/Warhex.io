@@ -100,7 +100,7 @@ export const BuildingSizes = {
     SIMPLE_TURRET: { size: 29 },
     SNIPER_TURRET: { size: 32 },
     ARMORY: { size: 40 },
-    BARRACKS: { size: 60 },
+    BARRACKS: { size: 64 },
     PORTAL: { size: 40 },
     GENERATOR: { size: 32 },
     HOUSE: { size: 30 }
@@ -596,64 +596,78 @@ export const UnitDetails = {
         BASIC: {
             variant: UnitVariantTypes.SOLDIER.BASIC,
             size: 18,
+            speed: 180,
         },
         LIGHT_ARMOR: {
             variant: UnitVariantTypes.SOLDIER.LIGHT_ARMOR,
             size: 18,
+            speed: 180,
         },
     },
     TANK: {
         BASIC: {
             variant: UnitVariantTypes.TANK.BASIC,
             size: 31,
+            speed: 50,
         },
         HEAVY_ARMOR: {
             variant: UnitVariantTypes.TANK.HEAVY_ARMOR,
             size: 31,
+            speed: 50,
         },
         BOOSTER_ENGINE: {
             variant: UnitVariantTypes.TANK.BOOSTER_ENGINE,
             size: 31,
+            speed: 80,
         },
         CANNON: {
             variant: UnitVariantTypes.TANK.CANNON,
             size: 31,
+            speed: 50,
         },
         HEAVY_ARMOR_BOOSTER_ENGINE: {
             variant: UnitVariantTypes.TANK.HEAVY_ARMOR_BOOSTER_ENGINE,
             size: 31,
+            speed: 80,
         },
         BOOSTER_ENGINE_CANNON: {
             variant: UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON,
             size: 31,
+            speed: 80,
         }
     },
     SIEGE_TANK: {
         BASIC: {
             variant: UnitVariantTypes.SIEGE_TANK.BASIC,
             size: 40,
+            speed: 15,
         },
         HEAVY_ARMOR: {
             variant: UnitVariantTypes.SIEGE_TANK.HEAVY_ARMOR,
             size: 40,
+            speed: 15,
         },
         BOOSTER_ENGINE: {
             variant: UnitVariantTypes.SIEGE_TANK.BOOSTER_ENGINE,
             size: 40,
+            speed: 28,
             next: []
         },
         CANNON: {
             variant: UnitVariantTypes.SIEGE_TANK.CANNON,
             size: 40,
+            speed: 15,
             next: []
         },
         HEAVY_ARMOR_BOOSTER_ENGINE: {
             variant: UnitVariantTypes.SIEGE_TANK.HEAVY_ARMOR_BOOSTER_ENGINE,
             size: 40,
+            speed: 28,
         },
         BOOSTER_ENGINE_CANNON: {
             variant: UnitVariantTypes.SIEGE_TANK.BOOSTER_ENGINE_CANNON,
             size: 40,
+            speed: 28,
         }
     },
     COMMANDER: {
@@ -663,6 +677,7 @@ export const UnitDetails = {
             description: "Powerful unit, you can only have 1",
             cost: 5000,
             size: 32,
+            speed: 160,
         },
     },
     TRI_COMMANDER: {
@@ -672,6 +687,7 @@ export const UnitDetails = {
             description: "",
             cost: 5000,
             size: 40,
+            speed: 160,
         },
     },
 };

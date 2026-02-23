@@ -141,6 +141,15 @@ func GetDefaultSkinByName(name string) (SkinData, bool) {
 	return SkinData{}, false // Return false if no match is found
 }
 
+func GetDefaultSkinByID(id byte) (SkinData, bool) {
+	for _, skin := range AllSkins.Default {
+		if skin.ID == id {
+			return skin, true
+		}
+	}
+	return SkinData{}, false
+}
+
 func ParseHexColor(hexColor string) []byte {
 	// If the color is transparent, return [0, 0, 0] or similar placeholder
 	if hexColor == "transparent" {

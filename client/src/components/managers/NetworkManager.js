@@ -923,11 +923,16 @@ export default class NetworkManager {
         
         console.log('Creating player with skin:', selectedSkin);
         
+        const accentFromSkin = localStorage.getItem("toolbarAccentColor");
+        const toolbarColor = (typeof accentFromSkin === "string" && /^#[0-9a-fA-F]{6}$/.test(accentFromSkin))
+            ? accentFromSkin
+            : color;
         // Pass the skin name (string) instead of skinID from server
-        const player = new Player(playerID, name, color, selectedSkin, position);
+        const player = new Player(playerID, name, toolbarColor, selectedSkin, position);
         player.hasSpawnProtection = true;
         this.core.gameManager.setClientPlayer(player);
-        this.core.toolbar.changeColor(color);
+        player.color = toolbarColor;
+        this.core.toolbar.changeColor(toolbarColor);
         this.core.leaderboard.clear();
         this.core.camera.enableControls(true);
         this.core.camera.setPosition(position);
@@ -1647,7 +1652,8 @@ export default class NetworkManager {
     // Join the game by sending a join message to the server
     joinGame (playerName, equippedSkin) {
         const fingerprint = this.getFingerPrint();
-        const message = Message.createJoinMessage(playerName, equippedSkin, fingerprint);
+        const preferredColorIndex = Number(localStorage.getItem("defaultColorIndex")) || 0;
+        const message = Message.createJoinMessage(playerName, equippedSkin, preferredColorIndex, fingerprint);
         this.sendMessage(message);
     }
 

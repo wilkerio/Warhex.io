@@ -36,7 +36,7 @@ export default class Unit extends Renderable {
     }
 
     setTargetPosition (targetPosition) {
-        this.targetPosition = targetPosition;
+        this.targetPosition = { ...targetPosition };
     }
 
     setTargetPoint (targetPoint) {
@@ -81,23 +81,22 @@ export default class Unit extends Renderable {
                 this.size += (deltaTime / 1000) * this.sizeIncrement;
             }
         } else {
-            // Define LERP function (Linear Interpolation)
-            const lerp = (start, end, t) => start + (end - start) * t;
+            const dx = this.targetPosition.x - this.position.x;
+            const dy = this.targetPosition.y - this.position.y;
+            const distance = Math.hypot(dx, dy);
 
-            // Calculate the smooth interpolation ratio
-            const maxSpeed = 0.05;  // Max speed ratio for interpolation (feel free to adjust)
-            const interpolationRatio = Math.min(maxSpeed, deltaTime / 100); // Adjust ratio by deltaTime for frame-rate independence
+            if (distance > 0) {
+                const unitSpeed = Number(this.details?.speed || 180);
+                const maxStep = unitSpeed * (deltaTime / 1000);
 
-            // Update position using LERP with dynamic interpolation
-            this.position.x = lerp(this.position.x, this.targetPosition.x, interpolationRatio);
-            this.position.y = lerp(this.position.y, this.targetPosition.y, interpolationRatio);
-
-            // Snap to target position if very close
-            const epsilon = 0.1; // Threshold for snapping
-            if (Math.abs(this.targetPosition.x - this.position.x) < epsilon &&
-                Math.abs(this.targetPosition.y - this.position.y) < epsilon) {
-                this.position.x = this.targetPosition.x;
-                this.position.y = this.targetPosition.y;
+                if (distance <= maxStep) {
+                    this.position.x = this.targetPosition.x;
+                    this.position.y = this.targetPosition.y;
+                } else {
+                    const invDistance = 1 / distance;
+                    this.position.x += dx * invDistance * maxStep;
+                    this.position.y += dy * invDistance * maxStep;
+                }
             }
 
             return false; // Unit not marked for removal

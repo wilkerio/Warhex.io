@@ -935,6 +935,342 @@ export default class UIManager {
         this.updateAccount();
     }
 
+    getNeutralSkinPreviewDataUrl() {
+        const nonSkinPalette = [
+            "#60eaff", "#c0d7f6", "#61b0ff", "#ae97f6", "#61ffb0",
+            "#a6ff60", "#a1cd84", "#3fc6a8", "#fff070", "#ffb061",
+            "#d88166", "#ff794f", "#ff605f", "#f697b0", "#ff6ef1"
+        ];
+        const storedIndex = Number(localStorage.getItem("defaultColorIndex")) || 0;
+        const safeIndex = Math.max(0, Math.min(nonSkinPalette.length - 1, storedIndex));
+        const neutralColor = nonSkinPalette[safeIndex];
+
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="g" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="${neutralColor}"/>
+      <stop offset="72%" stop-color="${neutralColor}"/>
+      <stop offset="100%" stop-color="#2f3444"/>
+    </radialGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="url(#g)" stroke="#7f8799" stroke-width="4"/>
+  <circle cx="64" cy="64" r="22" fill="none" stroke="#dbe4ff" stroke-width="5" opacity="0.9"/>
+  <circle cx="64" cy="64" r="8" fill="#dbe4ff" opacity="0.95"/>
+</svg>`;
+        return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    }
+
+    getDefaultPaletteColor() {
+        const nonSkinPalette = this.getNonSkinPalette();
+        const storedIndex = Number(localStorage.getItem("defaultColorIndex")) || 0;
+        const safeIndex = Math.max(0, Math.min(nonSkinPalette.length - 1, storedIndex));
+        return nonSkinPalette[safeIndex];
+    }
+
+    getNonSkinPalette() {
+        return [
+            "#60eaff", "#c0d7f6", "#61b0ff", "#ae97f6", "#61ffb0",
+            "#a6ff60", "#a1cd84", "#3fc6a8", "#fff070", "#ffb061",
+            "#d88166", "#ff794f", "#ff605f", "#f697b0", "#ff6ef1"
+        ];
+    }
+
+    getNearestPaletteIndex(hexColor) {
+        if (!hexColor || typeof hexColor !== "string") return 0;
+        const normalized = /^#[0-9a-fA-F]{6}$/.test(hexColor) ? hexColor : null;
+        if (!normalized) return 0;
+
+        const toRgb = (hex) => ({
+            r: parseInt(hex.slice(1, 3), 16),
+            g: parseInt(hex.slice(3, 5), 16),
+            b: parseInt(hex.slice(5, 7), 16),
+        });
+
+        const target = toRgb(normalized);
+        const palette = this.getNonSkinPalette();
+
+        let bestIndex = 0;
+        let bestDistance = Infinity;
+
+        for (let i = 0; i < palette.length; i++) {
+            const p = toRgb(palette[i]);
+            const dr = target.r - p.r;
+            const dg = target.g - p.g;
+            const db = target.b - p.b;
+            const distance = dr * dr + dg * dg + db * db;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    async updateToolbarAccentForSkin(currentSkin) {
+        let accent = this.getDefaultPaletteColor();
+
+        if (currentSkin && currentSkin.name && currentSkin.name !== "Default") {
+            try {
+                const mapped = this.getMappedSkinAccent(currentSkin.name);
+                if (mapped) {
+                    accent = mapped;
+                    localStorage.setItem("toolbarAccentColor", accent);
+                    localStorage.setItem("defaultColorIndex", String(this.getNearestPaletteIndex(accent)));
+                    if (this.core?.toolbar) {
+                        this.core.toolbar.changeColor(accent);
+                    }
+                    return;
+                }
+
+                let cached = null;
+
+                // 1) Prefer numeric ID path (works for default/veteran/premium and Supabase IDs).
+                const numericId = Number(currentSkin.numericId ?? currentSkin.id);
+                if (Number.isFinite(numericId) && numericId > 0) {
+                    cached = await SkinCache.getSkinById(numericId);
+                }
+
+                // 2) Fallback to name lookup (mainly Supabase skins by name).
+                if (!cached?.image && currentSkin.name) {
+                    cached = await SkinCache.getSkinByName(currentSkin.name);
+                }
+
+                // 3) Final fallback: deterministic accent by skin name, so it never snaps to blue.
+                if (cached?.image) {
+                    const extracted = this.extractDominantColorFromImage(cached.image);
+                    if (extracted) {
+                        accent = extracted;
+                    } else {
+                        accent = this.getHashedFallbackAccent(currentSkin.name);
+                    }
+                } else {
+                    accent = this.getHashedFallbackAccent(currentSkin.name);
+                }
+            } catch (error) {
+                console.warn("Failed to derive accent color from skin image:", error);
+                accent = this.getHashedFallbackAccent(currentSkin.name);
+            }
+        }
+
+        localStorage.setItem("toolbarAccentColor", accent);
+        // Keep server-side base color in sync with chosen skin accent.
+        localStorage.setItem("defaultColorIndex", String(this.getNearestPaletteIndex(accent)));
+        if (this.core?.toolbar) {
+            this.core.toolbar.changeColor(accent);
+        }
+    }
+
+    normalizeSkinKey(name) {
+        if (!name || typeof name !== "string") return "";
+        return name
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9]+/g, "");
+    }
+
+    getMappedSkinAccent(name) {
+        const key = this.normalizeSkinKey(name);
+        if (!key) return null;
+
+        const byName = {
+            default: "#60eaff",
+            alemanha: "#f2d23b",
+            germany: "#f2d23b",
+            arabiasaudita: "#2dbd4f",
+            saudiarabia: "#2dbd4f",
+            argentina: "#74c6ff",
+            armenia: "#e45757",
+            belgica: "#f0cd45",
+            belgium: "#f0cd45",
+            bola8: "#d9d9d9",
+            eightball: "#d9d9d9",
+            brazil: "#35b84f",
+            brasil: "#35b84f",
+            canada: "#ff5a66",
+            catar: "#8d315a",
+            qatar: "#8d315a",
+            chile: "#4c67d9",
+            china: "#ff4a57",
+            coreiadosul: "#4c67d9",
+            southkorea: "#4c67d9",
+            eua: "#d94a57",
+            usa: "#d94a57",
+            franca: "#4c67d9",
+            france: "#4c67d9",
+            futebol: "#f2f2f2",
+            football: "#f2f2f2",
+            hamburger: "#d89045",
+            hamburguer: "#d89045",
+            iraque: "#43b855",
+            iraq: "#43b855",
+            irlanda: "#4ecf63",
+            ireland: "#4ecf63",
+            italia: "#4ecf63",
+            italy: "#4ecf63",
+            japao: "#f35a6a",
+            japan: "#f35a6a",
+            lituania: "#e8cd4b",
+            lithuania: "#e8cd4b",
+            luxemburgo: "#6ec7ff",
+            luxembourg: "#6ec7ff",
+            monaco: "#e25662",
+            olho: "#83c157",
+            eye: "#83c157",
+            reinounido: "#5c6fe2",
+            unitedkingdom: "#5c6fe2",
+            uk: "#5c6fe2",
+            russia: "#5f74e0",
+            sucia: "#5f74e0",
+            sweden: "#5f74e0",
+            suica: "#f25c66",
+            switzerland: "#f25c66",
+            turquia: "#e44856",
+            turkey: "#e44856",
+            ucrania: "#5d84ff",
+            ukraine: "#5d84ff",
+            unicornio: "#ff8fcf",
+            unicorn: "#ff8fcf",
+            gd: "#cab6a4",
+            ussr: "#d64b74",
+            israel: "#4f7ddf",
+            trump: "#f05b4f",
+            putin: "#4f7ddf",
+            fly: "#c68b5d",
+            spider: "#ffe624",
+            goldfish: "#34d6ff",
+            jellyfish: "#d85df7",
+            frog: "#68cb4d",
+            wizard: "#4f7ddf",
+            penguin: "#84b7f3",
+            void: "#6f6677",
+            ratking: "#a4815f",
+        };
+
+        return byName[key] || null;
+    }
+
+    getHashedFallbackAccent(name) {
+        const palette = [
+            "#43c044", "#ffd338", "#f85b5b", "#4bb6ff", "#9d7dff",
+            "#ff8f3d", "#38d9c1", "#ff6ac1", "#8fd14f", "#d18d4a"
+        ];
+        if (!name || typeof name !== "string") {
+            return this.getDefaultPaletteColor();
+        }
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+            hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+        }
+        return palette[hash % palette.length];
+    }
+
+    extractDominantColorFromImage(image) {
+        try {
+            if (!image || !image.naturalWidth || !image.naturalHeight) return null;
+            const size = 40;
+            const canvas = document.createElement("canvas");
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            if (!ctx) return null;
+
+            ctx.drawImage(image, 0, 0, size, size);
+            const data = ctx.getImageData(0, 0, size, size).data;
+            const buckets = new Map();
+
+            for (let i = 0; i < data.length; i += 4) {
+                const alpha = data[i + 3];
+                if (alpha < 100) continue;
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+
+                const { s, v } = this.rgbToHsv(r, g, b);
+                // Ignore gray-ish/washed pixels and almost black/white pixels.
+                if (s < 0.22 || v < 0.18 || v > 0.97) continue;
+
+                const qr = Math.round(r / 24) * 24;
+                const qg = Math.round(g / 24) * 24;
+                const qb = Math.round(b / 24) * 24;
+                const key = `${qr},${qg},${qb}`;
+
+                const weight = (0.35 + s * 0.9 + v * 0.25);
+                buckets.set(key, (buckets.get(key) || 0) + weight);
+            }
+
+            if (!buckets.size) return null;
+
+            let bestKey = null;
+            let bestScore = -1;
+            for (const [key, score] of buckets.entries()) {
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestKey = key;
+                }
+            }
+
+            if (!bestKey) return null;
+            const [r, g, b] = bestKey.split(",").map((n) => Number(n));
+            const tuned = this.tuneAccentColor(r, g, b);
+
+            return `#${[tuned.r, tuned.g, tuned.b].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+        } catch {
+            return null;
+        }
+    }
+
+    rgbToHsv(r, g, b) {
+        const rn = r / 255;
+        const gn = g / 255;
+        const bn = b / 255;
+        const max = Math.max(rn, gn, bn);
+        const min = Math.min(rn, gn, bn);
+        const delta = max - min;
+
+        let h = 0;
+        const s = max === 0 ? 0 : delta / max;
+        const v = max;
+
+        if (delta !== 0) {
+            if (max === rn) h = ((gn - bn) / delta) % 6;
+            else if (max === gn) h = (bn - rn) / delta + 2;
+            else h = (rn - gn) / delta + 4;
+            h *= 60;
+            if (h < 0) h += 360;
+        }
+
+        return { h, s, v };
+    }
+
+    hsvToRgb(h, s, v) {
+        const c = v * s;
+        const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+        const m = v - c;
+        let rp = 0, gp = 0, bp = 0;
+
+        if (h < 60) [rp, gp, bp] = [c, x, 0];
+        else if (h < 120) [rp, gp, bp] = [x, c, 0];
+        else if (h < 180) [rp, gp, bp] = [0, c, x];
+        else if (h < 240) [rp, gp, bp] = [0, x, c];
+        else if (h < 300) [rp, gp, bp] = [x, 0, c];
+        else [rp, gp, bp] = [c, 0, x];
+
+        return {
+            r: Math.round((rp + m) * 255),
+            g: Math.round((gp + m) * 255),
+            b: Math.round((bp + m) * 255)
+        };
+    }
+
+    tuneAccentColor(r, g, b) {
+        const hsv = this.rgbToHsv(r, g, b);
+        const tunedS = Math.max(0.45, hsv.s);
+        const tunedV = Math.max(0.52, Math.min(0.9, hsv.v));
+        return this.hsvToRgb(hsv.h, tunedS, tunedV);
+    }
+
     async updateSkinCircle() {
         const circle = document.getElementById('skin-preview-circle');
         let img = document.getElementById('current-skin-img');
@@ -987,8 +1323,12 @@ export default class UIManager {
                     img.style.display = 'none';
                 }
             } else {
-                img.src = '';
-                img.style.display = 'none';
+                // Default/no-skin must still show a neutral preview icon.
+                if (!localStorage.getItem("defaultColorIndex")) {
+                    localStorage.setItem("defaultColorIndex", "0");
+                }
+                img.src = this.getNeutralSkinPreviewDataUrl();
+                img.style.display = 'block';
             }
         }
         
@@ -1107,6 +1447,7 @@ export default class UIManager {
         this.updateUseButton();
         this.updateAccount();
         this.applySelectedSkinToLocalPlayer(currentSkin);
+        await this.updateToolbarAccentForSkin(currentSkin);
         
         // If logged in, save to database
         const isLoggedIn = this.core.networkManager.loggedIn;
@@ -1166,6 +1507,8 @@ export default class UIManager {
             if (!skin || !skin.name) return;
             const skinCard = document.createElement('div');
             skinCard.classList.add('skin-item');
+            skinCard.title = skin.name;
+            skinCard.setAttribute('aria-label', skin.name);
             
             const isEquipped = (skin.name === 'Default' && (!currentEquippedName || currentEquippedName === '')) || 
                                (skin.name === currentEquippedName);
@@ -1183,14 +1526,10 @@ export default class UIManager {
             } else {
                 const placeholder = document.createElement('div');
                 placeholder.classList.add('skin-placeholder');
-                placeholder.textContent = '🎮';
+                placeholder.setAttribute('aria-hidden', 'true');
+                placeholder.textContent = 'S';
                 skinCard.appendChild(placeholder);
             }
-            
-            const nameLabel = document.createElement('p');
-            nameLabel.classList.add('skin-name');
-            nameLabel.textContent = skin.name;
-            skinCard.appendChild(nameLabel);
             
             skinCard.addEventListener('click', async () => {
                 this.currentSkinIndex = index;
@@ -1561,7 +1900,7 @@ export default class UIManager {
                     for (let i = 0; i < 2 - availableUpgrades.length; i++) {
                         const comingSoonItem = document.createElement("div");
                         comingSoonItem.classList.add("upgrade-item", "coming-soon");
-                        comingSoonItem.innerHTML = "<p>In the lab—upgrades incoming!</p>";
+                        comingSoonItem.innerHTML = "<p>In the lab - upgrades incoming!</p>";
                         this.DOM.game.upgrades.list.appendChild(comingSoonItem);
                     }
                 } else if (availableUpgrades.length === 0) {
@@ -2073,7 +2412,7 @@ export default class UIManager {
     addPlayButtonListener () {
         if (!this.DOM.menu.playButton) return;
 
-        this.DOM.menu.playButton.addEventListener("click", () => {
+        this.DOM.menu.playButton.addEventListener("click", async () => {
             const playerName = this.extractPlayerName();
             localStorage.setItem("playerName", playerName);
             
@@ -2093,6 +2432,14 @@ export default class UIManager {
 
             // Normalize to byte range
             equippedSkinByte = Math.max(0, Math.min(255, equippedSkinByte));
+
+            // Recompute accent right before joining to avoid stale blue cache.
+            let currentSkin = this.availableSkins[this.currentSkinIndex] || null;
+            if (equippedSkinName) {
+                const byName = this.availableSkins.find((s) => s.name === equippedSkinName);
+                if (byName) currentSkin = byName;
+            }
+            await this.updateToolbarAccentForSkin(currentSkin);
 
             console.log('Joining game with skin (byte):', equippedSkinByte, 'name:', equippedSkinName);
             this.core.handlePlayButtonPress(playerName, equippedSkinByte);
@@ -2208,9 +2555,9 @@ export default class UIManager {
             } catch (e) {}
         }
 
-        const defaultNames = ["◕‿↼", "•◡•", "(ㆆ _ ㆆ)", "ಠ╭╮ಠ", "(• ε •)",
-            "⇀‸↼‶", "◔̯◔", "◉‿◉", "•`_´•", "-_-",
-            "⌐■_■", "•_•", "ಠ_ರೃ", "´◔ ω◔`", "♥‿♥", "⊙＿⊙'", "⊙ω⊙", "> _ <"
+        const defaultNames = ["Nova", "Orbit", "Pulse", "Core", "Flux",
+            "Echo", "Atlas", "Vector", "Drift", "Zen",
+            "Cipher", "Frost", "Blaze", "Shadow", "Ember", "NovaX", "Glint", "Aero"
         ];
         let playerName = this.DOM.menu.playerNameInput.value.trim();
 
@@ -2428,6 +2775,7 @@ export default class UIManager {
     }
 
     gameOver (killer, score) {
+        this.hideInactivityWarning();
         this.core.camera.setPosition(killer.position, true);
         this.core.camera.setZoom(0.75);
 
@@ -2438,6 +2786,7 @@ export default class UIManager {
     }
 
     kicked (reason, score) {
+        this.hideInactivityWarning();
         this.core.camera.setZoom(0.75);
 
         let killedBy = reason;
@@ -2536,9 +2885,9 @@ export default class UIManager {
                 // Create the message based on the time left
                 let message;
                 if (minutesLeft > 0) {
-                    message = `Grab a snack, server's rebooting in ${minutesLeft}m ${secondsLeft}s! 🍪`;
+                    message = `Grab a snack, server's rebooting in ${minutesLeft}m ${secondsLeft}s!`;
                 } else {
-                    message = `Server's about to reboot in ${secondsLeft}s! ⏳`;
+                    message = `Server's about to reboot in ${secondsLeft}s!`;
                 }
 
                 alertElement.textContent = message;
@@ -3390,7 +3739,7 @@ export default class UIManager {
                 const created = layout.createdAt ? new Date(layout.createdAt).toLocaleString() : "Unknown date";
                 const count = Array.isArray(layout.buildings) ? layout.buildings.length : 0;
                 const author = layout.authorName ? ` by ${layout.authorName}` : "";
-                meta.textContent = `${count} buildings • ${created}${author}`;
+                meta.textContent = `${count} buildings - ${created}${author}`;
                 meta.style.marginTop = "6px";
                 meta.style.fontSize = "12px";
                 meta.style.opacity = "0.86";
@@ -3668,15 +4017,22 @@ export default class UIManager {
     }
 
     showInactivityWarning() {
+        if (this.inactivityTimerInterval) {
+            clearInterval(this.inactivityTimerInterval);
+            this.inactivityTimerInterval = null;
+        }
+
         this.DOM.game.inactivityWarning.container.style.display = 'flex';
         let timeLeft = this.inactivityTimeout;
 
         const updateTimer = () => {
             const minutes = Math.floor(timeLeft / 60);
-            const seconds = timeLeft % 60;
+            const seconds = Math.max(0, timeLeft % 60);
             this.DOM.game.inactivityWarning.timer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
             if (timeLeft <= 0) {
                 clearInterval(this.inactivityTimerInterval);
+                this.inactivityTimerInterval = null;
+                return;
             }
             timeLeft--;
         };
@@ -3693,4 +4049,6 @@ export default class UIManager {
         }
     }
 }
+
+
 
