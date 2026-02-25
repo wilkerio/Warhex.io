@@ -27,7 +27,8 @@ export default class Toolbar {
         this.color = this._normalizeHexColor(newColor) || "#60eaff";
         this.items.forEach((itemClass, index) => {
             const toolbarItem = this.container.querySelector(`.toolbar-item-${index}`);
-            const iconCanvas = this.createIconCanvas(new itemClass(this.color), 0.86);
+            const item = new itemClass(this.color);
+            const iconCanvas = this.createIconCanvas(item, this._getToolbarIconScale(item));
             toolbarItem.replaceChild(iconCanvas, toolbarItem.querySelector("canvas"));
         });
     }
@@ -80,7 +81,7 @@ export default class Toolbar {
             }
         });
 
-        const iconCanvas = this.createIconCanvas(item, 0.86);
+        const iconCanvas = this.createIconCanvas(item, this._getToolbarIconScale(item));
         toolbarItem.appendChild(iconCanvas);
 
         return toolbarItem;
@@ -101,6 +102,16 @@ export default class Toolbar {
         `;
         tooltip.style.visibility = "hidden";
         return tooltip;
+    }
+
+    _getToolbarIconScale (item) {
+        const name = String(item?.details?.name || "").toLowerCase();
+
+        // These icons are visually denser and looked clipped/tight after toolbar downsizing.
+        if (name.includes("portal")) return 0.76;
+        if (name.includes("armory")) return 0.8;
+
+        return 0.86;
     }
 
     createIconCanvas (item, scale) {

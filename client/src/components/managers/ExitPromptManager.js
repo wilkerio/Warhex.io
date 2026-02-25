@@ -35,7 +35,7 @@ export default class ExitPromptManager {
         const points = this.getCurrentPoints();
 
         return [
-            "Are you sure you want to leave Infinity.io?",
+            "Are you sure you want to leave Warhex.io?",
             "",
             "SESSION HIGHLIGHTS",
             `Time Played: ${sessionTime}`,
@@ -54,3 +54,4 @@ export default class ExitPromptManager {
         return message;
     }
 }
+

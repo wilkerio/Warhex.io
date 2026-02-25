@@ -66,10 +66,6 @@ export default class Wall extends Building {
         super.render(context, camera, deltaTime)
         context.rotate(this.angleToTarget); // Rotate based on angleToTarget and rotationOffset
 
-        if (this.renderUpgrade === this._renderMicroGenerator) {
-            this._updateMicroGeneratorAnimation(deltaTime);
-        }
-
         if(this.isSelected()) {
             this.renderSelection(context, this.details.range, ThemeManager.currentThemeProperties.selectionColor);
         }
@@ -79,25 +75,18 @@ export default class Wall extends Building {
         context.restore(); // Restore the previous context state
     }
 
-    _updateMicroGeneratorAnimation (deltaTime) {
-        this.animationPhase = (this.animationPhase + this.animationSpeed * deltaTime) % (Math.PI * 2);
-    }
-
     _renderWall (context) {
         this._drawCircle(context, 0, 0, this.size, this.color); // Use translated origin
     }
 
     _renderMicroGenerator (context) {
-        const scalingFactor = 1 + 0.065 * Math.sin(this.animationPhase + this.animationOffset);
-
         // Draw the outer circle
         this._drawCircle(context, 0, 0, this.size, this.color); // Outer circle
 
-        // Draw the animated polygon in the center
-        context.save(); // Save the current state
-        context.scale(scalingFactor, scalingFactor); // Scale the context for animation
+        // Draw the center polygon without pulse animation
+        context.save();
         this._drawPolygon(context, this.points[0], "#a8a8a8"); // Draw the inner polygon
-        context.restore(); // Restore the state
+        context.restore();
     }
 
     _renderSpike (context) {

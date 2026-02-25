@@ -1,7 +1,7 @@
 import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
-import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts } from "../../network/supabaseClient.js";
+import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -599,43 +599,74 @@ export default class UIManager {
     }
 
     async _populateGlobalLeaderboard () {
-        return; // Not implemented yet
         try {
-            const response = await fetch("https://leaderboard.blobl.io");
+            const leaderboard = document.getElementById("global-leaderboard");
+            if (!leaderboard) return;
 
-            // Check if the response is ok (status code 200-299)
-            if (!response.ok) {
-                throw new Error("Network response was not ok " + response.statusText);
+            const formatPlaytime = (seconds) => {
+                const total = Math.max(0, Number(seconds || 0));
+                const hours = Math.floor(total / 3600);
+                const minutes = Math.floor((total % 3600) / 60);
+                if (hours > 0) return `${hours}h ${minutes}m`;
+                return `${minutes}m`;
+            };
+
+            const formatScore = (score) => {
+                const value = Math.max(0, Number(score || 0));
+                return value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k` : String(value);
+            };
+
+            leaderboard.classList.add("global-account-leaderboard");
+            leaderboard.innerHTML = `
+                <h2>Global Rank</h2>
+                <div class="global-rank-subtitle">Top 10 (accounts)</div>
+                <div class="global-rank-head">
+                    <span>#</span>
+                    <span>Name</span>
+                    <span>Score</span>
+                    <span>Play</span>
+                    <span>Kills</span>
+                </div>
+            `;
+
+            const leaderboardData = await fetchGlobalAccountLeaderboard(10);
+            this.globalLeaderboard = leaderboardData;
+
+            if (!leaderboardData.length) {
+                const empty = document.createElement("div");
+                empty.className = "global-rank-empty";
+                empty.textContent = "No ranked accounts yet.";
+                leaderboard.appendChild(empty);
+                leaderboard.style.display = "flex";
+                return;
             }
 
-            const leaderboardData = await response.json();
-
-            this.globalLeaderboard = leaderboardData;
-            const leaderboard = document.getElementById("global-leaderboard");
-            leaderboard.innerHTML = "<h2>This Week's Champions</h2>";
             leaderboardData.forEach((entry, index) => {
-                const container = document.createElement("p");
-
-                const rankSpan = document.createElement("span");
-                rankSpan.classList.add("rank");
-                rankSpan.textContent = `${index + 1}.`;
-
-                const nameSpan = document.createElement("span");
-                nameSpan.classList.add("name");
-                nameSpan.textContent = entry.name;
-
-                const scoreSpan = document.createElement("span");
-                scoreSpan.classList.add("score");
-                scoreSpan.textContent = entry.score;
-
-                container.appendChild(rankSpan);
-                container.appendChild(nameSpan);
-                container.appendChild(scoreSpan);
-                leaderboard.appendChild(container);
-                leaderboard.style.display = "flex";
+                const row = document.createElement("div");
+                row.className = "global-rank-row";
+                row.innerHTML = `
+                    <span class="rank">${index + 1}</span>
+                    <span class="name" title="${entry.name}">${entry.name}</span>
+                    <span class="score">${formatScore(entry.highscore)}</span>
+                    <span class="playtime">${formatPlaytime(entry.playtime)}</span>
+                    <span class="kills">${Number(entry.kills || 0).toLocaleString("en-US")}</span>
+                `;
+                leaderboard.appendChild(row);
             });
+
+            leaderboard.style.display = "flex";
         } catch (error) {
             console.error("Failed to fetch leaderboard:", error);
+            const leaderboard = document.getElementById("global-leaderboard");
+            if (leaderboard) {
+                leaderboard.classList.add("global-account-leaderboard");
+                leaderboard.innerHTML = `
+                    <h2>Global Rank</h2>
+                    <div class="global-rank-subtitle">Top 10 (accounts)</div>
+                    <div class="global-rank-empty">Could not load ranking.</div>
+                `;
+                leaderboard.style.display = "flex";
+            }
         }
     }
 
@@ -1660,6 +1691,133 @@ export default class UIManager {
         };
     }
 
+    createRepairPreviewRenderable () {
+        let time = 0;
+        return {
+            render: (context, camera, deltaTime = 16) => {
+                time += deltaTime;
+                const t = time * 0.004;
+                const cx = 40;
+                const cy = 40;
+                const pulse = 0.5 + (Math.sin(t * 2.2) * 0.5);
+
+                // Back glow
+                const glow = context.createRadialGradient(cx, cy, 8, cx, cy, 34);
+                glow.addColorStop(0, "rgba(180, 160, 255, 0.24)");
+                glow.addColorStop(1, "rgba(180, 160, 255, 0)");
+                context.fillStyle = glow;
+                context.beginPath();
+                context.arc(cx, cy, 34, 0, Math.PI * 2);
+                context.fill();
+
+                // Core base plate (symbolizing headquarters)
+                context.fillStyle = "rgba(40, 22, 72, 0.95)";
+                context.strokeStyle = "rgba(180, 160, 255, 0.45)";
+                context.lineWidth = 2;
+                context.beginPath();
+                for (let i = 0; i < 6; i++) {
+                    const a = (-Math.PI / 2) + (i * Math.PI / 3);
+                    const x = cx + Math.cos(a) * 17;
+                    const y = cy + Math.sin(a) * 17;
+                    if (i === 0) context.moveTo(x, y);
+                    else context.lineTo(x, y);
+                }
+                context.closePath();
+                context.fill();
+                context.stroke();
+
+                // Repair ring pulse
+                context.strokeStyle = `rgba(110, 255, 182, ${0.22 + pulse * 0.38})`;
+                context.lineWidth = 3;
+                context.beginPath();
+                context.arc(cx, cy, 22 + (pulse * 2.5), 0, Math.PI * 2);
+                context.stroke();
+
+                // Plus sign (repair/restore)
+                context.strokeStyle = "rgba(160, 255, 214, 0.95)";
+                context.lineWidth = 4;
+                context.beginPath();
+                context.moveTo(cx - 6, cy);
+                context.lineTo(cx + 6, cy);
+                context.moveTo(cx, cy - 6);
+                context.lineTo(cx, cy + 6);
+                context.stroke();
+
+                // Small orbiting spark
+                const sa = t * 1.8;
+                const sx = cx + Math.cos(sa) * 24;
+                const sy = cy + Math.sin(sa) * 24;
+                context.fillStyle = "rgba(213, 255, 239, 0.95)";
+                context.beginPath();
+                context.arc(sx, sy, 2.2, 0, Math.PI * 2);
+                context.fill();
+            }
+        };
+    }
+
+    createRelocateBasePreviewRenderable () {
+        let time = 0;
+        return {
+            render: (context, camera, deltaTime = 16) => {
+                time += deltaTime;
+                const t = time * 0.0035;
+                const pulse = 0.5 + (Math.sin(t * 2) * 0.5);
+
+                const drawHex = (x, y, r, fill, stroke, alpha = 1) => {
+                    context.save();
+                    context.globalAlpha = alpha;
+                    context.fillStyle = fill;
+                    context.strokeStyle = stroke;
+                    context.lineWidth = 2;
+                    context.beginPath();
+                    for (let i = 0; i < 6; i++) {
+                        const a = (-Math.PI / 2) + (i * Math.PI / 3);
+                        const px = x + Math.cos(a) * r;
+                        const py = y + Math.sin(a) * r;
+                        if (i === 0) context.moveTo(px, py);
+                        else context.lineTo(px, py);
+                    }
+                    context.closePath();
+                    context.fill();
+                    context.stroke();
+                    context.restore();
+                };
+
+                // Origin / destination pads
+                drawHex(26, 48, 11, "rgba(38, 22, 68, 0.95)", "rgba(180,160,255,0.35)", 0.7);
+                drawHex(54, 31, 11, "rgba(46, 28, 86, 0.95)", "rgba(180,160,255,0.6)", 1);
+
+                // Curved trajectory
+                context.strokeStyle = "rgba(180, 160, 255, 0.55)";
+                context.lineWidth = 2;
+                context.setLineDash([4, 4]);
+                context.beginPath();
+                context.moveTo(29, 43);
+                context.quadraticCurveTo(40, 17, 50, 34);
+                context.stroke();
+                context.setLineDash([]);
+
+                // Moving relocation pulse along the curve
+                const p = (t % 1);
+                const x = (1 - p) * (1 - p) * 29 + 2 * (1 - p) * p * 40 + p * p * 50;
+                const y = (1 - p) * (1 - p) * 43 + 2 * (1 - p) * p * 17 + p * p * 34;
+                context.fillStyle = "rgba(207, 197, 255, 0.95)";
+                context.beginPath();
+                context.arc(x, y, 2 + (pulse * 0.8), 0, Math.PI * 2);
+                context.fill();
+
+                // Arrow head near destination
+                context.strokeStyle = "rgba(180, 160, 255, 0.9)";
+                context.lineWidth = 2.5;
+                context.beginPath();
+                context.moveTo(46, 26);
+                context.lineTo(55, 30);
+                context.lineTo(49, 38);
+                context.stroke();
+            }
+        };
+    }
+
     showCoreUpgrades (onUpgradeSelect) {
         const upgradeHotkeys = ["Q", "E", "T"];
 
@@ -1713,6 +1871,10 @@ export default class UIManager {
             if (upgradeInfo.unitType) {
                 const UnitClass = UnitManager.getUnitClassByType(upgradeInfo.unitType);
                 renderable = new UnitClass(this.core.gameManager.player.color, { x: 0, y: 0 }, 0);
+            } else if (upgradeInfo.name === "Repair") {
+                renderable = this.createRepairPreviewRenderable();
+            } else if (upgradeInfo.name === "Relocate Base") {
+                renderable = this.createRelocateBasePreviewRenderable();
             }
 
             if (renderable) {
@@ -1836,6 +1998,79 @@ export default class UIManager {
                 return getAvailableBuildingUpgrades(building.type, building.variant, purchasedVariants);
             };
 
+            const attachNextEvolutionTooltip = (upgradeItem, upgradeInfo) => {
+                if (typeof upgradeInfo?.variant !== "number") return;
+
+                const details = getBuildingDetails(building.type, upgradeInfo.variant);
+                if (!details) return;
+
+                const nextVariants = Array.isArray(details.next) ? details.next : [];
+                const nextNames = nextVariants
+                    .map((variant) => getBuildingDetails(building.type, variant)?.name)
+                    .filter(Boolean);
+
+                const tooltip = document.createElement("div");
+                tooltip.classList.add("upgrade-next-tooltip");
+
+                if (nextNames.length > 0) {
+                    tooltip.innerHTML = `<p class="title">Next Evolutions</p>`;
+
+                    const list = document.createElement("div");
+                    list.classList.add("next-upgrade-icon-list");
+
+                    nextVariants.forEach((variant, idx) => {
+                        const nextDetails = getBuildingDetails(building.type, variant);
+                        if (!nextDetails) return;
+
+                        const item = document.createElement("div");
+                        item.classList.add("next-upgrade-icon-item");
+
+                        const canvas = document.createElement("canvas");
+                        canvas.width = 56;
+                        canvas.height = 56;
+                        canvas.classList.add("next-upgrade-icon-canvas");
+
+                        try {
+                            if (isArmory) {
+                                const name = nextDetails.name || `Upgrade ${idx + 1}`;
+                                canvas.dataset.fallbackLabel = name;
+                            } else {
+                                const BuildingClass = BuildingManager.getBuildingClassByType(building.type);
+                                const renderable = new BuildingClass(building.color, { x: 0, y: 0 }, variant);
+                                this.animatePreview(canvas, renderable);
+                            }
+                        } catch (error) {
+                            canvas.dataset.fallbackLabel = nextDetails.name || `Upgrade ${idx + 1}`;
+                        }
+
+                        const label = document.createElement("p");
+                        label.classList.add("next-upgrade-icon-label");
+                        label.textContent = nextDetails.name || `Upgrade ${idx + 1}`;
+
+                        if (canvas.dataset.fallbackLabel) {
+                            const fallback = document.createElement("div");
+                            fallback.classList.add("next-upgrade-icon-fallback");
+                            fallback.textContent = "UP";
+                            item.appendChild(fallback);
+                        } else {
+                            item.appendChild(canvas);
+                        }
+
+                        item.appendChild(label);
+                        list.appendChild(item);
+                    });
+
+                    tooltip.appendChild(list);
+                } else {
+                    tooltip.innerHTML = `
+                        <p class="title">Next Evolutions</p>
+                        <p class="line muted">Max upgrade reached</p>
+                    `;
+                }
+
+                upgradeItem.appendChild(tooltip);
+            };
+
             const createUpgradeItem = (upgradeInfo, index) => {
                 const upgradeItem = document.createElement("div");
                 upgradeItem.classList.add("upgrade-item");
@@ -1877,6 +2112,7 @@ export default class UIManager {
 
                 upgradeItem.appendChild(preview);
                 upgradeItem.appendChild(description);
+                attachNextEvolutionTooltip(upgradeItem, upgradeInfo);
 
                 upgradeItem.addEventListener("click", () => {
                     const upgradeData = isArmory
@@ -2158,6 +2394,25 @@ export default class UIManager {
         this.groupUnitsActive = false;
         this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Troops Off";
 
+        const syncTopGroupToggleVisual = () => {
+            const topGroupToggle = document.getElementById("top-group-toggle-btn");
+            if (!topGroupToggle) return;
+
+            topGroupToggle.textContent = this.groupUnitsActive ? "Group Troops On" : "Group Troops Off";
+            if (this.groupUnitsActive) {
+                topGroupToggle.style.background = "rgba(44, 22, 76, 0.78)";
+                topGroupToggle.style.borderColor = "rgba(180, 160, 255, 0.55)";
+                topGroupToggle.style.boxShadow = "0 6px 16px rgba(180, 160, 255, 0.20)";
+                topGroupToggle.style.color = "#e9ddff";
+            } else {
+                topGroupToggle.style.background = "rgba(20, 10, 40, 0.6)";
+                topGroupToggle.style.borderColor = "rgba(180, 160, 255, 0.3)";
+                topGroupToggle.style.boxShadow = "0 4px 12px rgba(180, 160, 255, 0.14)";
+                topGroupToggle.style.color = "#e0d6ff";
+            }
+        };
+        syncTopGroupToggleVisual();
+
         this.DOM.game.unitControls.groupUnitsButton.addEventListener("click", () => {
             this.groupUnitsActive = !this.groupUnitsActive;
             if (this.groupUnitsActive) {
@@ -2169,11 +2424,7 @@ export default class UIManager {
             }
     
             this.core.networkManager.sendToggleGroupUnits(this.groupUnitsActive);
-
-            const topGroupToggle = document.getElementById("top-group-toggle-btn");
-            if (topGroupToggle) {
-                topGroupToggle.textContent = this.groupUnitsActive ? "Group Troops On" : "Group Troops Off";
-            }
+            syncTopGroupToggleVisual();
         });
     }
 
@@ -2189,10 +2440,11 @@ export default class UIManager {
         container.style.left = "50%";
         container.style.transform = "translateX(-50%)";
         container.style.display = "none";
-        container.style.width = "min(980px, calc(100vw - 24px))";
-        container.style.height = "92px";
+        container.style.width = "min(720px, calc(100vw - 40px))";
+        container.style.height = "58px";
         container.style.zIndex = "30";
         container.style.pointerEvents = "auto";
+        container.style.filter = "drop-shadow(0 6px 12px rgba(0, 0, 0, 0.28))";
 
         const pullTab = document.createElement("button");
         pullTab.type = "button";
@@ -2202,16 +2454,30 @@ export default class UIManager {
         pullTab.style.left = "50%";
         pullTab.style.transform = "translateX(-50%)";
         pullTab.style.top = "0";
-        pullTab.style.width = "132px";
-        pullTab.style.height = "46px";
+        pullTab.style.width = "88px";
+        pullTab.style.height = "28px";
         pullTab.style.padding = "0";
-        pullTab.style.border = "1px solid #3f6ec0";
+        pullTab.style.border = "1px solid rgba(180, 160, 255, 0.3)";
         pullTab.style.borderRadius = "12px";
-        pullTab.style.background = "linear-gradient(180deg, rgba(59,99,170,0.95) 0%, rgba(24,52,104,0.95) 100%)";
-        pullTab.style.color = "#d9e7ff";
+        pullTab.style.background = "rgba(20, 10, 40, 0.6)";
+        pullTab.style.boxShadow = "0 8px 24px rgba(180, 160, 255, 0.16)";
+        pullTab.style.color = "#e0d6ff";
         pullTab.style.cursor = "pointer";
         pullTab.style.fontWeight = "700";
+        pullTab.style.fontSize = "11px";
         pullTab.style.letterSpacing = "0.5px";
+        pullTab.style.textShadow = "0 1px 0 rgba(0, 0, 0, 0.35)";
+        pullTab.style.transition = "transform 0.16s ease, box-shadow 0.2s ease, filter 0.2s ease";
+        pullTab.addEventListener("mouseenter", () => {
+            pullTab.style.transform = "translateX(-50%) translateY(-1px)";
+            pullTab.style.boxShadow = "0 10px 26px rgba(180, 160, 255, 0.24)";
+            pullTab.style.filter = "none";
+        });
+        pullTab.addEventListener("mouseleave", () => {
+            pullTab.style.transform = "translateX(-50%)";
+            pullTab.style.boxShadow = "0 8px 24px rgba(180, 160, 255, 0.16)";
+            pullTab.style.filter = "none";
+        });
 
         const actionsPanel = document.createElement("div");
         actionsPanel.style.position = "absolute";
@@ -2219,19 +2485,19 @@ export default class UIManager {
         actionsPanel.style.transform = "translateX(-50%)";
         actionsPanel.style.top = "0";
         actionsPanel.style.width = "100%";
-        actionsPanel.style.maxWidth = "min(980px, calc(100vw - 24px))";
-        actionsPanel.style.height = "90px";
+        actionsPanel.style.maxWidth = "min(720px, calc(100vw - 40px))";
+        actionsPanel.style.height = "56px";
         actionsPanel.style.display = "none";
         actionsPanel.style.padding = "4px";
         actionsPanel.style.boxSizing = "border-box";
         actionsPanel.style.borderRadius = "14px";
-        actionsPanel.style.border = "1px solid rgba(132, 170, 255, 0.35)";
-        actionsPanel.style.background = "linear-gradient(180deg, rgba(20,36,88,0.78) 0%, rgba(10,20,58,0.78) 100%)";
-        actionsPanel.style.boxShadow = "0 8px 22px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.08)";
-        actionsPanel.style.backdropFilter = "blur(3px)";
-        actionsPanel.style.gap = "6px";
+        actionsPanel.style.border = "1px solid rgba(180, 160, 255, 0.3)";
+        actionsPanel.style.background = "rgba(20, 10, 40, 0.6)";
+        actionsPanel.style.boxShadow = "0 8px 24px rgba(180, 160, 255, 0.2)";
+        actionsPanel.style.backdropFilter = "blur(8px)";
+        actionsPanel.style.gap = "4px";
         actionsPanel.style.gridTemplateColumns = "repeat(6, minmax(0, 1fr))";
-        actionsPanel.style.gridAutoRows = "40px";
+        actionsPanel.style.gridAutoRows = "22px";
         actionsPanel.style.alignItems = "stretch";
 
         const createActionButton = (label, onClick) => {
@@ -2240,18 +2506,50 @@ export default class UIManager {
             button.textContent = label;
             button.style.width = "100%";
             button.style.maxWidth = "none";
-            button.style.height = "40px";
-            button.style.padding = "0";
-            button.style.border = "1px solid #5a8ee0";
-            button.style.borderRadius = "12px";
-            button.style.background = "linear-gradient(180deg, rgba(40,80,150,0.95) 0%, rgba(16,45,105,0.95) 100%)";
-            button.style.color = "#d9e7ff";
+            button.style.height = "22px";
+            button.style.padding = "0 6px";
+            button.style.border = "1px solid rgba(180, 160, 255, 0.28)";
+            button.style.borderRadius = "8px";
+            button.style.background = "rgba(20, 10, 40, 0.52)";
+            button.style.boxShadow = "none";
+            button.style.color = "#e0d6ff";
             button.style.cursor = "pointer";
             button.style.fontWeight = "700";
             button.style.letterSpacing = "0.2px";
-            button.style.fontSize = "16px";
+            button.style.fontSize = "10px";
             button.style.userSelect = "none";
             button.style.whiteSpace = "nowrap";
+            button.style.overflow = "hidden";
+            button.style.textOverflow = "ellipsis";
+            button.style.textShadow = "0 1px 0 rgba(0, 0, 0, 0.35)";
+            button.style.transition = "transform 0.12s ease, background 0.15s ease, border-color 0.15s ease";
+            button.addEventListener("mouseenter", () => {
+                if (button.dataset.pressed === "true") return;
+                button.style.transform = "translateY(-1px)";
+                button.style.borderColor = "rgba(180, 160, 255, 0.42)";
+                button.style.background = "rgba(30, 15, 60, 0.7)";
+            });
+            button.addEventListener("mouseleave", () => {
+                if (button.dataset.pressed === "true") {
+                    button.style.transform = "translateY(1px)";
+                    return;
+                }
+                button.style.transform = "translateY(0)";
+                button.style.borderColor = "rgba(180, 160, 255, 0.28)";
+                button.style.background = "rgba(20, 10, 40, 0.52)";
+            });
+            button.addEventListener("mousedown", () => {
+                button.dataset.pressed = "true";
+                button.style.transform = "translateY(1px)";
+                button.style.background = "rgba(16, 8, 32, 0.78)";
+            });
+            const resetPress = () => {
+                button.dataset.pressed = "false";
+                button.style.transform = "translateY(0)";
+                button.style.background = "rgba(20, 10, 40, 0.52)";
+            };
+            button.addEventListener("mouseup", resetPress);
+            button.addEventListener("blur", resetPress);
             button.addEventListener("click", onClick);
             return button;
         };
@@ -2285,8 +2583,12 @@ export default class UIManager {
             this.showGameSettingsButton(false);
             this.showGameSettingsPanel(true);
         });
-        themeBtn.style.height = "36px";
+        themeBtn.style.height = "20px";
         themeBtn.style.gridColumn = "3 / span 2";
+        themeBtn.style.background = "rgba(24, 12, 48, 0.62)";
+        themeBtn.style.borderColor = "rgba(180, 160, 255, 0.34)";
+        themeBtn.style.color = "#b4a0ff";
+        themeBtn.style.fontSize = "10px";
 
         const showActions = () => {
             pullTab.style.display = "none";
@@ -3362,22 +3664,71 @@ export default class UIManager {
             }
 
             const zoom = camera.zoom || 1;
-            const centerX = (player.position.x - camera.x) * zoom + canvas.width / 2;
-            const centerY = (player.position.y - camera.y) * zoom + canvas.height / 2;
-            const worldCaptureRadius = 460;
-            const targetSize = Math.max(180, Math.min(canvas.width, canvas.height, Math.round(worldCaptureRadius * 2 * zoom)));
+            const buildings = (player.buildings || []).filter(b => b && !b.removeFlag);
 
-            const sx = Math.max(0, Math.min(canvas.width - targetSize, Math.round(centerX - targetSize / 2)));
-            const sy = Math.max(0, Math.min(canvas.height - targetSize, Math.round(centerY - targetSize / 2)));
+            let minX = player.position.x;
+            let maxX = player.position.x;
+            let minY = player.position.y;
+            let maxY = player.position.y;
+
+            // Estimate a safe capture bounds around all current base buildings.
+            for (const building of buildings) {
+                const details = getBuildingDetails(building.type, building.variant ?? 0);
+                const half = (details?.size || 30) + 10;
+                minX = Math.min(minX, building.position.x - half);
+                maxX = Math.max(maxX, building.position.x + half);
+                minY = Math.min(minY, building.position.y - half);
+                maxY = Math.max(maxY, building.position.y + half);
+            }
+
+            // Include base rings (defense/protection circles) so snapshots don't cut them off.
+            const baseRingRadius = Math.max(
+                player?.buildingRadius?.max || 0,
+                player?.spawnProtectionRadius || 0
+            );
+            if (baseRingRadius > 0) {
+                minX = Math.min(minX, player.position.x - baseRingRadius);
+                maxX = Math.max(maxX, player.position.x + baseRingRadius);
+                minY = Math.min(minY, player.position.y - baseRingRadius);
+                maxY = Math.max(maxY, player.position.y + baseRingRadius);
+            }
+
+            // Include the core and some visual breathing room.
+            const extraMarginWorld = 90;
+            minX -= extraMarginWorld;
+            maxX += extraMarginWorld;
+            minY -= extraMarginWorld;
+            maxY += extraMarginWorld;
+
+            const screenLeft = (minX - camera.x) * zoom + canvas.width / 2;
+            const screenRight = (maxX - camera.x) * zoom + canvas.width / 2;
+            const screenTop = (minY - camera.y) * zoom + canvas.height / 2;
+            const screenBottom = (maxY - camera.y) * zoom + canvas.height / 2;
+
+            const neededWidth = Math.max(180, Math.round(screenRight - screenLeft));
+            const neededHeight = Math.max(180, Math.round(screenBottom - screenTop));
+            const sourceSize = Math.max(neededWidth, neededHeight);
+
+            const centerX = Math.round((screenLeft + screenRight) / 2);
+            const centerY = Math.round((screenTop + screenBottom) / 2);
+            const sx = Math.max(0, Math.min(canvas.width - sourceSize, Math.round(centerX - sourceSize / 2)));
+            const sy = Math.max(0, Math.min(canvas.height - sourceSize, Math.round(centerY - sourceSize / 2)));
+            const sw = Math.max(1, Math.min(canvas.width - sx, sourceSize));
+            const sh = Math.max(1, Math.min(canvas.height - sy, sourceSize));
+
+            // Fixed output size avoids "zoomed" previews and scales large bases down to fit.
+            const outputSize = 640;
 
             const offscreen = document.createElement("canvas");
-            offscreen.width = targetSize;
-            offscreen.height = targetSize;
+            offscreen.width = outputSize;
+            offscreen.height = outputSize;
             const context = offscreen.getContext("2d");
             if (!context) {
                 return canvas.toDataURL("image/jpeg", 0.75);
             }
-            context.drawImage(canvas, sx, sy, targetSize, targetSize, 0, 0, targetSize, targetSize);
+            context.fillStyle = "#03060f";
+            context.fillRect(0, 0, outputSize, outputSize);
+            context.drawImage(canvas, sx, sy, sw, sh, 0, 0, outputSize, outputSize);
             return offscreen.toDataURL("image/jpeg", 0.8);
         } catch (error) {
             console.error("Could not capture base snapshot:", error);
@@ -3471,7 +3822,9 @@ export default class UIManager {
             preview.style.display = "block";
             preview.style.width = "100%";
             preview.style.maxHeight = "260px";
-            preview.style.objectFit = "cover";
+            preview.style.objectFit = "contain";
+            preview.style.objectPosition = "center";
+            preview.style.background = "rgba(4, 12, 28, 0.7)";
             preview.style.marginTop = "12px";
             preview.style.borderRadius = "10px";
             preview.style.border = "1px solid rgba(120, 180, 255, 0.45)";
@@ -3726,7 +4079,9 @@ export default class UIManager {
                     img.alt = layout.name || "Base";
                     img.style.width = "100%";
                     img.style.height = "100%";
-                    img.style.objectFit = "cover";
+                    img.style.objectFit = "contain";
+                    img.style.objectPosition = "center";
+                    img.style.background = "rgba(4, 12, 28, 0.7)";
                     preview.appendChild(img);
                 }
 

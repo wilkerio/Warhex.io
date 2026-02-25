@@ -435,3 +435,30 @@ export async function fetchPublicBaseLayouts(searchText = "", limit = 30) {
         return { success: false, error, data: [] };
     }
 }
+
+export async function fetchGlobalAccountLeaderboard(limit = 10) {
+    try {
+        const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
+        const { data, error } = await supabase
+            .from("users")
+            .select("nickname, highscore, playtime, total_kills")
+            .order("highscore", { ascending: false, nullsFirst: false })
+            .order("total_kills", { ascending: false, nullsFirst: false })
+            .limit(safeLimit);
+
+        if (error) {
+            console.error("Error fetching global account leaderboard:", error);
+            return [];
+        }
+
+        return (data || []).map((row) => ({
+            name: String(row.nickname || "Player"),
+            highscore: Math.max(0, Number(row.highscore || 0)),
+            playtime: Math.max(0, Number(row.playtime || 0)),
+            kills: Math.max(0, Number(row.total_kills || 0))
+        }));
+    } catch (error) {
+        console.error("Error in fetchGlobalAccountLeaderboard:", error);
+        return [];
+    }
+}

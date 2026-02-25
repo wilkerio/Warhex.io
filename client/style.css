@@ -962,6 +962,88 @@ img {
   border-radius: 3px;
 }
 
+#upgrade-list>.upgrade-item .upgrade-next-tooltip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  min-width: 220px;
+  max-width: 320px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(180, 160, 255, 0.32);
+  background: rgba(20, 10, 40, 0.92);
+  box-shadow: 0 8px 24px rgba(180, 160, 255, 0.16);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 25;
+}
+
+#upgrade-list>.upgrade-item:hover .upgrade-next-tooltip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+#upgrade-list>.upgrade-item .upgrade-next-tooltip .title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b4a0ff;
+  letter-spacing: 0.3px;
+}
+
+#upgrade-list>.upgrade-item .upgrade-next-tooltip .line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.25;
+  color: #e0d6ff;
+}
+
+#upgrade-list>.upgrade-item .upgrade-next-tooltip .line.muted {
+  color: #b9afd6;
+}
+
+#upgrade-list>.upgrade-item .upgrade-next-tooltip .next-upgrade-icon-list {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#upgrade-list>.upgrade-item .upgrade-next-tooltip .next-upgrade-icon-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 72px;
+}
+
+#upgrade-list>.upgrade-item .upgrade-next-tooltip .next-upgrade-icon-canvas,
+#upgrade-list>.upgrade-item .upgrade-next-tooltip .next-upgrade-icon-fallback {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.123);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d8cbff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+#upgrade-list>.upgrade-item .upgrade-next-tooltip .next-upgrade-icon-label {
+  margin: 0;
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #e0d6ff;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 #upgrade-list>.upgrade-item.coming-soon {
   justify-content: center;
   align-items: center;
@@ -1367,6 +1449,24 @@ img {
   transform: translateY(-5px);
   box-shadow: 0 12px 32px rgba(180, 160, 255, 0.35);
 }
+
+/* In-game right sidebar panels: snap to screen edges */
+#leaderboard-container .leaderboard {
+  top: 0 !important;
+  right: 0 !important;
+  margin: 0 !important;
+}
+
+#chat {
+  right: 0 !important;
+  bottom: 0 !important;
+  margin: 0 !important;
+  max-width: min(420px, 100vw) !important;
+  width: min(420px, 100vw) !important;
+  max-height: min(380px, 48vh) !important;
+  box-sizing: border-box;
+  border-bottom-right-radius: 0 !important;
+}
 .leaderboard>h2 {
   margin: 0;
   text-align: center;
@@ -1412,11 +1512,104 @@ img {
   color: #f8ff77;
 }
 
+#global-leaderboard.global-account-leaderboard {
+  display: flex !important;
+  visibility: visible !important;
+  position: fixed;
+  z-index: 30;
+  right: 8px;
+  top: 8px;
+  width: min(420px, calc(100vw - 16px));
+  max-width: 420px;
+  padding: 14px 14px 12px;
+  gap: 6px;
+  zoom: 0.72;
+}
+
+#global-leaderboard.global-account-leaderboard > h2 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1;
+  text-align: left;
+  color: #ffffff;
+}
+
+#global-leaderboard .global-rank-subtitle {
+  color: #b4a0ff;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.95;
+}
+
+#global-leaderboard .global-rank-head,
+#global-leaderboard .global-rank-row {
+  display: grid;
+  grid-template-columns: 24px minmax(110px, 1fr) 62px 58px 56px;
+  gap: 8px;
+  align-items: center;
+}
+
+#global-leaderboard .global-rank-head {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(180, 160, 255, 0.12);
+  color: #bdb2df;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#global-leaderboard .global-rank-row {
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(180, 160, 255, 0.12);
+  background: rgba(20, 10, 40, 0.34);
+  font-size: 13px;
+  color: #e0d6ff;
+}
+
+#global-leaderboard .global-rank-row:hover {
+  background: rgba(30, 15, 60, 0.48);
+  border-color: rgba(180, 160, 255, 0.24);
+}
+
+#global-leaderboard .global-rank-row .rank {
+  color: #f8ff77;
+  font-weight: 800;
+  text-align: center;
+}
+
+#global-leaderboard .global-rank-row .name {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#global-leaderboard .global-rank-row .score,
+#global-leaderboard .global-rank-row .playtime,
+#global-leaderboard .global-rank-row .kills {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#global-leaderboard .global-rank-empty {
+  margin-top: 6px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(180, 160, 255, 0.25);
+  color: #d2c8f1;
+  font-size: 13px;
+}
+
 
 #resource-container {
   position: absolute;
   left: 8px;
-  bottom: 30px;
+  bottom: 8px;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -2060,7 +2253,7 @@ button:hover {
     border-radius: 0;
     box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2);
     backdrop-filter: blur(10px);
-    width: 500px;
+    width: 200px;
     height: 700px;
     overflow: hidden;
     font-family: 'Segoe UI', sans-serif;
@@ -2074,12 +2267,7 @@ button:hover {
 }
 
 #chat .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 15px;
-    background: rgba(180, 160, 255, 0.05);
-    border-bottom: 1px solid rgba(180, 160, 255, 0.2);
+    display: none !important;
 }
 
 #chat .header h3 {
@@ -2111,6 +2299,12 @@ button:hover {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    scrollbar-width: none;
+}
+
+#chat-messages::-webkit-scrollbar {
+    width: 0;
+    height: 0;
 }
 
 #chat-messages .message {
@@ -2164,7 +2358,7 @@ button:hover {
 #chat .actions {
     display: flex;
     padding: 10px 15px;
-    gap: 6px;
+    gap: 0;
     border-top: 1px solid rgba(180, 160, 255, 0.2);
 }
 
@@ -2185,18 +2379,7 @@ button:hover {
 }
 
 #chat .chat-button {
-    padding: 4px 10px;
-    min-width: 72px;
-    max-width: 84px;
-    border: none;
-    border-radius: 12px;
-    background: rgba(180, 160, 255, 0.25);
-    color: #e0d6ff;
-    font-weight: bold;
-    font-size: 12px;
-    line-height: 1;
-    cursor: pointer;
-    transition: background 0.3s ease, transform 0.2s ease;
+    display: none !important;
 }
 
 #chat .chat-button:hover {
@@ -2211,24 +2394,40 @@ button:hover {
 }
 
 #resource-container #power {
-  font-weight: bold;
-  font-size: 1.1em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(20, 10, 40, 0.6);
+  border: 1px solid rgba(180, 160, 255, 0.3);
+  box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2);
+  font-weight: 700;
+  font-size: 1.06em;
+  line-height: 1;
   color: #b4a0ff;
-  margin-top: 20px; /* add 20px top spacing */
+  margin-top: 0;
 }
 
 #resource-container #power span {
   color: #e0d6ff;
+  margin-left: 0;
+  font-size: 1.06em;
 }
 
 #unit-controls-container {
   position: static;
   display: flex;
+  align-items: center;
   bottom: auto;
   left: auto;
   transform: none;
   z-index: 1001;
   zoom: 1;
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 .unit-control-button {
@@ -2265,19 +2464,47 @@ button:hover {
   color: #dff4ff;
 }
 
+/* Keep the bottom group toggle aligned with the purple glass UI (avoid gray fallback styles). */
+#group-units-button {
+  background: rgba(20, 10, 40, 0.6) !important;
+  border: 1px solid rgba(180, 160, 255, 0.3) !important;
+  color: #e0d6ff !important;
+  box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2) !important;
+}
+
+#group-units-button:hover {
+  background: rgba(30, 15, 60, 0.7) !important;
+  border-color: rgba(180, 160, 255, 0.42) !important;
+}
+
+#group-units-button.active {
+  background: rgba(44, 22, 76, 0.78) !important;
+  border-color: rgba(180, 160, 255, 0.55) !important;
+  color: #e9ddff !important;
+}
+
+#resource-container #group-units-button {
+  height: 42px;
+  min-width: 148px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1;
+}
+
 #toolbar-container {
   display: flex;
-  gap: 12px;
-  padding: 10px;
+  gap: 5px;
+  padding: 4px 6px 8px;
 }
 
 .toolbar-item {
   position: relative;
-  width: 80px;
-  height: 80px;
+  width: 70px;
+  height: 70px;
   background: rgba(20, 10, 40, 0.6);
   border: 1px solid rgba(180, 160, 255, 0.3);
-  border-radius: 12px;
+  border-radius: 10px;
   box-shadow: 0 6px 18px rgba(180, 160, 255, 0.2);
   backdrop-filter: blur(8px);
   cursor: pointer;
@@ -2294,7 +2521,9 @@ button:hover {
 }
 
 .toolbar-item canvas {
-  border-radius: 12px;
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
 }
 
 .toolbar-item .tooltip {
@@ -2346,11 +2575,11 @@ button:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 15px;
+  gap: 5px;
+  padding: 7px 10px;
   background: rgba(20, 10, 40, 0.6);
   border: 1px solid rgba(180, 160, 255, 0.3);
-  border-radius: 16px;
+  border-radius: 12px;
   box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2);
   backdrop-filter: blur(8px);
   font-family: 'Segoe UI', sans-serif;
@@ -2358,8 +2587,8 @@ button:hover {
   font-weight: bold;
   transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
   width: fit-content;
-  margin: 10px auto;
-  zoom: 0.7;
+  margin: 6px auto;
+  zoom: 0.62;
 }
 
 #shield:hover {
@@ -2371,6 +2600,7 @@ button:hover {
 #shield span {
   color: #b4a0ff;
   font-weight: bold;
+  font-size: 0.95em;
 }
 #upgrade-container {
   background: rgba(20, 10, 40, 0.65); /* vidro levemente transparente */
@@ -2379,8 +2609,53 @@ button:hover {
   backdrop-filter: blur(8px);
   font-family: 'Segoe UI', sans-serif;
   color: #e0d6ff;
-  zoom: 0.7;
+  zoom: 0.62;
+  width: 280px;
+  padding: 7px;
+  gap: 6px;
   
+}
+
+#upgrade-container > h1 {
+  font-size: 20px;
+}
+
+#upgrade-list {
+  gap: 6px;
+}
+
+#upgrade-list > .upgrade-item {
+  height: 68px;
+  padding: 6px;
+  gap: 8px;
+  border-radius: 10px;
+}
+
+#upgrade-container .preview {
+  width: 64px;
+  height: 64px;
+}
+
+#upgrade-container .header {
+  font-size: 16px;
+  line-height: 1.05;
+}
+
+#upgrade-container .text {
+  font-size: 13px;
+  line-height: 14px;
+}
+
+#upgrade-container .hotkey {
+  font-size: 12px;
+  top: 5px;
+  right: 6px;
+}
+
+#upgrade-container .cost {
+  font-size: 15px;
+  bottom: 6px;
+  right: 6px;
 }
 
 /* Close button */
