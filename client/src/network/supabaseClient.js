@@ -437,28 +437,103 @@ export async function fetchPublicBaseLayouts(searchText = "", limit = 30) {
 }
 
 export async function fetchGlobalAccountLeaderboard(limit = 10) {
+    const withTimeout = async (promise, ms = 4000) => {
+        let timeoutId = null;
+        try {
+            return await Promise.race([
+                promise,
+                new Promise((_, reject) => {
+                    timeoutId = setTimeout(() => reject(new Error("leaderboard_timeout")), ms);
+                })
+            ]);
+        } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+        }
+    };
+
+    const normalizeStatistics = (statistics) => {
+        if (!statistics) return {};
+        if (typeof statistics === "string") {
+            try {
+                return JSON.parse(statistics) || {};
+            } catch {
+                return {};
+            }
+        }
+        return typeof statistics === "object" ? statistics : {};
+    };
+
+    const mapLeaderboardRows = (rows, safeLimit) => {
+        return (Array.isArray(rows) ? rows : []).map((row) => {
+            const stats = normalizeStatistics(row?.statistics);
+            const rawName = row?.nickname
+                || row?.username
+                || row?.display_name
+                || row?.name
+                || row?.discord_username
+                || row?.discord?.username
+                || (typeof row?.email === "string" ? row.email.split("@")[0] : null)
+                || "Player";
+            return {
+                name: String(rawName),
+                highscore: Math.max(0, Number(row?.highscore ?? stats?.highscore ?? stats?.score ?? 0)),
+                playtime: Math.max(0, Number(row?.playtime ?? stats?.playtime ?? stats?.time_played ?? 0)),
+                kills: Math.max(0, Number(row?.total_kills ?? stats?.kills ?? stats?.total_kills ?? 0))
+            };
+        })
+            .sort((a, b) => (b.highscore - a.highscore) || (b.kills - a.kills) || (b.playtime - a.playtime))
+            .slice(0, safeLimit);
+    };
+
     try {
         const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
-        const { data, error } = await supabase
-            .from("users")
-            .select("nickname, highscore, playtime, total_kills")
-            .order("highscore", { ascending: false, nullsFirst: false })
-            .order("total_kills", { ascending: false, nullsFirst: false })
-            .limit(safeLimit);
+        const queryAttempts = [
+            () => supabase.from("users").select("nickname, username, email, highscore, playtime, total_kills, statistics").limit(200),
+            () => supabase.from("users").select("nickname, username, email, statistics").limit(200),
+            () => supabase.from("users").select("*").limit(200)
+        ];
+
+        let data = [];
+        let error = null;
+
+        for (const runQuery of queryAttempts) {
+            const result = await withTimeout(runQuery(), 4500).catch((e) => ({ data: null, error: e }));
+            data = result?.data || [];
+            error = result?.error || null;
+            if (!error) break;
+        }
 
         if (error) {
             console.error("Error fetching global account leaderboard:", error);
             return [];
         }
-
-        return (data || []).map((row) => ({
-            name: String(row.nickname || "Player"),
-            highscore: Math.max(0, Number(row.highscore || 0)),
-            playtime: Math.max(0, Number(row.playtime || 0)),
-            kills: Math.max(0, Number(row.total_kills || 0))
-        }));
+        return mapLeaderboardRows(data, safeLimit);
     } catch (error) {
         console.error("Error in fetchGlobalAccountLeaderboard:", error);
-        return [];
+        try {
+            const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
+            const urls = [
+                `${supabaseUrl}/rest/v1/users?select=nickname,username,email,highscore,playtime,total_kills,statistics&limit=200`,
+                `${supabaseUrl}/rest/v1/users?select=nickname,username,email,statistics&limit=200`,
+                `${supabaseUrl}/rest/v1/users?select=*&limit=200`
+            ];
+
+            for (const url of urls) {
+                const resp = await withTimeout(fetch(url, {
+                    headers: {
+                        "apikey": supabaseKey,
+                        "Authorization": `Bearer ${supabaseKey}`
+                    }
+                }), 4500);
+                if (!resp.ok) continue;
+                const rows = await resp.json();
+                return mapLeaderboardRows(rows, safeLimit);
+            }
+
+            return [];
+        } catch (fallbackError) {
+            console.error("Global leaderboard fallback failed:", fallbackError);
+            return [];
+        }
     }
 }

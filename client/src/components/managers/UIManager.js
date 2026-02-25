@@ -35,9 +35,12 @@ export default class UIManager {
         this.enemyCoreActionsElement = null;
         this.relocatePromptElement = null;
         this.baseLayoutDialogElement = null;
+        this.profilePanelElement = null;
+        this.prePlaySkinPromptElement = null;
         this.x1StatusElement = null;
         this.x1StatusInterval = null;
         this._pinAutoBuildMenuOpen = false;
+        this._lastGlobalRankLoginState = null;
         this._autoBuildShowActions = null;
         this._autoBuildShowMenu = null;
         this._startupRandomSkinApplied = false;
@@ -48,6 +51,7 @@ export default class UIManager {
         this.skinPersistTimeout = null;
 
         this.initializeUIElements();
+        this.embedPlayControlsIntoAccountCard();
         this.initializeSkinsFromCache(); // First: load from localStorage cache
         this.loadSupabaseSkins(); // Then: fetch fresh from Supabase (updates cache)
         this.addLoginDialogButtonListener();
@@ -602,6 +606,8 @@ export default class UIManager {
         try {
             const leaderboard = document.getElementById("global-leaderboard");
             if (!leaderboard) return;
+            if (this._globalRankLoading) return;
+            this._globalRankLoading = true;
 
             const formatPlaytime = (seconds) => {
                 const total = Math.max(0, Number(seconds || 0));
@@ -627,16 +633,39 @@ export default class UIManager {
                     <span>Play</span>
                     <span>Kills</span>
                 </div>
+                <div class="global-rank-list"></div>
             `;
+            const rowsContainer = leaderboard.querySelector(".global-rank-list");
+            if (rowsContainer) {
+                const loading = document.createElement("div");
+                loading.className = "global-rank-empty";
+                loading.textContent = "Loading global top...";
+                rowsContainer.appendChild(loading);
+            }
 
             const leaderboardData = await fetchGlobalAccountLeaderboard(10);
             this.globalLeaderboard = leaderboardData;
+            if (rowsContainer) rowsContainer.innerHTML = "";
 
             if (!leaderboardData.length) {
+                const localUser = this.core?.networkManager?.userData;
+                const localStats = localUser?.statistics;
+                if (localUser && localStats && (localUser.nickname || localUser.discord?.username)) {
+                    const row = document.createElement("div");
+                    row.className = "global-rank-row";
+                    row.innerHTML = `
+                        <span class="rank">1</span>
+                        <span class="name" title="${localUser.nickname || localUser.discord?.username || "You"}">${localUser.nickname || localUser.discord?.username || "You"}</span>
+                        <span class="score">${formatScore(localStats.highscore)}</span>
+                        <span class="playtime">${formatPlaytime(localStats.playtime)}</span>
+                        <span class="kills">${Number(localStats.kills || 0).toLocaleString("en-US")}</span>
+                    `;
+                    (rowsContainer || leaderboard).appendChild(row);
+                }
                 const empty = document.createElement("div");
                 empty.className = "global-rank-empty";
-                empty.textContent = "No ranked accounts yet.";
-                leaderboard.appendChild(empty);
+                empty.textContent = "Global rank unavailable now (showing local profile only).";
+                (rowsContainer || leaderboard).appendChild(empty);
                 leaderboard.style.display = "flex";
                 return;
             }
@@ -651,7 +680,7 @@ export default class UIManager {
                     <span class="playtime">${formatPlaytime(entry.playtime)}</span>
                     <span class="kills">${Number(entry.kills || 0).toLocaleString("en-US")}</span>
                 `;
-                leaderboard.appendChild(row);
+                (rowsContainer || leaderboard).appendChild(row);
             });
 
             leaderboard.style.display = "flex";
@@ -667,6 +696,34 @@ export default class UIManager {
                 `;
                 leaderboard.style.display = "flex";
             }
+        } finally {
+            this._globalRankLoading = false;
+            // Retry once shortly after startup if it loaded empty while session/network was still initializing.
+            if (!this._globalRankRetried) {
+                this._globalRankRetried = true;
+                setTimeout(() => this._populateGlobalLeaderboard(), 2500);
+            }
+        }
+    }
+
+    embedPlayControlsIntoAccountCard () {
+        const playerInputContainer = document.querySelector(".player-input-container");
+        const accountContainer = document.getElementById("account-container");
+        const topPlayerSettings = document.querySelector(".player-settings");
+        const discordShopLinks = document.getElementById("discord-shop-links");
+
+        if (!playerInputContainer || !accountContainer) return;
+        if (playerInputContainer.dataset.embeddedIntoAccount === "1") return;
+
+        // Place the name + play row at the top of the lower account card.
+        accountContainer.insertBefore(playerInputContainer, discordShopLinks || accountContainer.firstChild);
+        playerInputContainer.dataset.embeddedIntoAccount = "1";
+        playerInputContainer.classList.add("embedded-in-account");
+        accountContainer.classList.add("compact-account-center");
+
+        // Hide the old top wrapper/card that would otherwise stay empty.
+        if (topPlayerSettings) {
+            topPlayerSettings.style.display = "none";
         }
     }
 
@@ -803,6 +860,7 @@ export default class UIManager {
 
     async updateAccount () {
         const MAX_LEVEL = 40;
+        const networkManager = this.core?.networkManager;
 
         // Default values in case userData is null or incomplete
         const defaultUserData = {
@@ -828,7 +886,7 @@ export default class UIManager {
         };
 
         // Get userData, falling back to defaultUserData if it's missing or null
-        const userData = this.core.networkManager.userData || defaultUserData;
+        const userData = networkManager?.userData || defaultUserData;
 
         // Ensure all necessary properties are initialized
         ensureProperty(userData, 'discord', { username: 'quest' });
@@ -859,7 +917,7 @@ export default class UIManager {
         }
 
         // Update player name input based on login status
-        const isLoggedIn = this.core.networkManager.loggedIn;
+        const isLoggedIn = Boolean(networkManager?.loggedIn);
         if (isLoggedIn && userData.nickname) {
             // Hide input and show nickname
             this.DOM.menu.playerNameInput.value = userData.nickname;
@@ -874,7 +932,7 @@ export default class UIManager {
         }
 
         // Handle progression data safely
-        const level = userData.progression?.level || 1;
+        let level = userData.progression?.level || 1;
         let userXP = userData.progression?.xp || 0;
 
         // Cap the level and XP at MAX_LEVEL
@@ -943,27 +1001,356 @@ export default class UIManager {
     }
 
     updateAccountButton () {
+        const ensureMyProfileButton = () => {
+            const accountButtonsContainer = document.querySelector(".account-buttons");
+            if (!accountButtonsContainer) return null;
+
+            let btn = document.getElementById("my-profile-button");
+            if (!btn) {
+                btn = document.createElement("button");
+                btn.id = "my-profile-button";
+                btn.type = "button";
+                btn.textContent = "My Profile";
+                btn.style.display = "none";
+                btn.style.background = "rgba(20, 10, 40, 0.7)";
+                btn.style.border = "1px solid rgba(180, 160, 255, 0.3)";
+                btn.style.color = "#e0d6ff";
+                btn.style.borderRadius = "10px";
+                btn.style.fontSize = "13px";
+                btn.style.fontWeight = "700";
+                btn.style.padding = "10px 12px";
+                btn.style.cursor = "pointer";
+                btn.style.flex = "1";
+                btn.style.whiteSpace = "nowrap";
+                btn.addEventListener("click", () => this.showMyProfilePanel(true));
+                accountButtonsContainer.insertBefore(btn, this.DOM.account.accountButton || null);
+            }
+            return btn;
+        };
+
+        const myProfileButton = ensureMyProfileButton();
+        const isLoggedInNow = Boolean(this.core?.networkManager?.loggedIn);
+        const accountContainer = document.getElementById("account-container");
+        const accountDividers = accountContainer ? Array.from(accountContainer.querySelectorAll("hr")) : [];
+        const discordButton = document.getElementById("discord-button");
+        const shopButton = document.getElementById("shop-button");
+
+        const applyLoggedButtonStyle = (button) => {
+            if (!button) return;
+            button.style.background = "rgba(20, 10, 40, 0.7)";
+            button.style.border = "1px solid rgba(180, 160, 255, 0.3)";
+            button.style.color = "#e0d6ff";
+            button.style.borderRadius = "10px";
+            button.style.fontSize = "13px";
+            button.style.fontWeight = "700";
+            button.style.padding = "10px 12px";
+            button.style.cursor = "pointer";
+            button.style.flex = "1 1 0";
+            button.style.width = "0";
+            button.style.whiteSpace = "nowrap";
+            button.style.minHeight = "40px";
+            button.style.display = "flex";
+            button.style.alignItems = "center";
+            button.style.justifyContent = "center";
+            button.style.transform = "none";
+            button.style.marginTop = "0";
+            button.style.boxSizing = "border-box";
+        };
+
         if (this.DOM.account.accountButton) {
-            if (this.core.networkManager.loggedIn) {
+            // Keep both buttons visually matched when My Profile is present.
+            applyLoggedButtonStyle(this.DOM.account.accountButton);
+            if (isLoggedInNow) {
                 // Clear any existing classes before setting the "Logout" state
                 this.DOM.account.accountButton.classList.remove("login");
                 this.DOM.account.accountButton.textContent = "Logout";
+                if (myProfileButton) {
+                    applyLoggedButtonStyle(myProfileButton);
+                    myProfileButton.style.display = "flex";
+                }
                 // Hide signup button when logged in
                 if (this.DOM.account.signupButton) {
                     this.DOM.account.signupButton.style.display = "none";
                 }
+                if (discordButton) discordButton.style.display = "none";
+                if (shopButton) shopButton.style.display = "none";
+                accountDividers.forEach((hr) => { hr.style.display = "none"; });
             } else {
                 this.DOM.account.accountButton.classList.add("login");
                 this.DOM.account.accountButton.textContent = "Login";
+                this.DOM.account.accountButton.style.background = "";
+                this.DOM.account.accountButton.style.border = "";
+                this.DOM.account.accountButton.style.color = "";
+                this.DOM.account.accountButton.style.borderRadius = "";
+                this.DOM.account.accountButton.style.fontSize = "";
+                this.DOM.account.accountButton.style.fontWeight = "";
+                this.DOM.account.accountButton.style.transform = "";
+                if (myProfileButton) myProfileButton.style.display = "none";
                 // Show signup button when not logged in
                 if (this.DOM.account.signupButton) {
                     this.DOM.account.signupButton.style.display = "block";
                 }
+                if (discordButton) discordButton.style.display = "";
+                if (shopButton) shopButton.style.display = "";
+                accountDividers.forEach((hr) => { hr.style.display = ""; });
             }
-            this.DOM.account.accountButton.style.display = "block";
+            this.DOM.account.accountButton.style.display = "flex";
+        }
+
+        // Refresh global rank when auth state changes (startup/login/logout),
+        // because the first fetch may happen before the session/user data is ready.
+        if (this._lastGlobalRankLoginState !== isLoggedInNow) {
+            this._lastGlobalRankLoginState = isLoggedInNow;
+            this._populateGlobalLeaderboard();
+        }
+
+        // Main account card stays minimal; detailed stats live in My Profile.
+        if (this.DOM?.account?.statsContainer) {
+            this.DOM.account.statsContainer.style.display = isLoggedInNow ? "none" : "";
+        }
+        const accountProgress = document.getElementById("level-progression");
+        if (accountProgress) {
+            accountProgress.style.display = isLoggedInNow ? "none" : "";
         }
         // Also update the account display
         this.updateAccount();
+    }
+
+    showMyProfilePanel (show) {
+        if (!show) {
+            if (this.profilePanelElement?.parentNode) {
+                this.profilePanelElement.parentNode.removeChild(this.profilePanelElement);
+            }
+            this.profilePanelElement = null;
+            return;
+        }
+
+        this.showMyProfilePanel(false);
+
+        const userData = this.core?.networkManager?.userData || {};
+        const stats = userData.statistics || {};
+        const progression = userData.progression || {};
+        const nickname = userData.nickname || userData.discord?.username || "Guest";
+
+        const formatPlaytime = (seconds) => {
+            const total = Math.max(0, Number(seconds || 0));
+            const h = Math.floor(total / 3600);
+            const m = Math.floor((total % 3600) / 60);
+            return h > 0 ? `${h}h ${m}m` : `${m}m`;
+        };
+        const formatScore = (score) => {
+            const n = Math.max(0, Number(score || 0));
+            if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+            if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+            return String(n);
+        };
+
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.background = "rgba(0, 0, 0, 0.45)";
+        overlay.style.zIndex = "20040";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+
+        const card = document.createElement("div");
+        card.style.width = "min(420px, 92vw)";
+        card.style.background = "rgba(20, 10, 40, 0.92)";
+        card.style.border = "1px solid rgba(180, 160, 255, 0.35)";
+        card.style.borderRadius = "14px";
+        card.style.boxShadow = "0 14px 36px rgba(0,0,0,0.45), 0 0 18px rgba(180,160,255,0.14)";
+        card.style.backdropFilter = "blur(10px)";
+        card.style.padding = "16px";
+        card.style.color = "#e0d6ff";
+        card.style.fontFamily = "'Segoe UI', sans-serif";
+
+        const header = document.createElement("div");
+        header.style.display = "flex";
+        header.style.alignItems = "center";
+        header.style.justifyContent = "space-between";
+        header.style.marginBottom = "10px";
+
+        const title = document.createElement("div");
+        title.textContent = "My Profile";
+        title.style.fontSize = "20px";
+        title.style.fontWeight = "900";
+        title.style.color = "#9fe8ff";
+
+        const closeBtn = document.createElement("button");
+        closeBtn.type = "button";
+        closeBtn.textContent = "x";
+        closeBtn.style.background = "rgba(180, 160, 255, 0.14)";
+        closeBtn.style.border = "1px solid rgba(180, 160, 255, 0.22)";
+        closeBtn.style.color = "#e0d6ff";
+        closeBtn.style.borderRadius = "8px";
+        closeBtn.style.width = "30px";
+        closeBtn.style.height = "30px";
+        closeBtn.style.cursor = "pointer";
+        closeBtn.addEventListener("click", () => this.showMyProfilePanel(false));
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = `@${nickname}`;
+        subtitle.style.color = "#b4a0ff";
+        subtitle.style.fontWeight = "700";
+        subtitle.style.marginBottom = "12px";
+
+        const profileLevel = Math.max(1, Number(progression.level || 1));
+        const maxLevel = 40;
+        const requiredXP = profileLevel < maxLevel ? calculateRequiredXP(profileLevel) : 0;
+        const currentXP = Math.max(0, Number(progression.xp || 0));
+        const progressPct = profileLevel < maxLevel && requiredXP > 0
+            ? Math.max(4, Math.min(100, (currentXP / requiredXP) * 100))
+            : 100;
+
+        const xpPanel = document.createElement("div");
+        xpPanel.style.marginBottom = "12px";
+        xpPanel.style.padding = "10px";
+        xpPanel.style.border = "1px solid rgba(180, 160, 255, 0.18)";
+        xpPanel.style.borderRadius = "10px";
+        xpPanel.style.background = "rgba(255,255,255,0.03)";
+
+        const xpTop = document.createElement("div");
+        xpTop.style.display = "flex";
+        xpTop.style.justifyContent = "space-between";
+        xpTop.style.alignItems = "center";
+        xpTop.style.gap = "8px";
+
+        const xpLabel = document.createElement("div");
+        xpLabel.textContent = `Level ${profileLevel}`;
+        xpLabel.style.fontWeight = "800";
+        xpLabel.style.color = "#eaf6ff";
+
+        const xpValue = document.createElement("div");
+        xpValue.textContent = profileLevel < maxLevel ? `${currentXP} / ${requiredXP} XP` : "Max Level";
+        xpValue.style.fontSize = "12px";
+        xpValue.style.color = "#bdb2df";
+
+        const xpBarWrap = document.createElement("div");
+        xpBarWrap.style.marginTop = "8px";
+        xpBarWrap.style.height = "10px";
+        xpBarWrap.style.borderRadius = "999px";
+        xpBarWrap.style.background = "rgba(180,160,255,0.14)";
+        xpBarWrap.style.border = "1px solid rgba(180,160,255,0.14)";
+        xpBarWrap.style.overflow = "hidden";
+
+        const xpBar = document.createElement("div");
+        xpBar.style.height = "100%";
+        xpBar.style.width = `${progressPct}%`;
+        xpBar.style.background = "linear-gradient(90deg, rgba(97,176,255,0.95), rgba(180,160,255,0.95))";
+        xpBar.style.boxShadow = "0 0 10px rgba(120,180,255,0.35)";
+
+        xpTop.appendChild(xpLabel);
+        xpTop.appendChild(xpValue);
+        xpBarWrap.appendChild(xpBar);
+        xpPanel.appendChild(xpTop);
+        xpPanel.appendChild(xpBarWrap);
+
+        const grid = document.createElement("div");
+        grid.style.display = "grid";
+        grid.style.gridTemplateColumns = "1fr 1fr";
+        grid.style.gap = "8px";
+
+        const rows = [
+            ["Highscore", formatScore(stats.highscore)],
+            ["Playtime", formatPlaytime(stats.playtime)],
+            ["XP", `${Number(progression.xp || 0)} / ${calculateRequiredXP(Math.max(1, Number(progression.level || 1)))}`],
+            ["Total Kills", Number(stats.kills || 0).toLocaleString("en-US")]
+        ];
+
+        rows.forEach(([label, value]) => {
+            const item = document.createElement("div");
+            item.style.padding = "10px";
+            item.style.border = "1px solid rgba(180, 160, 255, 0.18)";
+            item.style.borderRadius = "10px";
+            item.style.background = "rgba(255,255,255,0.03)";
+
+            const l = document.createElement("div");
+            l.textContent = label;
+            l.style.fontSize = "12px";
+            l.style.color = "#bdb2df";
+            l.style.marginBottom = "4px";
+
+            const v = document.createElement("div");
+            v.textContent = value;
+            v.style.fontSize = "15px";
+            v.style.fontWeight = "800";
+            v.style.color = "#eaf6ff";
+
+            item.appendChild(l);
+            item.appendChild(v);
+            grid.appendChild(item);
+        });
+
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.gap = "10px";
+        actions.style.marginTop = "14px";
+
+        const mkBtn = (label, onClick, bg, border) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = label;
+            btn.style.flex = "1";
+            btn.style.padding = "10px 12px";
+            btn.style.borderRadius = "10px";
+            btn.style.border = border;
+            btn.style.background = bg;
+            btn.style.color = "#eaf6ff";
+            btn.style.fontWeight = "700";
+            btn.style.cursor = "pointer";
+            btn.addEventListener("click", onClick);
+            return btn;
+        };
+
+        const discordBtn = mkBtn(
+            "Discord",
+            () => document.getElementById("discord-button")?.click(),
+            "rgba(88, 101, 242, 0.28)",
+            "1px solid rgba(120, 130, 255, 0.45)"
+        );
+        const shopBtn = mkBtn(
+            "Shop",
+            () => document.getElementById("shop-button")?.click(),
+            "rgba(46, 204, 113, 0.22)",
+            "1px solid rgba(66, 220, 126, 0.4)"
+        );
+
+        const footer = document.createElement("div");
+        footer.style.display = "flex";
+        footer.style.justifyContent = "flex-end";
+        footer.style.marginTop = "12px";
+
+        const closeFooter = mkBtn(
+            "Close",
+            () => this.showMyProfilePanel(false),
+            "rgba(180, 160, 255, 0.12)",
+            "1px solid rgba(180, 160, 255, 0.25)"
+        );
+        closeFooter.style.flex = "0 0 auto";
+        closeFooter.style.minWidth = "110px";
+
+        actions.appendChild(discordBtn);
+        actions.appendChild(shopBtn);
+        footer.appendChild(closeFooter);
+
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) this.showMyProfilePanel(false);
+        });
+
+        card.appendChild(header);
+        card.appendChild(subtitle);
+        card.appendChild(xpPanel);
+        card.appendChild(grid);
+        card.appendChild(actions);
+        card.appendChild(footer);
+        overlay.appendChild(card);
+
+        document.body.appendChild(overlay);
+        this.profilePanelElement = overlay;
     }
 
     getNeutralSkinPreviewDataUrl() {
@@ -2715,36 +3102,170 @@ export default class UIManager {
         if (!this.DOM.menu.playButton) return;
 
         this.DOM.menu.playButton.addEventListener("click", async () => {
-            const playerName = this.extractPlayerName();
-            localStorage.setItem("playerName", playerName);
-            
-            // Equipped skin: prefer DB-selected name, else cached numeric id
-            let equippedSkinName = this.core.networkManager.loggedIn ? this.core.networkManager.userData?.selected_skin : null;
-            const cachedNumeric = Number(localStorage.getItem('equippedSkin')) || 0;
-            const cachedName = localStorage.getItem('equippedSkinName') || null;
+            const confirmed = await this.showPrePlaySkinPrompt();
+            if (!confirmed) return;
+            await this.startGameWithSelectedSkin();
+        });
+    }
 
-            if (!equippedSkinName && cachedName) equippedSkinName = cachedName;
+    async startGameWithSelectedSkin () {
+        const playerName = this.extractPlayerName();
+        localStorage.setItem("playerName", playerName);
+        
+        // Equipped skin: prefer DB-selected name, else cached numeric id
+        let equippedSkinName = this.core.networkManager.loggedIn ? this.core.networkManager.userData?.selected_skin : null;
+        const cachedNumeric = Number(localStorage.getItem('equippedSkin')) || 0;
+        const cachedName = localStorage.getItem('equippedSkinName') || null;
 
-            let equippedSkinByte = 0;
-            if (equippedSkinName && SkinCache.supabaseNameToId.has(equippedSkinName)) {
-                equippedSkinByte = SkinCache.supabaseNameToId.get(equippedSkinName);
-            } else if (!isNaN(cachedNumeric) && cachedNumeric > 0) {
-                equippedSkinByte = cachedNumeric;
-            }
+        if (!equippedSkinName && cachedName) equippedSkinName = cachedName;
 
-            // Normalize to byte range
-            equippedSkinByte = Math.max(0, Math.min(255, equippedSkinByte));
+        let equippedSkinByte = 0;
+        if (equippedSkinName && SkinCache.supabaseNameToId.has(equippedSkinName)) {
+            equippedSkinByte = SkinCache.supabaseNameToId.get(equippedSkinName);
+        } else if (!isNaN(cachedNumeric) && cachedNumeric > 0) {
+            equippedSkinByte = cachedNumeric;
+        }
 
-            // Recompute accent right before joining to avoid stale blue cache.
-            let currentSkin = this.availableSkins[this.currentSkinIndex] || null;
-            if (equippedSkinName) {
-                const byName = this.availableSkins.find((s) => s.name === equippedSkinName);
-                if (byName) currentSkin = byName;
-            }
-            await this.updateToolbarAccentForSkin(currentSkin);
+        equippedSkinByte = Math.max(0, Math.min(255, equippedSkinByte));
 
-            console.log('Joining game with skin (byte):', equippedSkinByte, 'name:', equippedSkinName);
-            this.core.handlePlayButtonPress(playerName, equippedSkinByte);
+        let currentSkin = this.availableSkins[this.currentSkinIndex] || null;
+        if (equippedSkinName) {
+            const byName = this.availableSkins.find((s) => s.name === equippedSkinName);
+            if (byName) currentSkin = byName;
+        }
+        await this.updateToolbarAccentForSkin(currentSkin);
+
+        console.log('Joining game with skin (byte):', equippedSkinByte, 'name:', equippedSkinName);
+        this.core.handlePlayButtonPress(playerName, equippedSkinByte);
+    }
+
+    async showPrePlaySkinPrompt () {
+        if (!Array.isArray(this.availableSkins) || this.availableSkins.length === 0) {
+            return true;
+        }
+
+        if (this.prePlaySkinPromptElement?.parentNode) {
+            this.prePlaySkinPromptElement.parentNode.removeChild(this.prePlaySkinPromptElement);
+        }
+
+        return await new Promise((resolve) => {
+            let selectedIndex = Math.max(0, Math.min(this.currentSkinIndex || 0, this.availableSkins.length - 1));
+
+            const close = (result) => {
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                this.prePlaySkinPromptElement = null;
+                resolve(Boolean(result));
+            };
+
+            const renderCards = () => {
+                grid.innerHTML = "";
+                this.availableSkins.forEach((skin, index) => {
+                    const card = document.createElement("button");
+                    card.type = "button";
+                    card.className = "preplay-skin-card";
+                    if (index === selectedIndex) card.classList.add("selected");
+                    card.title = skin.name || "Skin";
+
+                    if (skin.url) {
+                        const img = document.createElement("img");
+                        img.src = skin.url;
+                        img.alt = skin.name || "Skin";
+                        card.appendChild(img);
+                    } else {
+                        const ph = document.createElement("div");
+                        ph.className = "preplay-skin-placeholder";
+                        ph.textContent = "Default";
+                        card.appendChild(ph);
+                    }
+
+                    const label = document.createElement("span");
+                    label.textContent = skin.name || "Skin";
+                    card.appendChild(label);
+
+                    card.addEventListener("click", async () => {
+                        selectedIndex = index;
+                        this.currentSkinIndex = index;
+                        await this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
+                        selectedName.textContent = this.availableSkins[this.currentSkinIndex]?.name || "Default";
+                        renderCards();
+                    });
+
+                    grid.appendChild(card);
+                });
+            };
+
+            const overlay = document.createElement("div");
+            overlay.className = "preplay-skin-overlay";
+
+            const modal = document.createElement("div");
+            modal.className = "preplay-skin-modal";
+
+            const title = document.createElement("h3");
+            title.textContent = "Choose Your Skin";
+
+            const subtitle = document.createElement("div");
+            subtitle.className = "preplay-skin-subtitle";
+            subtitle.textContent = "Select a skin before joining, or use Random.";
+
+            const selectedLine = document.createElement("div");
+            selectedLine.className = "preplay-skin-current";
+            selectedLine.innerHTML = `Selected: <span></span>`;
+            const selectedName = selectedLine.querySelector("span");
+            selectedName.textContent = this.availableSkins[selectedIndex]?.name || "Default";
+
+            const grid = document.createElement("div");
+            grid.className = "preplay-skin-grid";
+
+            const actions = document.createElement("div");
+            actions.className = "preplay-skin-actions";
+
+            const cancelBtn = document.createElement("button");
+            cancelBtn.type = "button";
+            cancelBtn.className = "preplay-skin-btn secondary";
+            cancelBtn.textContent = "Cancel";
+            cancelBtn.addEventListener("click", () => close(false));
+
+            const randomBtn = document.createElement("button");
+            randomBtn.type = "button";
+            randomBtn.className = "preplay-skin-btn";
+            randomBtn.textContent = "Random";
+            randomBtn.addEventListener("click", async () => {
+                const minIndex = this.availableSkins.length > 1 ? 1 : 0;
+                const randomIndex = Math.floor(Math.random() * (this.availableSkins.length - minIndex)) + minIndex;
+                selectedIndex = randomIndex;
+                this.currentSkinIndex = randomIndex;
+                await this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
+                close(true);
+            });
+
+            const playBtn = document.createElement("button");
+            playBtn.type = "button";
+            playBtn.className = "preplay-skin-btn primary";
+            playBtn.textContent = "Start";
+            playBtn.addEventListener("click", async () => {
+                this.currentSkinIndex = selectedIndex;
+                await this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
+                close(true);
+            });
+
+            actions.appendChild(cancelBtn);
+            actions.appendChild(randomBtn);
+            actions.appendChild(playBtn);
+
+            modal.appendChild(title);
+            modal.appendChild(subtitle);
+            modal.appendChild(actions);
+            modal.appendChild(selectedLine);
+            modal.appendChild(grid);
+
+            overlay.appendChild(modal);
+            overlay.addEventListener("click", (event) => {
+                if (event.target === overlay) close(false);
+            });
+
+            document.body.appendChild(overlay);
+            this.prePlaySkinPromptElement = overlay;
+            renderCards();
         });
     }
 

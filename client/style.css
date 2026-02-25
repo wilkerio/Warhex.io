@@ -1517,13 +1517,14 @@ img {
   visibility: visible !important;
   position: fixed;
   z-index: 30;
-  right: 8px;
-  top: 8px;
+  right: 0;
+  top: 0;
   width: min(420px, calc(100vw - 16px));
   max-width: 420px;
   padding: 14px 14px 12px;
   gap: 6px;
   zoom: 0.72;
+  margin: 0 !important;
 }
 
 #global-leaderboard.global-account-leaderboard > h2 {
@@ -1547,6 +1548,14 @@ img {
   grid-template-columns: 24px minmax(110px, 1fr) 62px 58px 56px;
   gap: 8px;
   align-items: center;
+}
+
+#global-leaderboard .global-rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 40px;
 }
 
 #global-leaderboard .global-rank-head {
@@ -2741,11 +2750,15 @@ button:hover {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 5px 30px 30px 30px; /* Reduzido padding-top de 30px para 5px */
+  padding: 28px 30px 30px 30px;
   gap: 20px;
   font-family: 'Segoe UI', sans-serif;
   color: #ffffff;
   zoom:0.7;
+}
+
+#game-title {
+  margin-top: 28px;
 }
 
 /* Menu Content */
@@ -2834,6 +2847,39 @@ button:hover {
   align-items: center;
 }
 
+.player-input-container.embedded-in-account {
+  width: 100%;
+  max-width: 360px;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#account-container.compact-account-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+#account-container.compact-account-center > * {
+  width: 100%;
+}
+
+#account-container.compact-account-center #account-handle {
+  display: none !important;
+}
+
+#account-container.compact-account-center .account-buttons {
+  width: 100%;
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 2px;
+}
+
 /* Player name input */
 
 .player-name-input {
@@ -2905,6 +2951,11 @@ button:hover {
   width: 100%;
 }
 
+/* Skin is now chosen when pressing Play */
+#skin-selector-wrapper {
+  display: none !important;
+}
+
 #discord-button,
 #shop-button {
   flex: 0 0 auto;
@@ -2945,6 +2996,33 @@ button:hover {
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
 }
 
+/* Highlight the player name + play row (main CTA area) */
+.player-input-container {
+  border: 1px solid rgba(180, 160, 255, 0.22);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(26, 14, 52, 0.68), rgba(18, 9, 38, 0.58));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 0 18px rgba(180,160,255,0.10);
+  padding: 10px;
+}
+
+#logged-in-nickname {
+  color: #efe9ff !important;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+#play-button {
+  min-width: 98px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  border: 1px solid rgba(206, 147, 255, 0.34);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 8px 18px rgba(154, 72, 216, 0.30);
+}
+
+#play-button:hover {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.07) inset, 0 10px 22px rgba(154, 72, 216, 0.42);
+}
+
 /* Account Handle */
 #account-handle {
   font-size: 1.4em;
@@ -2968,6 +3046,10 @@ button:hover {
   font-weight: bold;
   cursor: pointer;
   transition: background 0.3s ease, transform 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
 }
 
 #account-button {
@@ -2980,6 +3062,12 @@ button:hover {
   transform: scale(1.05);
 }
 
+#account-button:not(.login):hover,
+#my-profile-button:hover {
+  background: rgba(32, 18, 64, 0.82) !important;
+  transform: none !important;
+}
+
 #signup-button {
   background: rgba(100, 200, 255, 0.2);
   color: #c0e0ff;
@@ -2988,6 +3076,148 @@ button:hover {
 #signup-button:hover {
   background: rgba(100, 200, 255, 0.35);
   transform: scale(1.05);
+}
+
+.preplay-skin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25000;
+  background: rgba(4, 0, 12, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.preplay-skin-modal {
+  width: min(760px, 94vw);
+  max-height: min(78vh, 700px);
+  overflow: auto;
+  background: rgba(20, 10, 40, 0.9);
+  border: 1px solid rgba(180, 160, 255, 0.32);
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), 0 0 24px rgba(180, 160, 255, 0.18);
+  padding: 14px;
+  color: #e0d6ff;
+}
+
+.preplay-skin-modal h3 {
+  margin: 0;
+  font-size: 22px;
+  color: #ffffff;
+}
+
+.preplay-skin-subtitle {
+  margin-top: 4px;
+  color: #b4a0ff;
+  font-size: 13px;
+}
+
+.preplay-skin-current {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(180, 160, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+}
+
+.preplay-skin-current span {
+  color: #9dff9f;
+  font-weight: 700;
+}
+
+.preplay-skin-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.preplay-skin-card {
+  border: 1px solid rgba(180, 160, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #e0d6ff;
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 100px;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.preplay-skin-card:hover {
+  border-color: rgba(180, 160, 255, 0.35);
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+
+.preplay-skin-card.selected {
+  border-color: rgba(96, 234, 255, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(96, 234, 255, 0.2), 0 0 14px rgba(96, 234, 255, 0.16);
+  background: rgba(96, 234, 255, 0.06);
+}
+
+.preplay-skin-card img,
+.preplay-skin-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(180, 160, 255, 0.22);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.preplay-skin-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #cfc6ef;
+}
+
+.preplay-skin-card > span {
+  width: 100%;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preplay-skin-actions {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.preplay-skin-btn {
+  min-width: 92px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(180, 160, 255, 0.24);
+  background: rgba(180, 160, 255, 0.12);
+  color: #e0d6ff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.preplay-skin-btn.primary {
+  background: rgba(153, 86, 255, 0.44);
+  border-color: rgba(186, 132, 255, 0.45);
+  color: #fff;
+}
+
+.preplay-skin-btn.secondary {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 /* Skins Section */
