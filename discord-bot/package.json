@@ -1,0 +1,18 @@
+{
+  "name": "warhex-discord-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Discord bot for Warhex.io",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "register": "node src/registerCommands.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.8",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7"
+  }
+}
