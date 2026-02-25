@@ -819,16 +819,19 @@ export default class NetworkManager {
         players.forEach(playerData => {
             const { id, name, color, skinID, position, health, hasSpawnProtection } = playerData;
             
-            // For the client player, prefer locally selected skin from cache/db.
+            // For the client player, use local selected skin only as fallback if server skin is missing.
             let playerSkinID = skinID;
             if (clientPlayer && clientPlayer.id === id) {
                 const localSkinName = localStorage.getItem('equippedSkinName') || null;
                 const localSkinNumeric = localStorage.getItem('equippedSkin') || null;
-                if (localSkinName && localSkinName !== '' && localSkinName !== 'null') {
-                    playerSkinID = localSkinName;
-                } else if (localSkinNumeric && localSkinNumeric !== '' && localSkinNumeric !== 'null') {
-                    const parsed = Number(localSkinNumeric);
-                    playerSkinID = Number.isNaN(parsed) ? localSkinNumeric : parsed;
+                const serverHasSkin = !(playerSkinID == null || playerSkinID === 0 || playerSkinID === "0" || playerSkinID === "null");
+                if (!serverHasSkin) {
+                    if (localSkinName && localSkinName !== '' && localSkinName !== 'null') {
+                        playerSkinID = localSkinName;
+                    } else if (localSkinNumeric && localSkinNumeric !== '' && localSkinNumeric !== 'null') {
+                        const parsed = Number(localSkinNumeric);
+                        playerSkinID = Number.isNaN(parsed) ? localSkinNumeric : parsed;
+                    }
                 }
             }
             
@@ -921,14 +924,17 @@ export default class NetworkManager {
             selectedSkin = Number(selectedSkin);
         }
         
-        console.log('Creating player with skin:', selectedSkin);
+        const resolvedSkin = (skinID != null && skinID !== 0 && skinID !== "0" && skinID !== "null")
+            ? skinID
+            : selectedSkin;
+        console.log('Creating player with skin:', resolvedSkin);
         
         const accentFromSkin = localStorage.getItem("toolbarAccentColor");
         const toolbarColor = (typeof accentFromSkin === "string" && /^#[0-9a-fA-F]{6}$/.test(accentFromSkin))
             ? accentFromSkin
             : color;
-        // Pass the skin name (string) instead of skinID from server
-        const player = new Player(playerID, name, toolbarColor, selectedSkin, position);
+        // Use server skin when present; local selection is fallback only for the local player.
+        const player = new Player(playerID, name, toolbarColor, resolvedSkin, position);
         player.hasSpawnProtection = true;
         this.core.gameManager.setClientPlayer(player);
         player.color = toolbarColor;
