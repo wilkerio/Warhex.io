@@ -1,6 +1,24 @@
 import {UnitTypes, UnitVariantTypes, darkenColor, getUnitBulletDetails, getUnitDetails } from "../../network/constants.js";
 import Unit from "../Unit.js";
 
+const getHudShapeMode = (unitKey) => {
+    try {
+        let mode = globalThis?.window?.__warhexHudConfig?.unitShapes?.[unitKey];
+        if (mode === "square") mode = "triangle";
+        return mode === "triangle" ? "triangle" : "round";
+    } catch {
+        return "round";
+    }
+};
+
+const getSiegeModelMode = () => {
+    try {
+        return globalThis?.window?.__warhexHudConfig?.unitStyles?.siegeModel || "model1";
+    } catch {
+        return "model1";
+    }
+};
+
 export default class SiegeTank extends Unit {
     constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1) {
         const details = getUnitDetails(UnitTypes.SIEGE_TANK, variant);
@@ -150,12 +168,109 @@ export default class SiegeTank extends Unit {
     }
 
     renderSiegeTank (context, deltaTime) {
+        const shape = getHudShapeMode("siege");
+        const model = getSiegeModelMode();
+        if (shape === "round") {
+            context.beginPath();
+            context.arc(0, 0, this.size * 0.95, 0, Math.PI * 2);
+            context.closePath();
+            context.fillStyle = this.color;
+            context.fill();
+            context.strokeStyle = "#666666";
+            context.lineWidth = 4;
+            context.stroke();
+
+            context.beginPath();
+            context.arc(0, 0, this.size * 0.45, 0, Math.PI * 2);
+            context.closePath();
+            context.fillStyle = "#a8a8a8";
+            context.fill();
+            context.strokeStyle = "#666666";
+            context.lineWidth = 4;
+            context.stroke();
+            this.renderSiegeModelOverlay(context, model, shape);
+            return;
+        }
         // Draw the outer triangle
         this.drawTriangle(context, this.size, this.color, "#666666", 4);
+        this.renderSiegeModelOverlay(context, model, shape);
 
         // Draw the inner triangle
         const innerSize = this.size * 0.5;  // Adjust size for inner triangle
         this.drawTriangle(context, innerSize, "#a8a8a8", "#666666", 4);
+    }
+
+    renderSiegeModelOverlay (context, model, shape) {
+        const r = this.size * 0.95;
+        if (shape === "triangle" && model === "model1") return;
+        const clipToShape = () => {
+            context.save();
+            context.beginPath();
+            if (shape === "round") {
+                context.arc(0, 0, r, 0, Math.PI * 2);
+            } else {
+                const pts = this.calculateOuterPoints(this.size);
+                context.moveTo(pts[0].x, pts[0].y);
+                for (let i = 1; i < pts.length; i++) context.lineTo(pts[i].x, pts[i].y);
+                context.closePath();
+            }
+            context.clip();
+        };
+        const endClip = () => context.restore();
+
+        switch (model) {
+            case "model2":
+                context.beginPath();
+                context.arc(0, 0, r * 0.70, 0, Math.PI * 2);
+                context.strokeStyle = "#dfe7ff";
+                context.lineWidth = 3;
+                context.stroke();
+                break;
+            case "model3":
+                clipToShape();
+                context.strokeStyle = "rgba(255,255,255,0.85)";
+                context.lineWidth = 2.2;
+                for (let y = -r; y <= r; y += 8) {
+                    context.beginPath();
+                    context.moveTo(-r, y);
+                    context.lineTo(r, y + 6);
+                    context.stroke();
+                }
+                endClip();
+                break;
+            case "model4":
+                context.beginPath();
+                context.moveTo(0, -r * 0.62);
+                context.lineTo(r * 0.48, 0);
+                context.lineTo(0, r * 0.62);
+                context.lineTo(-r * 0.48, 0);
+                context.closePath();
+                context.strokeStyle = "rgba(255,255,255,0.92)";
+                context.lineWidth = 3;
+                context.stroke();
+                break;
+            case "model5":
+                context.beginPath();
+                context.arc(-r * 0.35, -r * 0.16, r * 0.10, 0, Math.PI * 2);
+                context.arc(r * 0.35, -r * 0.16, r * 0.10, 0, Math.PI * 2);
+                context.fillStyle = "#dfe7ff";
+                context.fill();
+                context.beginPath();
+                context.moveTo(-r * 0.42, r * 0.34);
+                context.lineTo(r * 0.42, r * 0.34);
+                context.strokeStyle = "#dfe7ff";
+                context.lineWidth = 3;
+                context.stroke();
+                break;
+            case "model1":
+            default:
+                context.beginPath();
+                context.arc(0, 0, r * 0.72, 0, Math.PI * 2);
+                context.strokeStyle = "rgba(255,255,255,0.55)";
+                context.lineWidth = 2.5;
+                context.stroke();
+                break;
+        }
     }
 
     renderCannonBarrel (context, deltaTime) {

@@ -381,10 +381,7 @@ export default class Player extends Renderable {
             context.beginPath();
             context.arc(screenX, screenY, healthRadius, 0, 2 * Math.PI, false);
             context.fillStyle = this.color;
-            context.save();
-            context.globalAlpha = 0.9; // 10% transparent
             context.fill();
-            context.restore();
             context.closePath();
 
             // Set the stroke style and draw the border
@@ -410,16 +407,7 @@ export default class Player extends Renderable {
                 context.restore();
             }
 
-            // Draw the white inner core ring
-            context.beginPath();
-            context.arc(screenX, screenY, 30, 0, 2 * Math.PI, false);
-            context.strokeStyle = "white";
-            context.lineWidth = 4;
-            context.save();
-            context.globalAlpha = 0.5;
-            context.stroke();
-            context.restore();
-            context.closePath();
+            // Inner white helper ring removed for cleaner core visuals.
 
             // Draw the player's name smaller and outside the core to reduce visual competition.
             let maxWidth = this.buildingRadius.min * 1.15;
@@ -470,7 +458,7 @@ export default class Player extends Renderable {
 
         const innerIndicatorColor = ThemeManager.currentThemeProperties.darkColor || "#666666";
         const outerLimitColor = ThemeManager.currentThemeProperties.indicatorColor || "#d6d6d6";
-        circleBorder(this.buildingRadius.min + 8, innerIndicatorColor, this.borderRotation); // Linha interna
+        // Inner dashed indicator removed (keep only the outer build radius ring).
         circleBorder(this.buildingRadius.max, outerLimitColor, this.borderRotation); // Limite (cinza)
         baseCore();
 

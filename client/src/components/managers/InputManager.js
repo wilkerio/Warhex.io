@@ -55,7 +55,24 @@ export default class InputManager {
 
     initializeKeyListeners () {
         document.addEventListener("keydown", (event) => {
-            this.activeKeys.add(event.key.toLowerCase()); // Add key to active keys
+            const key = event.key.toLowerCase();
+            const ui = this.core.uiManager;
+            const keySelectArmy = ui?.getHudKeybind?.("selectArmy", "q") || "q";
+            const keySelectCommander = ui?.getHudKeybind?.("selectCommander", "c") || "c";
+            const keySelectAll = ui?.getHudKeybind?.("selectAllUnits", "e") || "e";
+            const keyToggleMap = ui?.getHudKeybind?.("toggleMap", "m") || "m";
+            const keyToggleGroupTroops = ui?.getHudKeybind?.("toggleGroupTroops", "z") || "z";
+            const keySelectSoldiersOnly = ui?.getHudKeybind?.("selectSoldiersOnly", "x") || "x";
+            const keySelectTanksOnly = ui?.getHudKeybind?.("selectTanksOnly", "v") || "v";
+            const keySelectSiegeOnly = ui?.getHudKeybind?.("selectSiegeOnly", "b") || "b";
+            const upgradeHotkeys = [
+                ui?.getHudKeybind?.("upgrade1", "q") || "q",
+                ui?.getHudKeybind?.("upgrade2", "e") || "e",
+                ui?.getHudKeybind?.("upgrade3", "t") || "t",
+                ui?.getHudKeybind?.("upgradeDestroy", "r") || "r",
+                ui?.getHudKeybind?.("upgradeBarracksToggle", "f") || "f"
+            ];
+            this.activeKeys.add(key); // Add key to active keys
             if (event.key === "Shift") {
                 this.shiftPressed = true;
             }
@@ -65,8 +82,12 @@ export default class InputManager {
                 this.handleNumberKeyPress(parseInt(event.key, 10));
             }
 
-            this.handleUpgradeKeyPress(event.key.toLowerCase());
-            if (event.key == 'm') {
+            this.handleUpgradeKeyPress(key);
+            const upgradePanelOpen = this.core.uiManager?.DOM?.game?.upgrades?.container?.style?.display !== "none";
+            if (upgradePanelOpen && upgradeHotkeys.includes(key)) {
+                return;
+            }
+            if (key === keyToggleMap) {
                 if (this.core.uiManager.isChatInputFocused) {
                     return
                 }
@@ -83,8 +104,45 @@ export default class InputManager {
                 }
                 this.core.unitManager.selectAllUnits();
             }
+            if (key === keyToggleGroupTroops) {
+                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) {
+                    return;
+                }
+                this.core.uiManager?.DOM?.game?.unitControls?.groupUnitsButton?.click?.();
+            }
+            if (key === keySelectArmy) {
+                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) {
+                    return;
+                }
+                this.core.unitManager.selectArmyCombatUnits();
+            }
+            if (key === keySelectSoldiersOnly) {
+                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) return;
+                this.core.unitManager.selectOnlySoldiers();
+            }
+            if (key === keySelectTanksOnly) {
+                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) return;
+                this.core.unitManager.selectOnlyTanks();
+            }
+            if (key === keySelectSiegeOnly) {
+                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) return;
+                this.core.unitManager.selectOnlySiege();
+            }
+            if (key === keySelectAll) {
+                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) {
+                    return;
+                }
+                this.core.unitManager.selectAllUnits();
+            }
+            if (key === keySelectCommander) {
+                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) {
+                    return;
+                }
+                if (event.repeat) return;
+                this.core.unitManager.selectCommanderOrBuy();
+            }
             if (this.core.buildingManager?.handleDefenseHotkeyDown) {
-                this.core.buildingManager.handleDefenseHotkeyDown(event.key.toLowerCase());
+                this.core.buildingManager.handleDefenseHotkeyDown(key);
             }
         });
 
@@ -280,6 +338,12 @@ export default class InputManager {
         if (this.core.uiManager.isChatInputFocused) {
             return;
         }
+        const ui = this.core.uiManager;
+        const keyUpgrade1 = ui?.getHudKeybind?.("upgrade1", "q") || "q";
+        const keyUpgrade2 = ui?.getHudKeybind?.("upgrade2", "e") || "e";
+        const keyUpgrade3 = ui?.getHudKeybind?.("upgrade3", "t") || "t";
+        const keyUpgradeDestroy = ui?.getHudKeybind?.("upgradeDestroy", "r") || "r";
+        const keyUpgradeBarracks = ui?.getHudKeybind?.("upgradeBarracksToggle", "f") || "f";
 
         const upgradeListElement = this.core.uiManager.DOM.game.upgrades.list; // Get the upgrade list element
 
@@ -287,22 +351,22 @@ export default class InputManager {
         if (upgradeListElement) {
             const upgradeItems = upgradeListElement.querySelectorAll('.upgrade-item'); // Get all upgrade items
 
-            if (key === 'q' && upgradeItems.length > 0) {
+            if (key === keyUpgrade1 && upgradeItems.length > 0) {
                 // If 'Q' is pressed, click the first upgrade item
                 upgradeItems[0].click();
-            } else if (key === 'e' && upgradeItems.length > 1) {
+            } else if (key === keyUpgrade2 && upgradeItems.length > 1) {
                 // If 'E' is pressed, click the second upgrade item
                 upgradeItems[1].click();
-            } else if (key === 't' && upgradeItems.length > 2) {
+            } else if (key === keyUpgrade3 && upgradeItems.length > 2) {
                 // If 'T' is pressed, click the third upgrade item
                 upgradeItems[2].click();
-            } else if (key === 'r') {
+            } else if (key === keyUpgradeDestroy) {
                 // If 'R' is pressed, click the destroy button
                 const upgradeDestroyButton = this.core.uiManager.DOM.game.upgrades.destroyButton;
                 if (upgradeDestroyButton) {
                     upgradeDestroyButton.click(); // Simulate a click on the destroy button
                 }
-            } else if (key === 'f') {
+            } else if (key === keyUpgradeBarracks) {
                 // If 'F' is pressed, simulate a click on the barracks activation tab
                 const barracksTab = document.querySelector('[data-type="barracks-activation-toggle"]');
                 if (barracksTab) {

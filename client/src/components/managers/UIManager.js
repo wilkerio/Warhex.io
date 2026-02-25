@@ -1,7 +1,7 @@
 import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
-import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard } from "../../network/supabaseClient.js";
+import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -41,6 +41,15 @@ export default class UIManager {
         this.x1StatusInterval = null;
         this._pinAutoBuildMenuOpen = false;
         this._lastGlobalRankLoginState = null;
+        this.hudConfig = this.getDefaultHudConfig();
+        this.hudCustomizeMode = false;
+        this.hudCustomizeBindings = [];
+        this.hudSyncTimeout = null;
+        this.hudEditSessionOverlay = null;
+        this.hudEditSessionState = null;
+        this.hudEditPreviewState = null;
+        this.keybindEditorOverlay = null;
+        this.unitStyleEditorOverlay = null;
         this._autoBuildShowActions = null;
         this._autoBuildShowMenu = null;
         this._startupRandomSkinApplied = false;
@@ -52,6 +61,7 @@ export default class UIManager {
 
         this.initializeUIElements();
         this.embedPlayControlsIntoAccountCard();
+        this.loadHudConfig();
         this.initializeSkinsFromCache(); // First: load from localStorage cache
         this.loadSupabaseSkins(); // Then: fetch fresh from Supabase (updates cache)
         this.addLoginDialogButtonListener();
@@ -65,10 +75,972 @@ export default class UIManager {
         this.addMenuShortcutLinks();
         this.addLegalDialogListeners();
         this.addSettingsPanelListener();
+        this.initializeCustomizationSettingsUI();
         this.addChatButtonElementListener();
         this.addUnitControlsListener();
         this.addAutoBuildMenuButtons();
         this.placeGroupTroopsBesidePower();
+        this.applyHudConfig();
+        this.loadHudConfigFromAccount();
+    }
+
+    getDefaultHudConfig () {
+        return {
+            version: 1,
+            hud: {
+                chat: { x: null, y: null, width: null, height: null },
+                leaderboard: { x: null, y: null, width: null, height: null },
+                globalRank: { x: null, y: null, width: null, height: null },
+                resources: { x: null, y: null, width: null, height: null },
+                protection: { x: null, y: null, width: null, height: null },
+                toolbar: { x: null, y: null, width: null, height: null },
+                upgrades: { x: null, y: null, width: null, height: null }
+            },
+            keybinds: {
+                selectArmy: "q",
+                selectCommander: "c",
+                selectAllUnits: "e",
+                toggleMap: "m",
+                toggleGroupTroops: "z",
+                selectSoldiersOnly: "x",
+                selectTanksOnly: "v",
+                selectSiegeOnly: "b",
+                upgrade1: "q",
+                upgrade2: "e",
+                upgrade3: "t",
+                upgradeDestroy: "r",
+                upgradeBarracksToggle: "f"
+            },
+            unitShapes: {
+                soldier: "round",
+                tank: "round",
+                siege: "round"
+            },
+            unitStyles: {
+                soldierModel: "model1",
+                tankModel: "model1",
+                siegeModel: "model1"
+            },
+            collapsedPanels: {
+                chat: false,
+                leaderboard: false,
+                toolbar: false,
+                groupTroops: false
+            }
+        };
+    }
+
+    mergeHudConfig (incoming = {}) {
+        const defaults = this.getDefaultHudConfig();
+        const hud = incoming?.hud || {};
+        return {
+            ...defaults,
+            ...incoming,
+            hud: {
+                ...defaults.hud,
+                ...hud,
+                chat: { ...defaults.hud.chat, ...(hud.chat || {}) },
+                leaderboard: { ...defaults.hud.leaderboard, ...(hud.leaderboard || {}) },
+                globalRank: { ...defaults.hud.globalRank, ...(hud.globalRank || {}) },
+                resources: { ...defaults.hud.resources, ...(hud.resources || {}) },
+                protection: { ...defaults.hud.protection, ...(hud.protection || {}) },
+                toolbar: { ...defaults.hud.toolbar, ...(hud.toolbar || {}) },
+                upgrades: { ...defaults.hud.upgrades, ...(hud.upgrades || {}) }
+            },
+            keybinds: {
+                ...defaults.keybinds,
+                ...(incoming?.keybinds || {})
+            },
+            unitShapes: {
+                ...defaults.unitShapes,
+                ...(incoming?.unitShapes || {})
+            },
+            unitStyles: {
+                ...defaults.unitStyles,
+                ...(incoming?.unitStyles || {})
+            },
+            collapsedPanels: {
+                ...defaults.collapsedPanels,
+                ...(incoming?.collapsedPanels || {})
+            }
+        };
+    }
+
+    loadHudConfig () {
+        try {
+            const raw = localStorage.getItem("warhex_hud_config");
+            if (!raw) {
+                this.hudConfig = this.getDefaultHudConfig();
+                return;
+            }
+            this.hudConfig = this.mergeHudConfig(JSON.parse(raw));
+        } catch (error) {
+            console.warn("Failed to load HUD config:", error);
+            this.hudConfig = this.getDefaultHudConfig();
+        }
+    }
+
+    saveHudConfigLocal () {
+        try {
+            localStorage.setItem("warhex_hud_config", JSON.stringify(this.hudConfig));
+        } catch (error) {
+            console.warn("Failed to save HUD config locally:", error);
+        }
+    }
+
+    scheduleHudConfigSync () {
+        this.saveHudConfigLocal();
+        if (this.hudSyncTimeout) clearTimeout(this.hudSyncTimeout);
+        this.hudSyncTimeout = setTimeout(() => this.saveHudConfigRemote(), 500);
+    }
+
+    async loadHudConfigFromAccount () {
+        try {
+            const userId = this.core?.networkManager?.userId;
+            if (!userId) return;
+            const result = await fetchUserHudSettings(userId);
+            if (result?.success && result.data) {
+                this.hudConfig = this.mergeHudConfig(result.data);
+                this.saveHudConfigLocal();
+                this.applyHudConfig();
+                this.refreshCustomizationSettingsUI();
+            }
+        } catch (error) {
+            console.warn("Failed to load HUD config from account:", error);
+        }
+    }
+
+    async saveHudConfigRemote () {
+        try {
+            const userId = this.core?.networkManager?.userId;
+            if (!userId) return;
+            await upsertUserHudSettings(userId, this.hudConfig);
+        } catch (error) {
+            console.warn("Failed to save HUD config to account:", error);
+        }
+    }
+
+    getHudKeybind (actionName, fallbackKey) {
+        const key = this.hudConfig?.keybinds?.[actionName];
+        return (typeof key === "string" && key.trim()) ? key.trim().toLowerCase() : fallbackKey;
+    }
+
+    getKeybindActionDefinitions () {
+        return [
+            { key: "selectArmy", label: "Select Army (Soldier+Tank+Siege)", group: "Selection" },
+            { key: "selectSoldiersOnly", label: "Select Only Soldiers", group: "Selection" },
+            { key: "selectTanksOnly", label: "Select Only Tanks", group: "Selection" },
+            { key: "selectSiegeOnly", label: "Select Only Siege", group: "Selection" },
+            { key: "selectCommander", label: "Select / Buy Commander", group: "Selection" },
+            { key: "selectAllUnits", label: "Select All Units", group: "Selection" },
+            { key: "toggleMap", label: "Toggle Map", group: "HUD" },
+            { key: "toggleGroupTroops", label: "Toggle Group Troops", group: "HUD" },
+            { key: "upgrade1", label: "Upgrade Slot 1", group: "Upgrades" },
+            { key: "upgrade2", label: "Upgrade Slot 2", group: "Upgrades" },
+            { key: "upgrade3", label: "Upgrade Slot 3", group: "Upgrades" },
+            { key: "upgradeDestroy", label: "Upgrade Destroy / Sell", group: "Upgrades" },
+            { key: "upgradeBarracksToggle", label: "Upgrade Barracks Toggle", group: "Upgrades" }
+        ];
+    }
+
+    setHudKeybindValue (actionKey, keyValue) {
+        const normalized = (keyValue || "").trim().toLowerCase().slice(0, 1);
+        if (!this.hudConfig.keybinds) this.hudConfig.keybinds = {};
+
+        if (!normalized) {
+            this.hudConfig.keybinds[actionKey] = "";
+            this.scheduleHudConfigSync();
+            this.refreshCustomizationSettingsUI();
+            this.refreshKeybindEditorUI();
+            return;
+        }
+
+        // Prevent duplicate bindings by clearing the previous owner of the same key.
+        Object.keys(this.hudConfig.keybinds).forEach((k) => {
+            if (k !== actionKey && this.hudConfig.keybinds[k] === normalized) {
+                this.hudConfig.keybinds[k] = "";
+            }
+        });
+        this.hudConfig.keybinds[actionKey] = normalized;
+        this.scheduleHudConfigSync();
+        this.refreshCustomizationSettingsUI();
+        this.refreshKeybindEditorUI();
+    }
+
+    getUnitStyleOption (key, fallback) {
+        const v = this.hudConfig?.unitStyles?.[key];
+        return (typeof v === "string" && v.trim()) ? v : fallback;
+    }
+
+    showUnitStyleEditor (show = true) {
+        if (!show) {
+            if (this.unitStyleEditorOverlay?.parentNode) {
+                this.unitStyleEditorOverlay.parentNode.removeChild(this.unitStyleEditorOverlay);
+            }
+            this.unitStyleEditorOverlay = null;
+            return;
+        }
+        this.showUnitStyleEditor(false);
+
+        const overlay = document.createElement("div");
+        overlay.className = "unit-style-editor-overlay";
+        overlay.innerHTML = `
+            <div class="unit-style-editor-card">
+                <div class="unit-style-editor-header">
+                    <h3>Unit Models</h3>
+                    <button type="button" class="unit-style-editor-close">x</button>
+                </div>
+                <p class="unit-style-editor-help">Escolha formato e modelo visual das unidades.</p>
+                <div class="unit-style-editor-section">
+                    <div class="unit-style-editor-title">Shapes</div>
+                    <div class="unit-style-editor-shapes">
+                        <label>Soldier
+                            <select data-shape-key="soldier">
+                                <option value="round">Round</option>
+                                <option value="triangle">Triangle</option>
+                            </select>
+                        </label>
+                        <label>Tank
+                            <select data-shape-key="tank">
+                                <option value="round">Round</option>
+                                <option value="triangle">Triangle</option>
+                            </select>
+                        </label>
+                        <label>Siege
+                            <select data-shape-key="siege">
+                                <option value="round">Round</option>
+                                <option value="triangle">Triangle</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div class="unit-style-editor-section">
+                    <div class="unit-style-editor-title">Soldier Models (5)</div>
+                    <div class="unit-style-editor-model-grid" data-model-grid="soldier"></div>
+                </div>
+                <div class="unit-style-editor-section">
+                    <div class="unit-style-editor-title">Tank Models (5)</div>
+                    <div class="unit-style-editor-model-grid" data-model-grid="tank"></div>
+                </div>
+                <div class="unit-style-editor-section">
+                    <div class="unit-style-editor-title">Siege Models (5)</div>
+                    <div class="unit-style-editor-model-grid" data-model-grid="siege"></div>
+                </div>
+                <div class="unit-style-editor-footer">
+                    <button type="button" class="unit-style-editor-reset">Resetar</button>
+                    <button type="button" class="unit-style-editor-done">Fechar</button>
+                </div>
+            </div>
+        `;
+
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) this.showUnitStyleEditor(false);
+        });
+        overlay.querySelector(".unit-style-editor-close")?.addEventListener("click", () => this.showUnitStyleEditor(false));
+        overlay.querySelector(".unit-style-editor-done")?.addEventListener("click", () => this.showUnitStyleEditor(false));
+        overlay.querySelector(".unit-style-editor-reset")?.addEventListener("click", () => {
+            this.hudConfig.unitShapes = { ...this.getDefaultHudConfig().unitShapes };
+            this.hudConfig.unitStyles = { ...this.getDefaultHudConfig().unitStyles };
+            this.scheduleHudConfigSync();
+            this.refreshCustomizationSettingsUI();
+            this.refreshUnitStyleEditorUI();
+            this.applyHudConfig();
+        });
+
+        overlay.querySelectorAll("[data-shape-key]").forEach((select) => {
+            select.addEventListener("change", () => {
+                const key = select.dataset.shapeKey;
+                this.hudConfig.unitShapes[key] = select.value;
+                this.scheduleHudConfigSync();
+                this.refreshCustomizationSettingsUI();
+                this.applyHudConfig();
+                this.refreshUnitStyleEditorUI();
+            });
+        });
+
+        document.body.appendChild(overlay);
+        this.unitStyleEditorOverlay = overlay;
+        this.refreshUnitStyleEditorUI();
+    }
+
+    refreshUnitStyleEditorUI () {
+        const overlay = this.unitStyleEditorOverlay;
+        if (!overlay) return;
+        overlay.querySelectorAll("[data-shape-key]").forEach((select) => {
+            const key = select.dataset.shapeKey;
+            select.value = this.hudConfig?.unitShapes?.[key] || "round";
+        });
+
+        const models = ["model1", "model2", "model3", "model4", "model5"];
+        const units = [
+            { key: "soldier", label: "Soldier" },
+            { key: "tank", label: "Tank" },
+            { key: "siege", label: "Siege" }
+        ];
+        units.forEach((unit) => {
+            const grid = overlay.querySelector(`[data-model-grid="${unit.key}"]`);
+            if (!grid) return;
+            grid.innerHTML = "";
+            const selected = this.getUnitStyleOption(`${unit.key}Model`, "model1");
+            models.forEach((model, index) => {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "unit-model-card";
+                if (model === selected) btn.classList.add("selected");
+                btn.innerHTML = `
+                    <div class="unit-model-preview ${model} ${this.hudConfig?.unitShapes?.[unit.key] || "round"} unit-type-${unit.key}"></div>
+                    <div class="unit-model-label">${unit.label} ${index + 1}</div>
+                `;
+                btn.addEventListener("click", () => {
+                    if (!this.hudConfig.unitStyles) this.hudConfig.unitStyles = {};
+                    this.hudConfig.unitStyles[`${unit.key}Model`] = model;
+                    this.scheduleHudConfigSync();
+                    this.refreshUnitStyleEditorUI();
+                    this.applyHudConfig();
+                });
+                grid.appendChild(btn);
+            });
+        });
+    }
+
+    applyHudConfig () {
+        if (typeof window !== "undefined") {
+            window.__warhexHudConfig = this.hudConfig;
+        }
+        const applyPanel = (selector, cfg, fallback) => {
+            const el = typeof selector === "string" ? document.querySelector(selector) : selector;
+            if (!el) return;
+
+            el.style.position = "fixed";
+            el.style.left = cfg?.x != null ? `${cfg.x}px` : "";
+            el.style.top = cfg?.y != null ? `${cfg.y}px` : "";
+            el.style.right = cfg?.x != null ? "auto" : (fallback.right ?? "");
+            el.style.bottom = cfg?.y != null ? "auto" : (fallback.bottom ?? "");
+            el.style.width = cfg?.width ? `${cfg.width}px` : "";
+            el.style.maxWidth = cfg?.width ? `${cfg.width}px` : "";
+            el.style.height = cfg?.height ? `${cfg.height}px` : "";
+            el.style.maxHeight = cfg?.height ? `${cfg.height}px` : "";
+        };
+
+        applyPanel("#chat", this.hudConfig?.hud?.chat, { right: "0px", bottom: "0px" });
+        applyPanel("#leaderboard-container .leaderboard", this.hudConfig?.hud?.leaderboard, { right: "0px", top: "0px" });
+        applyPanel("#global-leaderboard", this.hudConfig?.hud?.globalRank, { right: "0px", top: "0px" });
+        applyPanel("#resource-container", this.hudConfig?.hud?.resources, { left: "8px", bottom: "8px" });
+        applyPanel("#shield", this.hudConfig?.hud?.protection, { left: "8px", bottom: "80px" });
+        applyPanel("#toolbar-container", this.hudConfig?.hud?.toolbar, { bottom: "0px", left: "" });
+        applyPanel("#upgrade-container", this.hudConfig?.hud?.upgrades, { left: "8px", top: "" });
+        this.ensureHudCollapseControls();
+        this.applyHudCollapsedStates();
+    }
+
+    ensureHudCollapseControls () {
+        const specs = [
+            { key: "chat", selector: "#chat", placement: "absolute" },
+            { key: "leaderboard", selector: "#leaderboard-container .leaderboard", placement: "absolute" },
+            { key: "toolbar", selector: "#toolbar-container", placement: "absolute" },
+            { key: "groupTroops", selector: "#unit-controls-container", placement: "inline" }
+        ];
+        specs.forEach((spec) => {
+            const el = document.querySelector(spec.selector);
+            if (!el) return;
+
+            let btn = el.querySelector(`.hud-collapse-toggle[data-hud-collapse="${spec.key}"]`);
+            if (!btn) {
+                btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = `hud-collapse-toggle ${spec.placement === "inline" ? "inline" : "floating"}`;
+                btn.dataset.hudCollapse = spec.key;
+                btn.title = "Minimizar / Expandir";
+                btn.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const current = Boolean(this.hudConfig?.collapsedPanels?.[spec.key]);
+                    this.setHudPanelCollapsed(spec.key, !current);
+                });
+            }
+
+            if (spec.key === "leaderboard") {
+                const title = el.querySelector("h2");
+                if (title) {
+                    btn.classList.remove("floating");
+                    btn.classList.add("inline", "leaderboard-inline");
+                    if (btn.parentElement !== title) title.appendChild(btn);
+                } else if (btn.parentElement !== el) {
+                    btn.classList.remove("inline", "leaderboard-inline");
+                    btn.classList.add("floating");
+                    el.appendChild(btn);
+                }
+            } else {
+                if (btn.parentElement !== el) el.appendChild(btn);
+            }
+        });
+    }
+
+    setHudPanelCollapsed (key, collapsed) {
+        if (!this.hudConfig.collapsedPanels) {
+            this.hudConfig.collapsedPanels = { ...this.getDefaultHudConfig().collapsedPanels };
+        }
+        this.hudConfig.collapsedPanels[key] = Boolean(collapsed);
+        this.applyHudCollapsedStates();
+        this.scheduleHudConfigSync();
+    }
+
+    applyHudCollapsedStates () {
+        const states = this.hudConfig?.collapsedPanels || {};
+        const bind = (selector, key) => {
+            const el = document.querySelector(selector);
+            if (!el) return;
+            const collapsed = Boolean(states[key]);
+            el.classList.toggle("hud-panel-collapsed", collapsed);
+            const btn = el.querySelector(`.hud-collapse-toggle[data-hud-collapse="${key}"]`);
+            if (btn) {
+                btn.textContent = collapsed ? "+" : "-";
+                btn.setAttribute("aria-label", collapsed ? "Expandir painel" : "Minimizar painel");
+                btn.title = collapsed ? "Expandir" : "Minimizar";
+            }
+        };
+
+        bind("#chat", "chat");
+        bind("#leaderboard-container .leaderboard", "leaderboard");
+        bind("#toolbar-container", "toolbar");
+        bind("#unit-controls-container", "groupTroops");
+    }
+
+    captureHudPanelLayout (selector, targetConfigKey) {
+        const el = document.querySelector(selector);
+        if (!el || !this.hudConfig?.hud?.[targetConfigKey]) return;
+        const rect = el.getBoundingClientRect();
+        this.hudConfig.hud[targetConfigKey] = {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+        };
+    }
+
+    resetHudLayoutConfig () {
+        this.hudConfig.hud = this.getDefaultHudConfig().hud;
+        this.applyHudConfig();
+        this.scheduleHudConfigSync();
+    }
+
+    setHudCustomizeMode (enabled) {
+        this.hudCustomizeMode = Boolean(enabled);
+        document.body.classList.toggle("hud-customize-mode", this.hudCustomizeMode);
+        if (this.hudCustomizeMode) {
+            this.enableHudDragResize();
+        } else {
+            this.disableHudDragResize();
+        }
+        this.refreshCustomizationSettingsUI();
+    }
+
+    enableHudDragResize () {
+        this.disableHudDragResize();
+        const targets = [
+            { selector: "#chat", key: "chat" },
+            { selector: "#leaderboard-container .leaderboard", key: "leaderboard" },
+            { selector: "#global-leaderboard", key: "globalRank" },
+            { selector: "#resource-container", key: "resources" },
+            { selector: "#shield", key: "protection" },
+            { selector: "#toolbar-container", key: "toolbar" },
+            { selector: "#upgrade-container", key: "upgrades" }
+        ];
+
+        targets.forEach(({ selector, key }) => {
+            const el = document.querySelector(selector);
+            if (!el) return;
+            el.classList.add("hud-customizable");
+            el.dataset.hudKey = key;
+
+            let handle = el.querySelector(".hud-resize-handle");
+            if (!handle) {
+                handle = document.createElement("div");
+                handle.className = "hud-resize-handle";
+                el.appendChild(handle);
+            }
+
+            const canStart = (event) => {
+                if (!this.hudCustomizeMode) return false;
+                const tag = event.target?.tagName?.toLowerCase();
+                if (["input", "textarea", "button", "select"].includes(tag)) return false;
+                return true;
+            };
+
+            const onDragMouseDown = (event) => {
+                if (!canStart(event)) return;
+                if (event.target === handle) return;
+                event.preventDefault();
+                const rect = el.getBoundingClientRect();
+                const zoomFactor = Math.max(0.01, Number(getComputedStyle(el).zoom) || 1);
+                const pointerOffsetX = event.clientX - rect.left;
+                const pointerOffsetY = event.clientY - rect.top;
+                el.style.right = "auto";
+                el.style.bottom = "auto";
+                el.style.left = `${Math.round(rect.left / zoomFactor)}px`;
+                el.style.top = `${Math.round(rect.top / zoomFactor)}px`;
+
+                const onMove = (e) => {
+                    const leftVisual = Math.max(0, Math.min(window.innerWidth - 80, e.clientX - pointerOffsetX));
+                    const topVisual = Math.max(0, Math.min(window.innerHeight - 60, e.clientY - pointerOffsetY));
+                    el.style.left = `${Math.round(leftVisual / zoomFactor)}px`;
+                    el.style.top = `${Math.round(topVisual / zoomFactor)}px`;
+                };
+                const onUp = () => {
+                    document.removeEventListener("mousemove", onMove);
+                    document.removeEventListener("mouseup", onUp);
+                    this.captureHudPanelLayout(selector, key);
+                    this.scheduleHudConfigSync();
+                };
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+            };
+
+            const onResizeMouseDown = (event) => {
+                if (!this.hudCustomizeMode) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const startX = event.clientX;
+                const startY = event.clientY;
+                const rect = el.getBoundingClientRect();
+                const zoomFactor = Math.max(0.01, Number(getComputedStyle(el).zoom) || 1);
+                const startW = rect.width;
+                const startH = rect.height;
+                el.style.left = `${Math.round(rect.left / zoomFactor)}px`;
+                el.style.top = `${Math.round(rect.top / zoomFactor)}px`;
+                el.style.right = "auto";
+                el.style.bottom = "auto";
+
+                const onMove = (e) => {
+                    const dw = (e.clientX - startX);
+                    const dh = (e.clientY - startY);
+                    const widthVisual = Math.max(180, Math.min(window.innerWidth - rect.left, startW + dw));
+                    const heightVisual = Math.max(100, Math.min(window.innerHeight - rect.top, startH + dh));
+                    const widthCss = Math.round(widthVisual / zoomFactor);
+                    const heightCss = Math.round(heightVisual / zoomFactor);
+                    el.style.width = `${widthCss}px`;
+                    el.style.maxWidth = `${widthCss}px`;
+                    el.style.height = `${heightCss}px`;
+                    el.style.maxHeight = `${heightCss}px`;
+                };
+                const onUp = () => {
+                    document.removeEventListener("mousemove", onMove);
+                    document.removeEventListener("mouseup", onUp);
+                    this.captureHudPanelLayout(selector, key);
+                    this.scheduleHudConfigSync();
+                };
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+            };
+
+            el.addEventListener("mousedown", onDragMouseDown);
+            handle.addEventListener("mousedown", onResizeMouseDown);
+            this.hudCustomizeBindings.push({ el, handle, onDragMouseDown, onResizeMouseDown });
+        });
+    }
+
+    disableHudDragResize () {
+        this.hudCustomizeBindings.forEach(({ el, handle, onDragMouseDown, onResizeMouseDown }) => {
+            el?.classList?.remove("hud-customizable");
+            if (el && onDragMouseDown) el.removeEventListener("mousedown", onDragMouseDown);
+            if (handle && onResizeMouseDown) handle.removeEventListener("mousedown", onResizeMouseDown);
+        });
+        this.hudCustomizeBindings = [];
+    }
+
+    initializeCustomizationSettingsUI () {
+        const settingsPanel = this.DOM?.settings?.panel;
+        if (!settingsPanel || settingsPanel.querySelector("#hud-customization-panel")) return;
+
+        const wrap = document.createElement("div");
+        wrap.id = "hud-customization-panel";
+        wrap.className = "hud-customization-panel";
+        wrap.innerHTML = `
+            <h3>HUD Customization</h3>
+            <p class="hud-customization-help">Drag/resize Chat and Leaderboards when edit mode is ON. Layout is saved locally and to your account (when logged in).</p>
+            <div class="hud-customization-actions">
+                <button type="button" id="hud-customize-toggle">Enable HUD Edit</button>
+                <button type="button" id="hud-customize-save">Save Layout</button>
+                <button type="button" id="hud-customize-reset">Reset HUD</button>
+            </div>
+            <div class="hud-customization-grid">
+                <label>Army Select Key <input id="hud-key-select-army" maxlength="1" value="q"></label>
+                <label>Commander Key <input id="hud-key-select-commander" maxlength="1" value="c"></label>
+                <label>Select All Key <input id="hud-key-select-all" maxlength="1" value="e"></label>
+                <label>Map Toggle Key <input id="hud-key-toggle-map" maxlength="1" value="m"></label>
+                <label>Group Troops Key <input id="hud-key-group-troops" maxlength="1" value="z"></label>
+                <label>Only Soldiers Key <input id="hud-key-select-soldiers-only" maxlength="1" value="x"></label>
+                <label>Only Tanks Key <input id="hud-key-select-tanks-only" maxlength="1" value="v"></label>
+                <label>Only Siege Key <input id="hud-key-select-siege-only" maxlength="1" value="b"></label>
+                <label>Upgrade #1 Key <input id="hud-key-upgrade-1" maxlength="1" value="q"></label>
+                <label>Upgrade #2 Key <input id="hud-key-upgrade-2" maxlength="1" value="e"></label>
+                <label>Upgrade #3 Key <input id="hud-key-upgrade-3" maxlength="1" value="t"></label>
+                <label>Destroy Upgrade Key <input id="hud-key-upgrade-destroy" maxlength="1" value="r"></label>
+                <label>Barracks Toggle Key <input id="hud-key-upgrade-barracks" maxlength="1" value="f"></label>
+                <label>Soldier Shape
+                    <select id="hud-shape-soldier">
+                        <option value="round">Round</option>
+                        <option value="triangle">Triangle</option>
+                    </select>
+                </label>
+                <label>Tank Shape
+                    <select id="hud-shape-tank">
+                        <option value="round">Round</option>
+                        <option value="triangle">Triangle</option>
+                    </select>
+                </label>
+                <label>Siege Shape
+                    <select id="hud-shape-siege">
+                        <option value="round">Round</option>
+                        <option value="triangle">Triangle</option>
+                    </select>
+                </label>
+            </div>
+        `;
+        settingsPanel.appendChild(wrap);
+
+        const toggleBtn = wrap.querySelector("#hud-customize-toggle");
+        const saveBtn = wrap.querySelector("#hud-customize-save");
+        const resetBtn = wrap.querySelector("#hud-customize-reset");
+        const bindInput = (id, path, key) => {
+            const el = wrap.querySelector(id);
+            if (!el) return;
+            el.addEventListener("input", () => {
+                const value = (el.value || "").trim().toLowerCase().slice(0, 1);
+                el.value = value;
+                if (path === "keybinds") this.hudConfig.keybinds[key] = value || this.getDefaultHudConfig().keybinds[key];
+                if (path === "unitShapes") this.hudConfig.unitShapes[key] = value || this.getDefaultHudConfig().unitShapes[key];
+                this.scheduleHudConfigSync();
+            });
+            el.addEventListener("keydown", (e) => {
+                if (e.key.length === 1) {
+                    e.preventDefault();
+                    el.value = e.key.toLowerCase();
+                    el.dispatchEvent(new Event("input"));
+                }
+            });
+        };
+        const bindSelect = (id, key) => {
+            const el = wrap.querySelector(id);
+            if (!el) return;
+            el.addEventListener("change", () => {
+                this.hudConfig.unitShapes[key] = el.value;
+                this.scheduleHudConfigSync();
+            });
+        };
+
+        toggleBtn?.addEventListener("click", () => this.setHudCustomizeMode(!this.hudCustomizeMode));
+        saveBtn?.addEventListener("click", () => {
+            this.captureHudPanelLayout("#chat", "chat");
+            this.captureHudPanelLayout("#leaderboard-container .leaderboard", "leaderboard");
+            this.captureHudPanelLayout("#global-leaderboard", "globalRank");
+            this.captureHudPanelLayout("#resource-container", "resources");
+            this.captureHudPanelLayout("#shield", "protection");
+            this.captureHudPanelLayout("#toolbar-container", "toolbar");
+            this.captureHudPanelLayout("#upgrade-container", "upgrades");
+            this.scheduleHudConfigSync();
+            this.setHudCustomizeMode(false);
+        });
+        resetBtn?.addEventListener("click", () => this.resetHudLayoutConfig());
+
+        bindInput("#hud-key-select-army", "keybinds", "selectArmy");
+        bindInput("#hud-key-select-commander", "keybinds", "selectCommander");
+        bindInput("#hud-key-select-all", "keybinds", "selectAllUnits");
+        bindInput("#hud-key-toggle-map", "keybinds", "toggleMap");
+        bindInput("#hud-key-group-troops", "keybinds", "toggleGroupTroops");
+        bindInput("#hud-key-select-soldiers-only", "keybinds", "selectSoldiersOnly");
+        bindInput("#hud-key-select-tanks-only", "keybinds", "selectTanksOnly");
+        bindInput("#hud-key-select-siege-only", "keybinds", "selectSiegeOnly");
+        bindInput("#hud-key-upgrade-1", "keybinds", "upgrade1");
+        bindInput("#hud-key-upgrade-2", "keybinds", "upgrade2");
+        bindInput("#hud-key-upgrade-3", "keybinds", "upgrade3");
+        bindInput("#hud-key-upgrade-destroy", "keybinds", "upgradeDestroy");
+        bindInput("#hud-key-upgrade-barracks", "keybinds", "upgradeBarracksToggle");
+        bindSelect("#hud-shape-soldier", "soldier");
+        bindSelect("#hud-shape-tank", "tank");
+        bindSelect("#hud-shape-siege", "siege");
+
+        this.refreshCustomizationSettingsUI();
+    }
+
+    refreshCustomizationSettingsUI () {
+        const wrap = document.getElementById("hud-customization-panel");
+        if (!wrap) return;
+        const setVal = (sel, value) => {
+            const el = wrap.querySelector(sel);
+            if (el && value != null) el.value = value;
+        };
+        setVal("#hud-key-select-army", this.hudConfig?.keybinds?.selectArmy || "q");
+        setVal("#hud-key-select-commander", this.hudConfig?.keybinds?.selectCommander || "c");
+        setVal("#hud-key-select-all", this.hudConfig?.keybinds?.selectAllUnits || "e");
+        setVal("#hud-key-toggle-map", this.hudConfig?.keybinds?.toggleMap || "m");
+        setVal("#hud-key-group-troops", this.hudConfig?.keybinds?.toggleGroupTroops || "z");
+        setVal("#hud-key-select-soldiers-only", this.hudConfig?.keybinds?.selectSoldiersOnly || "x");
+        setVal("#hud-key-select-tanks-only", this.hudConfig?.keybinds?.selectTanksOnly || "v");
+        setVal("#hud-key-select-siege-only", this.hudConfig?.keybinds?.selectSiegeOnly || "b");
+        setVal("#hud-key-upgrade-1", this.hudConfig?.keybinds?.upgrade1 || "q");
+        setVal("#hud-key-upgrade-2", this.hudConfig?.keybinds?.upgrade2 || "e");
+        setVal("#hud-key-upgrade-3", this.hudConfig?.keybinds?.upgrade3 || "t");
+        setVal("#hud-key-upgrade-destroy", this.hudConfig?.keybinds?.upgradeDestroy || "r");
+        setVal("#hud-key-upgrade-barracks", this.hudConfig?.keybinds?.upgradeBarracksToggle || "f");
+        setVal("#hud-shape-soldier", this.hudConfig?.unitShapes?.soldier || "round");
+        setVal("#hud-shape-tank", this.hudConfig?.unitShapes?.tank || "round");
+        setVal("#hud-shape-siege", this.hudConfig?.unitShapes?.siege || "round");
+        const toggleBtn = wrap.querySelector("#hud-customize-toggle");
+        if (toggleBtn) toggleBtn.textContent = this.hudCustomizeMode ? "Disable HUD Edit" : "Enable HUD Edit";
+    }
+
+    openCustomizationCenter (options = {}) {
+        const { enableHudEdit = false } = options;
+        this.showGameSettingsButton(false);
+        this.showGameSettingsPanel(true);
+        this.initializeCustomizationSettingsUI();
+        this.refreshCustomizationSettingsUI();
+        if (enableHudEdit) {
+            this.setHudCustomizeMode(true);
+        }
+        const panel = document.getElementById("hud-customization-panel");
+        if (panel && typeof panel.scrollIntoView === "function") {
+            panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    }
+
+    showKeybindEditor (show = true) {
+        if (!show) {
+            if (this.keybindEditorOverlay?.parentNode) {
+                this.keybindEditorOverlay.parentNode.removeChild(this.keybindEditorOverlay);
+            }
+            this.keybindEditorOverlay = null;
+            return;
+        }
+
+        this.showKeybindEditor(false);
+
+        const overlay = document.createElement("div");
+        overlay.className = "keybind-editor-overlay";
+        overlay.innerHTML = `
+            <div class="keybind-editor-card">
+                <div class="keybind-editor-header">
+                    <h3>Keybind Editor</h3>
+                    <button type="button" class="keybind-editor-close">x</button>
+                </div>
+                <p class="keybind-editor-help">Clique em "Definir" e pressione uma tecla. Se a tecla ja estiver em uso, ela sera movida para esta acao.</p>
+                <div class="keybind-editor-list"></div>
+                <div class="keybind-editor-footer">
+                    <button type="button" class="keybind-editor-reset">Resetar teclas</button>
+                    <button type="button" class="keybind-editor-done">Fechar</button>
+                </div>
+            </div>
+        `;
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) this.showKeybindEditor(false);
+        });
+        overlay.querySelector(".keybind-editor-close")?.addEventListener("click", () => this.showKeybindEditor(false));
+        overlay.querySelector(".keybind-editor-done")?.addEventListener("click", () => this.showKeybindEditor(false));
+        overlay.querySelector(".keybind-editor-reset")?.addEventListener("click", () => {
+            const defaults = this.getDefaultHudConfig().keybinds;
+            this.hudConfig.keybinds = { ...defaults };
+            this.scheduleHudConfigSync();
+            this.refreshCustomizationSettingsUI();
+            this.refreshKeybindEditorUI();
+        });
+
+        document.body.appendChild(overlay);
+        this.keybindEditorOverlay = overlay;
+        this.refreshKeybindEditorUI();
+    }
+
+    refreshKeybindEditorUI () {
+        const overlay = this.keybindEditorOverlay;
+        if (!overlay) return;
+        const list = overlay.querySelector(".keybind-editor-list");
+        if (!list) return;
+        list.innerHTML = "";
+
+        const defs = this.getKeybindActionDefinitions();
+        let currentGroup = "";
+        defs.forEach((def) => {
+            if (def.group && def.group !== currentGroup) {
+                currentGroup = def.group;
+                const groupHeader = document.createElement("div");
+                groupHeader.className = "keybind-editor-group";
+                groupHeader.textContent = def.group;
+                list.appendChild(groupHeader);
+            }
+            const row = document.createElement("div");
+            row.className = "keybind-editor-row";
+
+            const label = document.createElement("div");
+            label.className = "keybind-editor-label";
+            label.textContent = def.label;
+
+            const value = document.createElement("div");
+            value.className = "keybind-editor-value";
+            value.textContent = (this.hudConfig?.keybinds?.[def.key] || "").toUpperCase() || "None";
+
+            const setBtn = document.createElement("button");
+            setBtn.type = "button";
+            setBtn.className = "keybind-editor-btn";
+            setBtn.textContent = "Definir";
+            setBtn.addEventListener("click", () => {
+                value.textContent = "Pressione...";
+                const onKey = (event) => {
+                    event.preventDefault();
+                    const key = (event.key || "").toLowerCase();
+                    if (key === "escape") {
+                        document.removeEventListener("keydown", onKey, true);
+                        this.refreshKeybindEditorUI();
+                        return;
+                    }
+                    if (key.length === 1) {
+                        document.removeEventListener("keydown", onKey, true);
+                        this.setHudKeybindValue(def.key, key);
+                    }
+                };
+                document.addEventListener("keydown", onKey, true);
+            });
+
+            const clearBtn = document.createElement("button");
+            clearBtn.type = "button";
+            clearBtn.className = "keybind-editor-btn ghost";
+            clearBtn.textContent = "Limpar";
+            clearBtn.addEventListener("click", () => this.setHudKeybindValue(def.key, ""));
+
+            row.appendChild(label);
+            row.appendChild(value);
+            row.appendChild(setBtn);
+            row.appendChild(clearBtn);
+            list.appendChild(row);
+        });
+    }
+
+    startHudEditSession () {
+        if (this.hudEditSessionOverlay) return;
+
+        this.hudEditSessionState = {
+            menuWasOpen: Boolean(this.menuOpen)
+        };
+
+        if (this.menuOpen) {
+            this.showMenuUIElements(false);
+            this.showGameUIElements(true);
+        }
+
+        this.setHudEditPreviewPanels(true);
+        this.setHudCustomizeMode(true);
+        this.createHudEditSessionOverlay();
+    }
+
+    finishHudEditSession ({ save = true, restoreFactory = false } = {}) {
+        if (restoreFactory) {
+            this.resetHudLayoutConfig();
+        } else if (save) {
+            this.captureHudPanelLayout("#chat", "chat");
+            this.captureHudPanelLayout("#leaderboard-container .leaderboard", "leaderboard");
+            this.captureHudPanelLayout("#global-leaderboard", "globalRank");
+            this.captureHudPanelLayout("#resource-container", "resources");
+            this.captureHudPanelLayout("#shield", "protection");
+            this.captureHudPanelLayout("#toolbar-container", "toolbar");
+            this.captureHudPanelLayout("#upgrade-container", "upgrades");
+            this.scheduleHudConfigSync();
+        } else {
+            // Restore the last saved layout if the user exits without saving.
+            this.applyHudConfig();
+        }
+
+        this.setHudCustomizeMode(false);
+        this.setHudEditPreviewPanels(false);
+        this.showUnitStyleEditor(false);
+        this.showKeybindEditor(false);
+
+        if (this.hudEditSessionOverlay?.parentNode) {
+            this.hudEditSessionOverlay.parentNode.removeChild(this.hudEditSessionOverlay);
+        }
+        this.hudEditSessionOverlay = null;
+
+        if (this.hudEditSessionState?.menuWasOpen) {
+            this.showGameUIElements(false);
+            this.showMenuUIElements(true);
+        }
+        this.hudEditSessionState = null;
+    }
+
+    setHudEditPreviewPanels (show) {
+        const upgrades = this.DOM?.game?.upgrades;
+        if (!upgrades?.container || !upgrades?.list) return;
+
+        if (show) {
+            if (this.hudEditPreviewState) return;
+            const titleEl = document.querySelector("#upgrade-container h1");
+            this.hudEditPreviewState = {
+                containerDisplay: upgrades.container.style.display,
+                title: titleEl?.textContent || "",
+                listHTML: upgrades.list.innerHTML,
+                destroyHTML: upgrades.destroyButton?.innerHTML || "",
+                destroyDisplay: upgrades.destroyButton?.style.display || ""
+            };
+
+            if (titleEl) titleEl.textContent = "HUD Preview - Upgrades";
+            upgrades.list.innerHTML = `
+                <div class="upgrade-item"><div class="upgrade-description"><p class="title">Upgrade 1</p><p>Move this panel in HUD Edit.</p></div><p class="upgrade-cost">500 Power</p></div>
+                <div class="upgrade-item"><div class="upgrade-description"><p class="title">Upgrade 2</p><p>Resize to your taste.</p></div><p class="upgrade-cost">800 Power</p></div>
+                <div class="upgrade-item"><div class="upgrade-description"><p class="title">Upgrade 3</p><p>Preview slot for positioning.</p></div><p class="upgrade-cost">1200 Power</p></div>
+            `;
+            if (upgrades.destroyButton) {
+                upgrades.destroyButton.style.display = "flex";
+                upgrades.destroyButton.innerHTML = `<p>Destroy / Sell</p><p class="refund-amount">+500 Power</p>`;
+            }
+            upgrades.container.style.display = "flex";
+        } else if (this.hudEditPreviewState) {
+            const prev = this.hudEditPreviewState;
+            const titleEl = document.querySelector("#upgrade-container h1");
+            if (titleEl) titleEl.textContent = prev.title;
+            upgrades.list.innerHTML = prev.listHTML;
+            if (upgrades.destroyButton) {
+                upgrades.destroyButton.innerHTML = prev.destroyHTML;
+                upgrades.destroyButton.style.display = prev.destroyDisplay;
+            }
+            upgrades.container.style.display = prev.containerDisplay;
+            this.hudEditPreviewState = null;
+        }
+    }
+
+    createHudEditSessionOverlay () {
+        const overlay = document.createElement("div");
+        overlay.id = "hud-edit-session-overlay";
+        overlay.className = "hud-edit-session-overlay";
+        overlay.innerHTML = `
+            <div class="hud-edit-session-card">
+                <div class="hud-edit-session-title">HUD Edit Mode</div>
+                <div class="hud-edit-session-help">Arraste e redimensione os painéis do jogo. Quando terminar, salve ou volte ao padrão.</div>
+                <div class="hud-edit-session-actions">
+                    <button type="button" class="hud-edit-btn models">Modelos</button>
+                    <button type="button" class="hud-edit-btn keys">Teclas</button>
+                    <button type="button" class="hud-edit-btn save">Salvar</button>
+                    <button type="button" class="hud-edit-btn reset">Padrão de fábrica</button>
+                    <button type="button" class="hud-edit-btn close">Sair</button>
+                </div>
+            </div>
+        `;
+
+        overlay.querySelector(".hud-edit-btn.models")?.addEventListener("click", () => {
+            this.showUnitStyleEditor(true);
+        });
+        overlay.querySelector(".hud-edit-btn.keys")?.addEventListener("click", () => {
+            this.showKeybindEditor(true);
+        });
+        overlay.querySelector(".hud-edit-btn.save")?.addEventListener("click", () => {
+            this.finishHudEditSession({ save: true });
+        });
+        overlay.querySelector(".hud-edit-btn.reset")?.addEventListener("click", () => {
+            this.finishHudEditSession({ save: false, restoreFactory: true });
+        });
+        overlay.querySelector(".hud-edit-btn.close")?.addEventListener("click", () => {
+            this.finishHudEditSession({ save: false });
+        });
+
+        document.body.appendChild(overlay);
+        this.hudEditSessionOverlay = overlay;
     }
 
     placeGroupTroopsBesidePower () {
@@ -1088,11 +2060,14 @@ export default class UIManager {
                 if (myProfileButton) myProfileButton.style.display = "none";
                 // Show signup button when not logged in
                 if (this.DOM.account.signupButton) {
-                    this.DOM.account.signupButton.style.display = "block";
+                    this.DOM.account.signupButton.style.display = "flex";
+                    this.DOM.account.signupButton.style.alignItems = "center";
+                    this.DOM.account.signupButton.style.justifyContent = "center";
                 }
-                if (discordButton) discordButton.style.display = "";
-                if (shopButton) shopButton.style.display = "";
-                accountDividers.forEach((hr) => { hr.style.display = ""; });
+                // Guest view stays clean/minimal.
+                if (discordButton) discordButton.style.display = "none";
+                if (shopButton) shopButton.style.display = "none";
+                accountDividers.forEach((hr) => { hr.style.display = "none"; });
             }
             this.DOM.account.accountButton.style.display = "flex";
         }
@@ -1102,15 +2077,18 @@ export default class UIManager {
         if (this._lastGlobalRankLoginState !== isLoggedInNow) {
             this._lastGlobalRankLoginState = isLoggedInNow;
             this._populateGlobalLeaderboard();
+            if (isLoggedInNow) {
+                this.loadHudConfigFromAccount();
+            }
         }
 
         // Main account card stays minimal; detailed stats live in My Profile.
         if (this.DOM?.account?.statsContainer) {
-            this.DOM.account.statsContainer.style.display = isLoggedInNow ? "none" : "";
+            this.DOM.account.statsContainer.style.display = "none";
         }
         const accountProgress = document.getElementById("level-progression");
         if (accountProgress) {
-            accountProgress.style.display = isLoggedInNow ? "none" : "";
+            accountProgress.style.display = "none";
         }
         // Also update the account display
         this.updateAccount();
@@ -1289,6 +2267,7 @@ export default class UIManager {
         actions.style.display = "flex";
         actions.style.gap = "10px";
         actions.style.marginTop = "14px";
+        actions.style.flexWrap = "wrap";
 
         const mkBtn = (label, onClick, bg, border) => {
             const btn = document.createElement("button");
@@ -1318,6 +2297,15 @@ export default class UIManager {
             "rgba(46, 204, 113, 0.22)",
             "1px solid rgba(66, 220, 126, 0.4)"
         );
+        const hudEditBtn = mkBtn(
+            "Editar HUD",
+            () => {
+                this.showMyProfilePanel(false);
+                this.startHudEditSession();
+            },
+            "rgba(96, 234, 255, 0.14)",
+            "1px solid rgba(96, 234, 255, 0.35)"
+        );
 
         const footer = document.createElement("div");
         footer.style.display = "flex";
@@ -1335,6 +2323,14 @@ export default class UIManager {
 
         actions.appendChild(discordBtn);
         actions.appendChild(shopBtn);
+        actions.appendChild(hudEditBtn);
+
+        // Safety cleanup for stale cached builds/UI: remove any legacy "Config" button if present.
+        Array.from(actions.querySelectorAll("button")).forEach((btn) => {
+            if ((btn.textContent || "").trim().toLowerCase() === "config") {
+                btn.remove();
+            }
+        });
         footer.appendChild(closeFooter);
 
         overlay.addEventListener("click", (event) => {
@@ -3500,6 +4496,10 @@ export default class UIManager {
         const autoBuildMenu = document.getElementById("autobuild-menu-container");
         if (autoBuildMenu) {
             autoBuildMenu.style.display = show ? "flex" : "none";
+        }
+        if (show) {
+            this.ensureHudCollapseControls();
+            this.applyHudCollapsedStates();
         }
     }
 

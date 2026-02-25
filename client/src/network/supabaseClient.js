@@ -537,3 +537,54 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
         }
     }
 }
+
+const USER_HUD_SETTINGS_TABLE = "user_hud_settings";
+
+export async function fetchUserHudSettings(userId) {
+    try {
+        if (!userId) return { success: false, error: "missing_user_id", data: null };
+        const { data, error } = await supabase
+            .from(USER_HUD_SETTINGS_TABLE)
+            .select("config_json, updated_at")
+            .eq("user_id", userId)
+            .maybeSingle();
+
+        if (error) {
+            console.error("Error fetching user HUD settings:", error);
+            return { success: false, error, data: null };
+        }
+
+        return {
+            success: true,
+            data: data?.config_json || null,
+            updatedAt: data?.updated_at || null
+        };
+    } catch (error) {
+        console.error("Error in fetchUserHudSettings:", error);
+        return { success: false, error, data: null };
+    }
+}
+
+export async function upsertUserHudSettings(userId, config) {
+    try {
+        if (!userId) return { success: false, error: "missing_user_id" };
+        const payload = {
+            user_id: String(userId),
+            config_json: config || {},
+            updated_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase
+            .from(USER_HUD_SETTINGS_TABLE)
+            .upsert(payload, { onConflict: "user_id" });
+
+        if (error) {
+            console.error("Error upserting user HUD settings:", error);
+            return { success: false, error };
+        }
+        return { success: true };
+    } catch (error) {
+        console.error("Error in upsertUserHudSettings:", error);
+        return { success: false, error };
+    }
+}

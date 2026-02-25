@@ -139,6 +139,10 @@ export default class Leaderboard {
     }
 
     renderEntries() {
+        // Preserve HUD collapse toggle injected by UIManager (renderEntries clears innerHTML).
+        const collapseToggle = this.leaderboardElement.querySelector('.hud-collapse-toggle[data-hud-collapse="leaderboard"]');
+        if (collapseToggle) collapseToggle.remove();
+
         this.leaderboardElement.innerHTML = '';
 
         this.eventListeners.forEach(({
@@ -191,5 +195,12 @@ export default class Leaderboard {
 
             this.leaderboardElement.appendChild(playerContainer);
         });
+
+        if (collapseToggle) {
+            this.leaderboardElement.appendChild(collapseToggle);
+        }
+
+        this.core?.uiManager?.ensureHudCollapseControls?.();
+        this.core?.uiManager?.applyHudCollapsedStates?.();
     }
 }

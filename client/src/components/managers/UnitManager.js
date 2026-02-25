@@ -3,6 +3,7 @@ import Tank from "../../entities/units/Tank.js";
 import SiegeTank from "../../entities/units/SiegeTank.js";
 import Commander from "../../entities/units/Commander.js";
 import TriCommander from "../../entities/units/TriCommander.js";
+import { UnitTypes } from "../../network/constants.js";
 
 // Define a namespace/module for buildings
 export const Units = {
@@ -20,6 +21,7 @@ export default class UnitManager {
     constructor (core) {
         this.core = core;
         this.selectedUnits = [];
+        this.lastCommanderHotkeyBuyAt = 0;
 
         this.lastTargetPosition = { x: Infinity, y: Infinity };
         this.lastMoveCommandAt = 0;
@@ -121,6 +123,80 @@ export default class UnitManager {
                 unit.isSelected = true;
             }
         });
+    }
+
+    selectUnitsByTypes(unitTypes = [], options = {}) {
+        const { clearFirst = true } = options;
+        const player = this.core?.gameManager?.player;
+        if (!player?.units || !Array.isArray(unitTypes) || unitTypes.length === 0) return;
+
+        const typeSet = new Set(unitTypes);
+        if (clearFirst && !this.core.inputManager.shiftPressed) {
+            this.clearSelection();
+        }
+
+        player.units.forEach(unit => {
+            if (!unit || !typeSet.has(unit.type)) return;
+            if (!this.selectedUnits.includes(unit)) {
+                this.selectedUnits.push(unit);
+            }
+            unit.isSelected = true;
+        });
+    }
+
+    selectArmyCombatUnits () {
+        this.selectUnitsByTypes([
+            UnitTypes.SOLDIER,
+            UnitTypes.TANK,
+            UnitTypes.SIEGE_TANK
+        ]);
+    }
+
+    selectOnlySoldiers () {
+        this.selectUnitsByTypes([UnitTypes.SOLDIER]);
+    }
+
+    selectOnlyTanks () {
+        this.selectUnitsByTypes([UnitTypes.TANK]);
+    }
+
+    selectOnlySiege () {
+        this.selectUnitsByTypes([UnitTypes.SIEGE_TANK]);
+    }
+
+    selectCommanderUnit () {
+        const player = this.core?.gameManager?.player;
+        if (!player?.units) return false;
+
+        const commander = player.units.find(unit =>
+            unit && (unit.type === UnitTypes.COMMANDER || unit.type === UnitTypes.TRI_COMMANDER)
+        );
+
+        if (!commander) return false;
+
+        if (!this.core.inputManager.shiftPressed) {
+            this.clearSelection();
+        }
+        if (!this.selectedUnits.includes(commander)) {
+            this.selectedUnits.push(commander);
+        }
+        commander.isSelected = true;
+        return true;
+    }
+
+    selectCommanderOrBuy () {
+        if (this.selectCommanderUnit()) {
+            return;
+        }
+
+        // Buy commander if none exists yet (same behavior as core upgrade action).
+        if (this.core?.gameManager?.hasCommander) return;
+
+        const now = Date.now();
+        if (now - this.lastCommanderHotkeyBuyAt < 350) return;
+        this.lastCommanderHotkeyBuyAt = now;
+
+        this.core?.networkManager?.sendBuyCommander?.();
     }
 
     selectUnits (selectionCircle) {
