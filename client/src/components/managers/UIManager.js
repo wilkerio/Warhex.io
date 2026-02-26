@@ -53,6 +53,7 @@ export default class UIManager {
         this._autoBuildShowActions = null;
         this._autoBuildShowMenu = null;
         this._startupRandomSkinApplied = false;
+        this.hideMenuSecondaryPanels = false;
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -4406,6 +4407,18 @@ export default class UIManager {
         this.DOM.menu.screen.style.display = show ? "flex" : "none";
     }
 
+    showMenuSecondaryPanels (show) {
+        const globalRank = document.getElementById("global-leaderboard");
+        if (globalRank) {
+            globalRank.style.display = show ? "flex" : "none";
+        }
+
+        const legalLinks = document.getElementById("legal-links-corner");
+        if (legalLinks) {
+            legalLinks.style.display = show ? "flex" : "none";
+        }
+    }
+
     showGameOverContainer (show) {
         this.core.camera.enableControls(!show)
         this.DOM.game.over.container.style.display = show ? "flex" : "none";
@@ -4482,10 +4495,19 @@ export default class UIManager {
     showMenuUIElements (show) {
         this.menuOpen = show;
         this.showMenuContainer(show);
+        if (!show) {
+            this.showMenuSecondaryPanels(false);
+            return;
+        }
+        this.showMenuSecondaryPanels(!this.hideMenuSecondaryPanels);
     }
 
     showGameUIElements (show) {
         this.menuOpen = !show;
+        if (show) {
+            this.hideMenuSecondaryPanels = false;
+            this.showMenuSecondaryPanels(false);
+        }
         this.showLeaderboard(show);
         this.showToolbar(show);
         this.showUnitControls(show);
@@ -4523,12 +4545,17 @@ export default class UIManager {
             //   dialogButton.textContent = buttonText;
             dialog.style.display = "flex";
         }
+        this.hideMenuSecondaryPanels = true;
+        if (this.menuOpen) this.showMenuSecondaryPanels(false);
     }
 
     hideMenuDialog () {
         const dialog = document.getElementById("menu-dialog");
         if (dialog) {
             dialog.style.display = "none";
+        }
+        if (this.menuOpen) {
+            this.showMenuSecondaryPanels(!this.hideMenuSecondaryPanels);
         }
     }
 

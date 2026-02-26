@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Warhex Bot Dashboard</title>
+  <style>
+    :root {
+      --bg0: #060313;
+      --bg1: #16092c;
+      --panel: rgba(24, 10, 45, .9);
+      --panel2: rgba(35, 15, 64, .85);
+      --line: rgba(183, 153, 255, .25);
+      --txt: #eadfff;
+      --muted: #bbaee1;
+      --cyan: #98ebff;
+      --green: #67f0a8;
+      --purple: #a971ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Segoe UI, sans-serif;
+      color: var(--txt);
+      background:
+        radial-gradient(900px 500px at 10% 0%, rgba(70,130,255,.16), transparent 60%),
+        radial-gradient(900px 500px at 100% 20%, rgba(185,70,255,.16), transparent 60%),
+        linear-gradient(180deg, #050210, #09041b 40%, #060210);
+      min-height: 100vh;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 14px;
+      padding: 14px;
+      min-height: 100vh;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 16px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.35), 0 0 24px rgba(165,120,255,.08);
+      backdrop-filter: blur(10px);
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar h1 {
+      margin: 0;
+      padding: 14px 14px 8px;
+      font-size: 20px;
+      color: var(--cyan);
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 0 14px 10px;
+    }
+    .guild-list {
+      overflow: auto;
+      padding: 0 10px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .guild-item {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid transparent;
+      background: rgba(255,255,255,.03);
+      padding: 8px;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    .guild-item.active { border-color: rgba(152,235,255,.35); background: rgba(152,235,255,.06); }
+    .guild-item:hover { background: rgba(255,255,255,.06); }
+    .guild-icon {
+      width: 42px; height: 42px; border-radius: 12px;
+      background: linear-gradient(135deg, #283b78, #512488);
+      display:flex; align-items:center; justify-content:center;
+      font-weight: 800;
+      color: #fff;
+      overflow: hidden;
+    }
+    .guild-icon img { width: 100%; height: 100%; object-fit: cover; }
+    .guild-name { font-weight: 700; line-height: 1.1; }
+    .guild-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+    }
+    .topbar h2 { margin: 0; color: #fff; font-size: 18px; }
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .status-badge {
+      border: 1px solid rgba(103,240,168,.28);
+      background: rgba(103,240,168,.09);
+      color: #bfffe0;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .invite-btn {
+      border: 1px solid rgba(103,240,168,.28);
+      background: rgba(103,240,168,.10);
+      color: #d8ffee;
+      border-radius: 10px;
+      padding: 6px 11px;
+      font-size: 13px;
+      font-weight: 800;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+    }
+    .invite-btn:hover {
+      background: rgba(103,240,168,.16);
+      border-color: rgba(103,240,168,.40);
+    }
+    .content {
+      padding: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.02);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .card h3 {
+      margin: 0 0 10px;
+      color: var(--cyan);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+    .field { margin-bottom: 10px; }
+    .field label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input[type="text"], .field textarea, .field select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(183,153,255,.18);
+      background: rgba(12, 7, 24, .9);
+      color: var(--txt);
+      padding: 8px 10px;
+    }
+    .field textarea { min-height: 80px; resize: vertical; }
+    .checks { display: grid; gap: 8px; }
+    .check {
+      display: flex; align-items: center; gap: 8px;
+      border: 1px solid rgba(183,153,255,.12);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: rgba(255,255,255,.02);
+    }
+    .check input { accent-color: var(--purple); }
+    .actions {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    button {
+      border: 1px solid rgba(183,153,255,.24);
+      background: rgba(183,153,255,.10);
+      color: var(--txt);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.primary {
+      border-color: rgba(152,235,255,.28);
+      background: rgba(152,235,255,.12);
+      color: #dcfbff;
+    }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .empty {
+      padding: 30px;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed rgba(183,153,255,.18);
+      border-radius: 14px;
+      background: rgba(255,255,255,.02);
+    }
+    .toast {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(103,240,168,.25);
+      background: rgba(17,35,32,.95);
+      color: #d5ffe9;
+      display: none;
+    }
+    .muted { color: var(--muted); }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel sidebar">
+      <h1>Bot Servers</h1>
+      <div class="subtitle">Servidores onde o bot está. Clique para configurar.</div>
+      <div id="guildList" class="guild-list"></div>
+    </aside>
+
+    <main class="main">
+      <div class="panel topbar">
+        <h2 id="selectedGuildTitle">Selecione um servidor</h2>
+        <div class="topbar-right">
+          <a class="invite-btn" href="https://discord.com/oauth2/authorize?client_id=1476294015438553168&scope=bot%20applications.commands&permissions=8" target="_blank" rel="noopener noreferrer">Convidar Bot</a>
+          <div class="status-badge">Discord Bot Dashboard</div>
+        </div>
+      </div>
+
+      <div id="editorRoot" class="panel" style="padding:14px;">
+        <div class="empty">Escolha um servidor na esquerda para configurar módulos, canais e mensagens.</div>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const state = {
+      guilds: [],
+      selectedGuildId: null,
+      settings: null,
+      channels: []
+    };
+
+    function toast(message) {
+      const el = document.getElementById("toast");
+      el.textContent = message;
+      el.style.display = "block";
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => el.style.display = "none", 2200);
+    }
+
+    async function api(path, options) {
+      const res = await fetch(path, options);
+      const json = await res.json();
+      if (!res.ok || json.ok === false) throw new Error(json.error || "api_error");
+      return json;
+    }
+
+    function renderGuildList() {
+      const list = document.getElementById("guildList");
+      list.innerHTML = "";
+      if (!state.guilds.length) {
+        list.innerHTML = '<div class="empty">Nenhum servidor encontrado.<br><span class="muted">Adicione o bot a um servidor e recarregue.</span><div style="margin-top:12px;"><a class="invite-btn" href="https://discord.com/oauth2/authorize?client_id=1476294015438553168&scope=bot%20applications.commands&permissions=8" target="_blank" rel="noopener noreferrer">Convidar Bot</a></div></div>';
+        return;
+      }
+      state.guilds.forEach(g => {
+        const item = document.createElement("div");
+        item.className = "guild-item" + (g.id === state.selectedGuildId ? " active" : "");
+        item.innerHTML = `
+          <div class="guild-icon">${g.iconURL ? `<img src="${g.iconURL}" alt="">` : (g.name || "?").slice(0,2).toUpperCase()}</div>
+          <div>
+            <div class="guild-name">${g.name}</div>
+            <div class="guild-meta">ID: ${g.id}</div>
+          </div>
+        `;
+        item.addEventListener("click", () => selectGuild(g.id));
+        list.appendChild(item);
+      });
+    }
+
+    function checkRow(label, path, checked) {
+      return `<label class="check"><input type="checkbox" data-path="${path}" ${checked ? "checked" : ""}> <span>${label}</span></label>`;
+    }
+
+    function buildChannelOptions(selected) {
+      const options = ['<option value="">-- nenhum --</option>'];
+      state.channels.forEach(ch => {
+        options.push(`<option value="${ch.id}" ${String(selected||"") === String(ch.id) ? "selected" : ""}>#${ch.name}</option>`);
+      });
+      return options.join("");
+    }
+
+    function renderEditor() {
+      const root = document.getElementById("editorRoot");
+      const title = document.getElementById("selectedGuildTitle");
+      const guild = state.guilds.find(g => g.id === state.selectedGuildId);
+      if (!guild || !state.settings) {
+        title.textContent = "Selecione um servidor";
+        root.innerHTML = '<div class="empty">Escolha um servidor na esquerda para configurar.</div>';
+        return;
+      }
+
+      title.textContent = `Configurando: ${guild.name}`;
+      const s = state.settings;
+      root.innerHTML = `
+        <div class="content">
+          <section class="card">
+            <h3>Modulos</h3>
+            <div class="checks">
+              ${checkRow("Comando /rank", "modules.rankCommand", s.modules.rankCommand)}
+              ${checkRow("Comando /profile", "modules.profileCommand", s.modules.profileCommand)}
+              ${checkRow("Comando /status", "modules.statusCommand", s.modules.statusCommand)}
+              ${checkRow("Boas-vindas ao entrar", "modules.welcomeOnJoin", s.modules.welcomeOnJoin)}
+              ${checkRow("Boas-vindas no privado (DM)", "modules.welcomeDmOnJoin", s.modules.welcomeDmOnJoin)}
+              ${checkRow("Movimentar servidor (IA conversa no chat)", "modules.aiAutoChat", s.modules.aiAutoChat)}
+              ${checkRow("Anuncios", "modules.announcements", s.modules.announcements)}
+              ${checkRow("Auto post de status", "modules.autoStatusPost", s.modules.autoStatusPost)}
+              ${checkRow("Permitir rank global", "features.allowGlobalRank", s.features.allowGlobalRank)}
+              ${checkRow("Permitir profile publico", "features.allowPublicProfileLookup", s.features.allowPublicProfileLookup)}
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>Canais</h3>
+            <div class="field">
+              <label>ID do usuario (teste para mencao)</label>
+              <input id="channelTestUserIdInput" type="text" placeholder="Seu ID (opcional para anuncios/logs/status, usado no welcome)">
+            </div>
+            <div class="field">
+              <label>Canal da IA (movimentar servidor)</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <select data-path="channels.aiChatChannelId">${buildChannelOptions(s.channels.aiChatChannelId)}</select>
+                <button id="testAiChatChannelBtn" type="button">Testar IA</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Canal de boas-vindas</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <select data-path="channels.welcomeChannelId">${buildChannelOptions(s.channels.welcomeChannelId)}</select>
+                <button id="testWelcomeChannelInlineBtn" type="button">Testar</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Canal de anuncios</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <select data-path="channels.announcementsChannelId">${buildChannelOptions(s.channels.announcementsChannelId)}</select>
+                <button id="testAnnouncementsChannelBtn" type="button">Testar</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Canal de logs</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <select data-path="channels.logsChannelId">${buildChannelOptions(s.channels.logsChannelId)}</select>
+                <button id="testLogsChannelBtn" type="button">Testar</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Canal de status</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <select data-path="channels.statusChannelId">${buildChannelOptions(s.channels.statusChannelId)}</select>
+                <button id="testStatusChannelBtn" type="button">Testar</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>Mensagens</h3>
+            <div class="field">
+              <label>Mensagem de boas-vindas</label>
+              <textarea data-path="messages.welcomeText" placeholder="Ex: Bem-vindo {user}! Objetivo: construir e defender sua base, evoluir tropas e subir no rank.">${s.messages.welcomeText || ""}</textarea>
+            </div>
+            <div class="muted" style="font-size:12px; margin-top:-4px; margin-bottom:8px;">Variaveis: <code>{user}</code>, <code>{username}</code>, <code>{server}</code></div>
+            <div class="field">
+              <label>Mensagem privada (DM)</label>
+              <textarea data-path="messages.welcomeDmText" placeholder="Ex: Oi {username}! No Warhex.io voce constroi base, gerencia power e evolui tropas para dominar o mapa.">${s.messages.welcomeDmText || ""}</textarea>
+            </div>
+            <div class="field" style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button id="testWelcomeDmInlineBtn" type="button">Testar mensagem privada</button>
+            </div>
+            <div class="field">
+              <label>Footer personalizado</label>
+              <input type="text" data-path="messages.footerText" value="${(s.messages.footerText || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="muted" style="font-size:12px;">Atualizado em: ${s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "nunca"}</div>
+          </section>
+
+          <section class="card">
+            <h3>Resumo</h3>
+            <div class="field"><label>Servidor</label><div>${guild.name}</div></div>
+            <div class="field"><label>ID</label><div class="muted">${guild.id}</div></div>
+            <div class="field"><label>Canais detectados</label><div>${state.channels.length}</div></div>
+            <div class="field"><label>Dica</label><div class="muted">Depois podemos ligar isso em comandos reais por servidor (canal de anúncios, logs, etc).</div></div>
+          </section>
+
+          <div class="actions">
+            <button id="reloadGuildBtn">Recarregar</button>
+            <button id="saveGuildBtn" class="primary">Salvar Configuração</button>
+          </div>
+        </div>
+      `;
+
+      root.querySelector("#reloadGuildBtn").addEventListener("click", () => selectGuild(guild.id));
+      root.querySelector("#saveGuildBtn").addEventListener("click", saveSelectedGuildSettings);
+      root.querySelector("#testWelcomeChannelInlineBtn")?.addEventListener("click", () => testConfiguredChannel("welcome"));
+      root.querySelector("#testAiChatChannelBtn")?.addEventListener("click", () => testConfiguredChannel("ai_chat"));
+      root.querySelector("#testAnnouncementsChannelBtn")?.addEventListener("click", () => testConfiguredChannel("announcements"));
+      root.querySelector("#testLogsChannelBtn")?.addEventListener("click", () => testConfiguredChannel("logs"));
+      root.querySelector("#testStatusChannelBtn")?.addEventListener("click", () => testConfiguredChannel("status"));
+      root.querySelector("#testWelcomeDmInlineBtn")?.addEventListener("click", () => testWelcome("dm"));
+    }
+
+    function setByPath(obj, path, value) {
+      const parts = path.split(".");
+      let cur = obj;
+      while (parts.length > 1) {
+        const key = parts.shift();
+        cur[key] ||= {};
+        cur = cur[key];
+      }
+      cur[parts[0]] = value;
+    }
+
+    function collectSettingsFromForm() {
+      const root = document.getElementById("editorRoot");
+      const payload = { modules: {}, channels: {}, messages: {}, features: {} };
+      root.querySelectorAll("[data-path]").forEach(el => {
+        const path = el.dataset.path;
+        let value;
+        if (el.type === "checkbox") value = !!el.checked;
+        else value = el.value;
+        setByPath(payload, path, value);
+      });
+      return payload;
+    }
+
+    async function saveSelectedGuildSettings() {
+      if (!state.selectedGuildId) return;
+      const payload = collectSettingsFromForm();
+      const result = await api(`/api/guilds/${state.selectedGuildId}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      state.settings = result.settings;
+      renderEditor();
+      toast("Configuracao salva");
+    }
+
+    async function testWelcome(type) {
+      if (!state.selectedGuildId) return;
+      const root = document.getElementById("editorRoot");
+      const userId = String(root.querySelector("#channelTestUserIdInput")?.value || "").trim();
+      if (!userId) {
+        toast("Informe o ID do usuario para teste");
+        return;
+      }
+      const button = root.querySelector(type === "dm" ? "#testWelcomeDmInlineBtn" : "#testWelcomeChannelInlineBtn");
+      try {
+        if (button) button.disabled = true;
+        const res = await api(`/api/guilds/${state.selectedGuildId}/test-welcome`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type, userId })
+        });
+        if (res?.result?.ok) {
+          toast(type === "dm" ? "Teste de mensagem privada enviado" : "Teste de mensagem no canal enviado");
+        } else {
+          toast(`Falhou: ${res?.result?.reason || "erro"}`);
+        }
+      } catch (err) {
+        toast(`Erro no teste: ${err.message}`);
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    async function testConfiguredChannel(channelKey) {
+      if (!state.selectedGuildId) return;
+      const root = document.getElementById("editorRoot");
+      const userId = String(root.querySelector("#channelTestUserIdInput")?.value || "").trim();
+      const selectMap = {
+        ai_chat: 'select[data-path="channels.aiChatChannelId"]',
+        welcome: 'select[data-path="channels.welcomeChannelId"]',
+        announcements: 'select[data-path="channels.announcementsChannelId"]',
+        logs: 'select[data-path="channels.logsChannelId"]',
+        status: 'select[data-path="channels.statusChannelId"]'
+      };
+      const channelId = String(root.querySelector(selectMap[channelKey])?.value || "").trim();
+      const buttonMap = {
+        ai_chat: "#testAiChatChannelBtn",
+        welcome: "#testWelcomeChannelInlineBtn",
+        announcements: "#testAnnouncementsChannelBtn",
+        logs: "#testLogsChannelBtn",
+        status: "#testStatusChannelBtn"
+      };
+      if (!channelId) {
+        toast("Escolha um canal antes de testar");
+        return;
+      }
+      if (channelKey === "welcome" && !userId) {
+        toast("Informe seu ID para testar boas-vindas com mencao");
+        return;
+      }
+      const button = root.querySelector(buttonMap[channelKey]);
+      try {
+        if (button) button.disabled = true;
+        const res = await api(`/api/guilds/${state.selectedGuildId}/test-channel-message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channelKey, channelId, userId })
+        });
+        if (res?.result?.ok) toast("Teste enviado");
+        else toast(`Falhou: ${res?.result?.reason || "erro"}`);
+      } catch (err) {
+        toast(`Erro no teste: ${err.message}`);
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    async function selectGuild(guildId) {
+      state.selectedGuildId = guildId;
+      renderGuildList();
+      const [settingsRes, channelsRes] = await Promise.all([
+        api(`/api/guilds/${guildId}/settings`),
+        api(`/api/guilds/${guildId}/channels`).catch(() => ({ channels: [] }))
+      ]);
+      state.settings = settingsRes.settings;
+      state.channels = channelsRes.channels || [];
+      renderEditor();
+    }
+
+    async function init() {
+      try {
+        const res = await api("/api/guilds");
+        state.guilds = res.guilds || [];
+        renderGuildList();
+        if (state.guilds[0]) await selectGuild(state.guilds[0].id);
+      } catch (err) {
+        document.getElementById("editorRoot").innerHTML = `<div class="empty">Erro ao carregar dashboard: ${err.message}</div>`;
+      }
+    }
+    init();
+  </script>
+</body>
+</html>

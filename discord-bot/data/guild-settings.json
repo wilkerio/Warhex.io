@@ -1,0 +1,32 @@
+{
+  "1303903882816127048": {
+    "guildId": "1303903882816127048",
+    "modules": {
+      "rankCommand": true,
+      "profileCommand": true,
+      "statusCommand": true,
+      "welcomeOnJoin": false,
+      "welcomeDmOnJoin": false,
+      "aiAutoChat": true,
+      "announcements": false,
+      "autoStatusPost": false
+    },
+    "channels": {
+      "welcomeChannelId": "",
+      "aiChatChannelId": "1476303382791852093",
+      "announcementsChannelId": "",
+      "logsChannelId": "",
+      "statusChannelId": ""
+    },
+    "messages": {
+      "welcomeText": "",
+      "welcomeDmText": "",
+      "footerText": "Warhex.io"
+    },
+    "features": {
+      "allowPublicProfileLookup": true,
+      "allowGlobalRank": true
+    },
+    "updatedAt": "2026-02-26T18:27:11.600Z"
+  }
+}
