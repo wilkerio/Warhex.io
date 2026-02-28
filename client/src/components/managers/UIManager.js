@@ -5,6 +5,7 @@ import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin, publish
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
+import LanguageManager from "./LanguageManager.js";
 
 /*
     TODO:
@@ -17,6 +18,7 @@ import UnitManager from "./UnitManager.js";
 export default class UIManager {
     constructor (core) {
         this.core = core;
+        this.languageManager = new LanguageManager();
         this.loadingOverlay = null;
         this.timerInterval = null;
         this.lastSendMessage = "";
@@ -83,6 +85,160 @@ export default class UIManager {
         this.placeGroupTroopsBesidePower();
         this.applyHudConfig();
         this.loadHudConfigFromAccount();
+        this.setupLanguageSelector();
+        this.applyLanguage({ refreshLeaderboard: true });
+    }
+
+    t (key, vars = {}) {
+        return this.languageManager.t(key, vars);
+    }
+
+    isLogoutLikeLabel (value = "") {
+        const normalized = String(value).trim().toLowerCase();
+        const logoutLocalized = this.t("menu.logout").toLowerCase();
+        return normalized === "logout" || normalized === "sair" || normalized === "cerrar sesion" || normalized === logoutLocalized;
+    }
+
+    setupLanguageSelector () {
+        const select = document.getElementById("language-select");
+        if (!select || select.dataset.boundLanguageSelect) return;
+        select.dataset.boundLanguageSelect = "1";
+        select.value = this.languageManager.getLanguage();
+        select.addEventListener("change", () => {
+            this.languageManager.setLanguage(select.value);
+            this.applyLanguage({ refreshLeaderboard: true });
+        });
+    }
+
+    applyLanguage ({ refreshLeaderboard = false } = {}) {
+        const setText = (selector, key) => {
+            const el = document.querySelector(selector);
+            if (el) el.textContent = this.t(key);
+        };
+        const setPlaceholder = (selector, key) => {
+            const el = document.querySelector(selector);
+            if (el) el.placeholder = this.t(key);
+        };
+
+        document.documentElement.lang = this.languageManager.getLanguage();
+
+        setText("#language-label", "language.label");
+        const languageSelect = document.getElementById("language-select");
+        if (languageSelect) {
+            languageSelect.setAttribute("aria-label", this.t("language.label"));
+            const en = languageSelect.querySelector('option[value="en"]');
+            const pt = languageSelect.querySelector('option[value="pt"]');
+            const es = languageSelect.querySelector('option[value="es"]');
+            if (en) en.textContent = this.t("language.english");
+            if (pt) pt.textContent = this.t("language.portuguese");
+            if (es) es.textContent = this.t("language.spanish");
+        }
+
+        setText("#play-button", "menu.play");
+        setPlaceholder("#player-name", "menu.playerName");
+        setText("#account-button", this.core?.networkManager?.loggedIn ? "menu.logout" : "menu.login");
+        setText("#signup-button", "menu.signUp");
+        setText("#discord-button", "menu.discord");
+        setText("#shop-button", "menu.shop");
+        setText("#skin-name-display", "menu.default");
+        setText("#skin-use-button", "menu.use");
+        setText("#skin-library-dialog h1", "menu.yourSkins");
+        setText("#privacy-open-button", "legal.privacyPolicy");
+        setText("#terms-open-button", "legal.termsOfUse");
+        setText("#about-open-button", "legal.about");
+
+        setText("#menu-dialog h2", "menu.connectionRejected");
+        const rejected = document.querySelectorAll("#menu-dialog p");
+        if (rejected[0]) rejected[0].textContent = this.t("menu.connectionDesc1");
+        if (rejected[1]) rejected[1].textContent = this.t("menu.connectionDesc2");
+        if (rejected[2]) rejected[2].textContent = this.t("menu.connectionDesc3");
+        if (rejected[3]) rejected[3].textContent = this.t("menu.connectionTryAgain");
+        setText("#menu-dialog-button", "menu.okay");
+
+        setText("#login-dialog h2", "dialog.accessFeatures");
+        const loginIntro = document.querySelector("#login-dialog .menu-card > p");
+        if (loginIntro) {
+            loginIntro.innerHTML = `${this.t("dialog.loginReserved")}<br><strong>${this.t("dialog.loginPerks")}</strong>`;
+        }
+        const benefitItems = document.querySelectorAll("#login-dialog .login-benefits li");
+        if (benefitItems[0]) benefitItems[0].textContent = this.t("dialog.benefit1");
+        if (benefitItems[1]) benefitItems[1].textContent = this.t("dialog.benefit2");
+        if (benefitItems[2]) benefitItems[2].textContent = this.t("dialog.benefit3");
+        if (benefitItems[3]) benefitItems[3].textContent = this.t("dialog.benefit4");
+        if (benefitItems[4]) benefitItems[4].textContent = this.t("dialog.benefit5");
+        setText("#guest-button", "dialog.continueGuest");
+        setText("#signup-dialog h2", "dialog.createAccount");
+        setText("#signup-dialog p", "dialog.createAccountDesc");
+        setPlaceholder("#signup-email", "dialog.email");
+        setPlaceholder("#signup-nickname", "dialog.nickname");
+        setPlaceholder("#signup-password", "dialog.password");
+        setText("#signup-submit", "dialog.createAccountBtn");
+        setText("#signup-cancel", "dialog.cancel");
+        setText("#signin-dialog h2", "dialog.loginTitle");
+        setText("#signin-dialog p", "dialog.loginDesc");
+        setPlaceholder("#signin-email", "dialog.email");
+        setPlaceholder("#signin-password", "dialog.password");
+        setText("#signin-submit", "menu.login");
+        setText("#signin-cancel", "dialog.cancel");
+
+        setText("#privacy-dialog h2", "legal.privacyPolicy");
+        setText("#terms-dialog h2", "legal.termsOfUse");
+        setText("#about-dialog h2", "legal.about");
+        document.querySelectorAll(".privacy-updated").forEach((el) => {
+            if (el.closest("#about-dialog")) {
+                el.textContent = this.t("legal.aboutTagline");
+            } else {
+                el.textContent = this.t("legal.lastUpdated");
+            }
+        });
+
+        setText("#game-over-content h1 span:first-child", "game.killedBy");
+        const scoreStrong = document.querySelector("#game-over-stats p:nth-child(1) strong");
+        const timeStrong = document.querySelector("#game-over-stats p:nth-child(2) strong");
+        if (scoreStrong) scoreStrong.textContent = `${this.t("menu.score")}:`;
+        if (timeStrong) timeStrong.textContent = `${this.t("game.time")}:`;
+        setText("#continue-button", "game.continue");
+        setText("#inactivity-warning-container h1", "game.areYouThere");
+        setText("#inactivity-warning-container p:nth-child(2)", "game.inactiveKick");
+        setText("#game-settings .slider button", "game.settings");
+        setText("#game-settings .theme-settings p", "game.theme");
+        const removeGridLabel = document.querySelector('label[for="remove-grid-checkbox"]');
+        if (removeGridLabel) {
+            removeGridLabel.childNodes.forEach((node) => {
+                if (node.nodeType === 3) node.textContent = ` ${this.t("game.disableGrid")}`;
+            });
+        }
+        setText("#destroy-button p:first-child", "game.destroy");
+        setText("#chat .header h3", "game.chatTitle");
+        setText("#chat-messages .message .text", "game.chatWelcome");
+        setPlaceholder("#chat-message-input", "game.message");
+        setText("#chat-button", "game.send");
+        setText("#group-units-button", "game.group");
+        const topGroupBtn = document.getElementById("top-group-toggle-btn");
+        if (topGroupBtn) {
+            topGroupBtn.textContent = this.groupUnitsActive ? this.t("game.groupTroopsOn") : this.t("game.groupTroopsOff");
+        }
+        setText("#top-menu-pulltab", "game.menu");
+        const topThemeBtn = document.getElementById("top-theme-btn");
+        if (topThemeBtn) topThemeBtn.textContent = this.t("game.theme").replace(":", "");
+        const statsLabels = document.querySelectorAll("#stats-container > div > p:first-child");
+        if (statsLabels[0]) statsLabels[0].textContent = `${this.t("stats.highscore")}:`;
+        if (statsLabels[1]) statsLabels[1].textContent = `${this.t("stats.playtime")}:`;
+        if (statsLabels[2]) statsLabels[2].textContent = `${this.t("stats.totalKills")}:`;
+
+        if (this.unitStyleEditorOverlay) this.showUnitStyleEditor(true);
+        if (this.keybindEditorOverlay) this.showKeybindEditor(true);
+        if (this.hudEditSessionOverlay) {
+            setText("#hud-edit-session-overlay .hud-edit-session-help", "hud.editHelp");
+            setText("#hud-edit-session-overlay .hud-edit-btn.models", "hud.models");
+            setText("#hud-edit-session-overlay .hud-edit-btn.keys", "hud.keybinds");
+            setText("#hud-edit-session-overlay .hud-edit-btn.save", "hud.save");
+            setText("#hud-edit-session-overlay .hud-edit-btn.reset", "hud.factoryDefaults");
+            setText("#hud-edit-session-overlay .hud-edit-btn.close", "hud.exit");
+        }
+
+        this.updateAccountButton();
+        if (refreshLeaderboard) this._populateGlobalLeaderboard();
     }
 
     getDefaultHudConfig () {
@@ -228,19 +384,19 @@ export default class UIManager {
 
     getKeybindActionDefinitions () {
         return [
-            { key: "selectArmy", label: "Select Army (Soldier+Tank+Siege)", group: "Selection" },
-            { key: "selectSoldiersOnly", label: "Select Only Soldiers", group: "Selection" },
-            { key: "selectTanksOnly", label: "Select Only Tanks", group: "Selection" },
-            { key: "selectSiegeOnly", label: "Select Only Siege", group: "Selection" },
-            { key: "selectCommander", label: "Select / Buy Commander", group: "Selection" },
-            { key: "selectAllUnits", label: "Select All Units", group: "Selection" },
-            { key: "toggleMap", label: "Toggle Map", group: "HUD" },
-            { key: "toggleGroupTroops", label: "Toggle Group Troops", group: "HUD" },
-            { key: "upgrade1", label: "Upgrade Slot 1", group: "Upgrades" },
-            { key: "upgrade2", label: "Upgrade Slot 2", group: "Upgrades" },
-            { key: "upgrade3", label: "Upgrade Slot 3", group: "Upgrades" },
-            { key: "upgradeDestroy", label: "Upgrade Destroy / Sell", group: "Upgrades" },
-            { key: "upgradeBarracksToggle", label: "Upgrade Barracks Toggle", group: "Upgrades" }
+            { key: "selectArmy", label: this.t("key.action.selectArmy"), group: this.t("key.group.selection") },
+            { key: "selectSoldiersOnly", label: this.t("key.action.selectSoldiersOnly"), group: this.t("key.group.selection") },
+            { key: "selectTanksOnly", label: this.t("key.action.selectTanksOnly"), group: this.t("key.group.selection") },
+            { key: "selectSiegeOnly", label: this.t("key.action.selectSiegeOnly"), group: this.t("key.group.selection") },
+            { key: "selectCommander", label: this.t("key.action.selectCommander"), group: this.t("key.group.selection") },
+            { key: "selectAllUnits", label: this.t("key.action.selectAllUnits"), group: this.t("key.group.selection") },
+            { key: "toggleMap", label: this.t("key.action.toggleMap"), group: this.t("key.group.hud") },
+            { key: "toggleGroupTroops", label: this.t("key.action.toggleGroupTroops"), group: this.t("key.group.hud") },
+            { key: "upgrade1", label: this.t("key.action.upgrade1"), group: this.t("key.group.upgrades") },
+            { key: "upgrade2", label: this.t("key.action.upgrade2"), group: this.t("key.group.upgrades") },
+            { key: "upgrade3", label: this.t("key.action.upgrade3"), group: this.t("key.group.upgrades") },
+            { key: "upgradeDestroy", label: this.t("key.action.upgradeDestroy"), group: this.t("key.group.upgrades") },
+            { key: "upgradeBarracksToggle", label: this.t("key.action.upgradeBarracksToggle"), group: this.t("key.group.upgrades") }
         ];
     }
 
@@ -291,7 +447,7 @@ export default class UIManager {
                     <h3>Unit Models</h3>
                     <button type="button" class="unit-style-editor-close">x</button>
                 </div>
-                <p class="unit-style-editor-help">Escolha formato e modelo visual das unidades.</p>
+                <p class="unit-style-editor-help">${this.t("hud.unitHelp")}</p>
                 <div class="unit-style-editor-section">
                     <div class="unit-style-editor-title">Shapes</div>
                     <div class="unit-style-editor-shapes">
@@ -328,8 +484,8 @@ export default class UIManager {
                     <div class="unit-style-editor-model-grid" data-model-grid="siege"></div>
                 </div>
                 <div class="unit-style-editor-footer">
-                    <button type="button" class="unit-style-editor-reset">Resetar</button>
-                    <button type="button" class="unit-style-editor-done">Fechar</button>
+                    <button type="button" class="unit-style-editor-reset">${this.t("hud.reset")}</button>
+                    <button type="button" class="unit-style-editor-done">${this.t("hud.close")}</button>
                 </div>
             </div>
         `;
@@ -451,7 +607,7 @@ export default class UIManager {
                 btn.type = "button";
                 btn.className = `hud-collapse-toggle ${spec.placement === "inline" ? "inline" : "floating"}`;
                 btn.dataset.hudCollapse = spec.key;
-                btn.title = "Minimizar / Expandir";
+                btn.title = this.t("hud.minimizeExpand");
                 btn.addEventListener("click", (event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -496,8 +652,8 @@ export default class UIManager {
             const btn = el.querySelector(`.hud-collapse-toggle[data-hud-collapse="${key}"]`);
             if (btn) {
                 btn.textContent = collapsed ? "+" : "-";
-                btn.setAttribute("aria-label", collapsed ? "Expandir painel" : "Minimizar painel");
-                btn.title = collapsed ? "Expandir" : "Minimizar";
+                btn.setAttribute("aria-label", collapsed ? this.t("hud.expandPanel") : this.t("hud.minimizePanel"));
+                btn.title = collapsed ? this.t("hud.expand") : this.t("hud.minimize");
             }
         };
 
@@ -825,11 +981,11 @@ export default class UIManager {
                     <h3>Keybind Editor</h3>
                     <button type="button" class="keybind-editor-close">x</button>
                 </div>
-                <p class="keybind-editor-help">Clique em "Definir" e pressione uma tecla. Se a tecla ja estiver em uso, ela sera movida para esta acao.</p>
+                <p class="keybind-editor-help">${this.t("hud.keybindHelp")}</p>
                 <div class="keybind-editor-list"></div>
                 <div class="keybind-editor-footer">
-                    <button type="button" class="keybind-editor-reset">Resetar teclas</button>
-                    <button type="button" class="keybind-editor-done">Fechar</button>
+                    <button type="button" class="keybind-editor-reset">${this.t("hud.resetKeybinds")}</button>
+                    <button type="button" class="keybind-editor-done">${this.t("hud.close")}</button>
                 </div>
             </div>
         `;
@@ -877,14 +1033,14 @@ export default class UIManager {
 
             const value = document.createElement("div");
             value.className = "keybind-editor-value";
-            value.textContent = (this.hudConfig?.keybinds?.[def.key] || "").toUpperCase() || "None";
+            value.textContent = (this.hudConfig?.keybinds?.[def.key] || "").toUpperCase() || this.t("hud.none");
 
             const setBtn = document.createElement("button");
             setBtn.type = "button";
             setBtn.className = "keybind-editor-btn";
-            setBtn.textContent = "Definir";
+            setBtn.textContent = this.t("hud.set");
             setBtn.addEventListener("click", () => {
-                value.textContent = "Pressione...";
+                value.textContent = this.t("hud.pressKey");
                 const onKey = (event) => {
                     event.preventDefault();
                     const key = (event.key || "").toLowerCase();
@@ -904,7 +1060,7 @@ export default class UIManager {
             const clearBtn = document.createElement("button");
             clearBtn.type = "button";
             clearBtn.className = "keybind-editor-btn ghost";
-            clearBtn.textContent = "Limpar";
+            clearBtn.textContent = this.t("hud.clear");
             clearBtn.addEventListener("click", () => this.setHudKeybindValue(def.key, ""));
 
             row.appendChild(label);
@@ -980,7 +1136,7 @@ export default class UIManager {
                 destroyDisplay: upgrades.destroyButton?.style.display || ""
             };
 
-            if (titleEl) titleEl.textContent = "HUD Preview - Upgrades";
+            if (titleEl) titleEl.textContent = this.t("hud.previewUpgrades");
             upgrades.list.innerHTML = `
                 <div class="upgrade-item"><div class="upgrade-description"><p class="title">Upgrade 1</p><p>Move this panel in HUD Edit.</p></div><p class="upgrade-cost">500 Power</p></div>
                 <div class="upgrade-item"><div class="upgrade-description"><p class="title">Upgrade 2</p><p>Resize to your taste.</p></div><p class="upgrade-cost">800 Power</p></div>
@@ -988,7 +1144,7 @@ export default class UIManager {
             `;
             if (upgrades.destroyButton) {
                 upgrades.destroyButton.style.display = "flex";
-                upgrades.destroyButton.innerHTML = `<p>Destroy / Sell</p><p class="refund-amount">+500 Power</p>`;
+                upgrades.destroyButton.innerHTML = `<p>${this.t("game.destroySell")}</p><p class="refund-amount">+500 Power</p>`;
             }
             upgrades.container.style.display = "flex";
         } else if (this.hudEditPreviewState) {
@@ -1012,13 +1168,13 @@ export default class UIManager {
         overlay.innerHTML = `
             <div class="hud-edit-session-card">
                 <div class="hud-edit-session-title">HUD Edit Mode</div>
-                <div class="hud-edit-session-help">Arraste e redimensione os painéis do jogo. Quando terminar, salve ou volte ao padrão.</div>
+                <div class="hud-edit-session-help">${this.t("hud.editHelp")}</div>
                 <div class="hud-edit-session-actions">
-                    <button type="button" class="hud-edit-btn models">Modelos</button>
-                    <button type="button" class="hud-edit-btn keys">Teclas</button>
-                    <button type="button" class="hud-edit-btn save">Salvar</button>
-                    <button type="button" class="hud-edit-btn reset">Padrão de fábrica</button>
-                    <button type="button" class="hud-edit-btn close">Sair</button>
+                    <button type="button" class="hud-edit-btn models">${this.t("hud.models")}</button>
+                    <button type="button" class="hud-edit-btn keys">${this.t("hud.keybinds")}</button>
+                    <button type="button" class="hud-edit-btn save">${this.t("hud.save")}</button>
+                    <button type="button" class="hud-edit-btn reset">${this.t("hud.factoryDefaults")}</button>
+                    <button type="button" class="hud-edit-btn close">${this.t("hud.exit")}</button>
                 </div>
             </div>
         `;
@@ -1344,6 +1500,8 @@ export default class UIManager {
                 aboutOpenButton: "about-open-button",
                 aboutDialog: "about-dialog",
                 aboutCloseButton: "about-dialog-close",
+                languageSelect: "language-select",
+                languageLabel: "language-label",
             },
 
             // Skins
@@ -1600,14 +1758,14 @@ export default class UIManager {
 
             leaderboard.classList.add("global-account-leaderboard");
             leaderboard.innerHTML = `
-                <h2>Global Rank</h2>
-                <div class="global-rank-subtitle">Top 10 (accounts)</div>
+                <h2>${this.t("menu.globalRank")}</h2>
+                <div class="global-rank-subtitle">${this.t("menu.top10Accounts")}</div>
                 <div class="global-rank-head">
                     <span>#</span>
-                    <span>Name</span>
-                    <span>Score</span>
-                    <span>Play</span>
-                    <span>Kills</span>
+                    <span>${this.t("menu.name")}</span>
+                    <span>${this.t("menu.score")}</span>
+                    <span>${this.t("menu.playtimeShort")}</span>
+                    <span>${this.t("menu.kills")}</span>
                 </div>
                 <div class="global-rank-list"></div>
             `;
@@ -1615,7 +1773,7 @@ export default class UIManager {
             if (rowsContainer) {
                 const loading = document.createElement("div");
                 loading.className = "global-rank-empty";
-                loading.textContent = "Loading global top...";
+                loading.textContent = this.t("menu.loadingGlobalTop");
                 rowsContainer.appendChild(loading);
             }
 
@@ -1626,7 +1784,7 @@ export default class UIManager {
             if (!leaderboardData.length) {
                 const empty = document.createElement("div");
                 empty.className = "global-rank-empty";
-                empty.textContent = "Global rank unavailable now.";
+                empty.textContent = this.t("menu.globalRankUnavailable");
                 (rowsContainer || leaderboard).appendChild(empty);
                 leaderboard.style.display = "flex";
                 return;
@@ -1640,7 +1798,7 @@ export default class UIManager {
                     <span class="name" title="${entry.name}">${entry.name}</span>
                     <span class="score">${formatScore(entry.highscore)}</span>
                     <span class="playtime">${formatPlaytime(entry.playtime)}</span>
-                    <span class="kills">${Number(entry.kills || 0).toLocaleString("en-US")}</span>
+                    <span class="kills">${Number(entry.kills || 0).toLocaleString(this.languageManager.getLanguage())}</span>
                 `;
                 (rowsContainer || leaderboard).appendChild(row);
             });
@@ -1652,9 +1810,9 @@ export default class UIManager {
             if (leaderboard) {
                 leaderboard.classList.add("global-account-leaderboard");
                 leaderboard.innerHTML = `
-                    <h2>Global Rank</h2>
-                    <div class="global-rank-subtitle">Top 10 (accounts)</div>
-                    <div class="global-rank-empty">Could not load ranking.</div>
+                    <h2>${this.t("menu.globalRank")}</h2>
+                    <div class="global-rank-subtitle">${this.t("menu.top10Accounts")}</div>
+                    <div class="global-rank-empty">${this.t("menu.globalRankLoadError")}</div>
                 `;
                 leaderboard.style.display = "flex";
             }
@@ -1703,7 +1861,7 @@ export default class UIManager {
             accountButton.dataset.boundLoginClick = "1";
             accountButton.addEventListener("click", () => {
                 const buttonText = (accountButton.textContent || "").trim().toLowerCase();
-                const logoutLikeLabel = buttonText === "logout" || buttonText === "sair";
+                const logoutLikeLabel = this.isLogoutLikeLabel(buttonText);
                 const shouldLogout = Boolean(this.core.networkManager.loggedIn) || logoutLikeLabel;
                 if (shouldLogout) {
                     this.core.networkManager.logout();
@@ -1722,7 +1880,7 @@ export default class UIManager {
                 if (target.id !== "account-button") return;
 
                 const buttonText = (target.textContent || "").trim().toLowerCase();
-                const logoutLikeLabel = buttonText === "logout" || buttonText === "sair";
+                const logoutLikeLabel = this.isLogoutLikeLabel(buttonText);
                 const shouldLogout = Boolean(this.core?.networkManager?.loggedIn) || logoutLikeLabel;
                 if (shouldLogout) {
                     this.core.networkManager.logout();
@@ -1757,27 +1915,27 @@ export default class UIManager {
                 const password = this.DOM.account.signupPassword?.value;
 
                 if (!email || !nickname || !password) {
-                    alert("Please enter email, nickname and password.");
+                    alert(this.t("error.signupMissing"));
                     return;
                 }
 
                 // Basic nickname validation
                 if (nickname.length < 3) {
-                    alert("Nickname must be at least 3 characters long.");
+                    alert(this.t("error.nicknameShort"));
                     return;
                 }
 
                 if (!/^[a-zA-Z0-9_]+$/.test(nickname)) {
-                    alert("Nickname can only contain letters, numbers and underscores.");
+                    alert(this.t("error.nicknameInvalid"));
                     return;
                 }
 
                 try {
                     await signUp(email, password, nickname);
                     this.showSignupDialog(false);
-                    alert("Account created! Please check your email to verify your account.");
+                    alert(this.t("success.accountCreated"));
                 } catch (error) {
-                    alert("Sign up failed: " + error.message);
+                    alert(this.t("error.signupFailed", { message: error.message }));
                 }
             });
         }
@@ -1797,7 +1955,7 @@ export default class UIManager {
                 const password = this.DOM.account.signinPassword?.value;
 
                 if (!email || !password) {
-                    alert("Please enter email and password.");
+                    alert(this.t("error.signinMissing"));
                     return;
                 }
 
@@ -1813,7 +1971,7 @@ export default class UIManager {
                     this.updateAccount();
                     this.updateAccountButton();
                 } catch (error) {
-                    alert("Login failed: " + error.message);
+                    alert(this.t("error.loginFailed", { message: error.message }));
                 }
             });
         }
@@ -1829,7 +1987,7 @@ export default class UIManager {
     handleAccountButtonClick (buttonElement = null) {
         const accountButton = buttonElement || this.DOM.account.accountButton || document.getElementById("account-button");
         const buttonText = (accountButton?.textContent || "").trim().toLowerCase();
-        const logoutLikeLabel = buttonText === "logout" || buttonText === "sair";
+        const logoutLikeLabel = this.isLogoutLikeLabel(buttonText);
         const shouldLogout = Boolean(this.core?.networkManager?.loggedIn) || logoutLikeLabel;
         if (shouldLogout) {
             this.core.networkManager.logout();
@@ -1973,10 +2131,10 @@ export default class UIManager {
 
         // Create and append stats dynamically
         const statsData = [
-            { label: 'Highscore', value: formatScore(userData.statistics?.highscore) || "0" },
-            { label: 'Playtime', value: formatPlaytime(userData.statistics?.playtime) },
-            { label: 'XP', value: level < MAX_LEVEL ? `${userXP} / ${requiredXP}` : "Max Level" },
-            { label: 'Total Kills', value: userData.statistics?.kills || "0" }
+            { label: this.t("stats.highscore"), value: formatScore(userData.statistics?.highscore) || "0" },
+            { label: this.t("stats.playtime"), value: formatPlaytime(userData.statistics?.playtime) },
+            { label: this.t("stats.xp"), value: level < MAX_LEVEL ? `${userXP} / ${requiredXP}` : this.t("stats.maxLevel") },
+            { label: this.t("stats.totalKills"), value: userData.statistics?.kills || "0" }
         ];
 
         statsData.forEach(stat => {
@@ -2004,7 +2162,7 @@ export default class UIManager {
                 btn = document.createElement("button");
                 btn.id = "my-profile-button";
                 btn.type = "button";
-                btn.textContent = "My Profile";
+                btn.textContent = this.t("menu.myProfile");
                 btn.style.display = "none";
                 btn.style.background = "rgba(20, 10, 40, 0.7)";
                 btn.style.border = "1px solid rgba(180, 160, 255, 0.3)";
@@ -2023,6 +2181,7 @@ export default class UIManager {
         };
 
         const myProfileButton = ensureMyProfileButton();
+        if (myProfileButton) myProfileButton.textContent = this.t("menu.myProfile");
         const isLoggedInNow = Boolean(this.core?.networkManager?.loggedIn);
         const accountContainer = document.getElementById("account-container");
         const accountDividers = accountContainer ? Array.from(accountContainer.querySelectorAll("hr")) : [];
@@ -2059,7 +2218,7 @@ export default class UIManager {
             if (isLoggedInNow) {
                 // Clear any existing classes before setting the "Logout" state
                 this.DOM.account.accountButton.classList.remove("login");
-                this.DOM.account.accountButton.textContent = "Logout";
+                this.DOM.account.accountButton.textContent = this.t("menu.logout");
                 if (myProfileButton) {
                     applyLoggedButtonStyle(myProfileButton);
                     myProfileButton.style.display = "flex";
@@ -2073,13 +2232,14 @@ export default class UIManager {
                 accountDividers.forEach((hr) => { hr.style.display = "none"; });
             } else {
                 this.DOM.account.accountButton.classList.remove("login");
-                this.DOM.account.accountButton.textContent = "Login";
+                this.DOM.account.accountButton.textContent = this.t("menu.login");
                 // Keep same visual language as My Profile/Logout while logged out.
                 applyLoggedButtonStyle(this.DOM.account.accountButton);
                 if (myProfileButton) myProfileButton.style.display = "none";
                 // Show signup button when not logged in
                 if (this.DOM.account.signupButton) {
                     applyLoggedButtonStyle(this.DOM.account.signupButton);
+                    this.DOM.account.signupButton.textContent = this.t("menu.signUp");
                     this.DOM.account.signupButton.style.display = "flex";
                     this.DOM.account.signupButton.style.alignItems = "center";
                     this.DOM.account.signupButton.style.justifyContent = "center";
@@ -2170,7 +2330,7 @@ export default class UIManager {
         header.style.marginBottom = "10px";
 
         const title = document.createElement("div");
-        title.textContent = "My Profile";
+        title.textContent = this.t("profile.title");
         title.style.fontSize = "20px";
         title.style.fontWeight = "900";
         title.style.color = "#9fe8ff";
@@ -2253,10 +2413,10 @@ export default class UIManager {
         grid.style.gap = "8px";
 
         const rows = [
-            ["Highscore", formatScore(stats.highscore)],
-            ["Playtime", formatPlaytime(stats.playtime)],
-            ["XP", `${Number(progression.xp || 0)} / ${calculateRequiredXP(Math.max(1, Number(progression.level || 1)))}`],
-            ["Total Kills", Number(stats.kills || 0).toLocaleString("en-US")]
+            [this.t("stats.highscore"), formatScore(stats.highscore)],
+            [this.t("stats.playtime"), formatPlaytime(stats.playtime)],
+            [this.t("stats.xp"), `${Number(progression.xp || 0)} / ${calculateRequiredXP(Math.max(1, Number(progression.level || 1)))}`],
+            [this.t("stats.totalKills"), Number(stats.kills || 0).toLocaleString(this.languageManager.getLanguage())]
         ];
 
         rows.forEach(([label, value]) => {
@@ -3351,7 +3511,7 @@ export default class UIManager {
 
         if (onUpgradeSelect === null) {
             // MULTIPLE BUILDING TYPES
-            document.querySelector("#upgrade-container h1").textContent = "Multiple Buildings";
+            document.querySelector("#upgrade-container h1").textContent = this.t("game.multipleBuildings");
             
             let totalRefund = 0;
             building.buildings.forEach(b => {
@@ -3360,7 +3520,7 @@ export default class UIManager {
                     totalRefund += Math.floor(buildingDetails.cost / 2);
                 }
             });
-            this.DOM.game.upgrades.destroyButton.innerHTML = `<p>Destroy</p><p class="refund-amount">+${totalRefund} Power</p>`;
+            this.DOM.game.upgrades.destroyButton.innerHTML = `<p>${this.t("game.destroy")}</p><p class="refund-amount">+${totalRefund} Power</p>`;
             this._clearUpgradeTabsElement();
 
             // Show a summary of the multiple selection: total count and counts per building type
@@ -3370,7 +3530,7 @@ export default class UIManager {
                 const countsByType = new Map();
                 building.buildings.forEach(b => {
                     const details = getBuildingDetails(b.type, b.variant);
-                    const name = details ? details.name : (Object.keys(BuildingTypes).find(k => BuildingTypes[k] === b.type) || "Unknown");
+                    const name = details ? details.name : (Object.keys(BuildingTypes).find(k => BuildingTypes[k] === b.type) || this.t("game.unknown"));
                     countsByType.set(name, (countsByType.get(name) || 0) + 1);
                 });
 
@@ -3378,7 +3538,7 @@ export default class UIManager {
                 summary.classList.add("multiple-selection-summary");
                 const totalEl = document.createElement("p");
                 totalEl.classList.add("summary-total");
-                totalEl.textContent = `Total selected: ${building.count}`;
+                totalEl.textContent = this.t("game.totalSelected", { count: building.count });
                 summary.appendChild(totalEl);
 
                 countsByType.forEach((count, name) => {
@@ -3583,7 +3743,7 @@ export default class UIManager {
             const buildingDetails = getBuildingDetails(building.type, building.variant);
             if (buildingDetails) {
                 const refundAmount = Math.floor(buildingDetails.cost * building.count / 2);
-                this.DOM.game.upgrades.destroyButton.innerHTML = `<p>Destroy</p><p class="refund-amount">+${refundAmount} Power</p>`;
+                this.DOM.game.upgrades.destroyButton.innerHTML = `<p>${this.t("game.destroy")}</p><p class="refund-amount">+${refundAmount} Power</p>`;
             }
         }
 
@@ -3795,13 +3955,13 @@ export default class UIManager {
         if (!this.DOM.game.unitControls.groupUnitsButton) return;
 
         this.groupUnitsActive = false;
-        this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Troops Off";
+        this.DOM.game.unitControls.groupUnitsButton.innerText = this.t("game.groupTroopsOff");
 
         const syncTopGroupToggleVisual = () => {
             const topGroupToggle = document.getElementById("top-group-toggle-btn");
             if (!topGroupToggle) return;
 
-            topGroupToggle.textContent = this.groupUnitsActive ? "Group Troops On" : "Group Troops Off";
+            topGroupToggle.textContent = this.groupUnitsActive ? this.t("game.groupTroopsOn") : this.t("game.groupTroopsOff");
             if (this.groupUnitsActive) {
                 topGroupToggle.style.background = "rgba(44, 22, 76, 0.78)";
                 topGroupToggle.style.borderColor = "rgba(180, 160, 255, 0.55)";
@@ -3820,10 +3980,10 @@ export default class UIManager {
             this.groupUnitsActive = !this.groupUnitsActive;
             if (this.groupUnitsActive) {
                 this.DOM.game.unitControls.groupUnitsButton.classList.add("active");
-                this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Troops On";
+                this.DOM.game.unitControls.groupUnitsButton.innerText = this.t("game.groupTroopsOn");
             } else {
                 this.DOM.game.unitControls.groupUnitsButton.classList.remove("active");
-                this.DOM.game.unitControls.groupUnitsButton.innerText = "Group Troops Off";
+                this.DOM.game.unitControls.groupUnitsButton.innerText = this.t("game.groupTroopsOff");
             }
     
             this.core.networkManager.sendToggleGroupUnits(this.groupUnitsActive);
@@ -3850,8 +4010,9 @@ export default class UIManager {
         container.style.filter = "drop-shadow(0 6px 12px rgba(0, 0, 0, 0.28))";
 
         const pullTab = document.createElement("button");
+        pullTab.id = "top-menu-pulltab";
         pullTab.type = "button";
-        pullTab.textContent = "MENU";
+        pullTab.textContent = this.t("game.menu");
         pullTab.style.pointerEvents = "auto";
         pullTab.style.position = "absolute";
         pullTab.style.left = "50%";
@@ -3972,12 +4133,12 @@ export default class UIManager {
         const loadBaseBtn = createActionButton("Load Base", () => {
             this.showLoadBaseLayoutDialog();
         });
-        const groupTroopsBtn = createActionButton(this.groupUnitsActive ? "Group Troops On" : "Group Troops Off", () => {
+        const groupTroopsBtn = createActionButton(this.groupUnitsActive ? this.t("game.groupTroopsOn") : this.t("game.groupTroopsOff"), () => {
             this.DOM?.game?.unitControls?.groupUnitsButton?.click();
         });
         groupTroopsBtn.id = "top-group-toggle-btn";
 
-        const themeBtn = createActionButton("Theme", () => {
+        const themeBtn = createActionButton(this.t("game.theme").replace(":", ""), () => {
             this.positionSettingsPanelForTopMenu(themeBtn);
             this._pinAutoBuildMenuOpen = true;
             if (typeof this._autoBuildShowActions === "function") {
@@ -3987,6 +4148,7 @@ export default class UIManager {
             this.showGameSettingsPanel(true);
         });
         themeBtn.style.height = "20px";
+        themeBtn.id = "top-theme-btn";
         themeBtn.style.gridColumn = "3 / span 2";
         themeBtn.style.background = "rgba(24, 12, 48, 0.62)";
         themeBtn.style.borderColor = "rgba(180, 160, 255, 0.34)";

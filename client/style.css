@@ -3622,6 +3622,44 @@ button:hover {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
+#language-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+#language-label {
+  color: #d6e7ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+#language-select {
+  height: 30px;
+  min-width: 118px;
+  border-radius: 8px;
+  border: 1px solid rgba(126, 165, 255, 0.45);
+  background: linear-gradient(180deg, rgba(21, 38, 86, 0.95) 0%, rgba(10, 22, 58, 0.95) 100%);
+  color: #e8f1ff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 8px;
+  outline: none;
+}
+
+#language-select:focus {
+  border-color: rgba(170, 205, 255, 0.9);
+  box-shadow: 0 0 0 2px rgba(120, 170, 255, 0.25);
+}
+
+#language-select option {
+  color: #0f1a3d;
+  background: #f3f7ff;
+}
+
 .legal-link-button {
   height: 30px;
   padding: 0 10px;
@@ -3647,11 +3685,21 @@ button:hover {
     right: 6px;
     bottom: 6px;
     gap: 6px;
-    justify-content: space-between;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  #language-control {
+    width: 100%;
+    justify-content: center;
+  }
+
+  #language-select {
+    width: 160px;
   }
 
   .legal-link-button {
-    flex: 1;
+    flex: 1 1 30%;
     min-width: 0;
     font-size: 12px;
   }

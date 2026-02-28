@@ -112,7 +112,7 @@ export default class ThemeManager {
         this._universeResize = resize;
         addEventListener('resize', resize);
 
-        // Partículas do fundo
+        // Background particles
         const p = Array.from({ length: 700 }, () => ({
             a: Math.random() * Math.PI * 2,
             d: Math.random() * Math.max(300, Math.max(innerWidth, innerHeight)),
