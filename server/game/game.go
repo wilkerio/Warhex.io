@@ -162,9 +162,9 @@ func startProtectionCheckLoop() {
 	for range ticker.C {
 		State.RLock()
 		for _, player := range State.Players {
-			if player.HasProtection() && time.Now().After(player.GetProtectionEndTime()) {
-				player.RemoveProtection()
-			}
+				if player.HasProtection() && time.Now().After(player.GetProtectionEndTime()) {
+					player.RemoveProtection()
+				}
 
 			// Self-heal stale duel state to avoid combat lock.
 			player.RLock()
@@ -1540,10 +1540,11 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 		if otherPlayer.ID == player.ID {
 			if hasSpawnProtection {
 				for _, unit := range units {
-					if !unit.IsWithinRadius(IntToFloat(basePosition), float32(PLAYER_SPAWN_PROTECTION_RADIUS-unit.Size)) {
-						player.RemoveProtection()
-						break
-					}
+						if !unit.IsWithinRadius(IntToFloat(basePosition), float32(PLAYER_SPAWN_PROTECTION_RADIUS-unit.Size)) {
+							player.UnlockScoreGain()
+							player.RemoveProtection()
+							break
+						}
 				}
 			}
 			continue
@@ -2101,8 +2102,9 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		Generating: Generating{
 			Power: 1, // 1 per sec
 		},
-		HasSpawnProtection:      true,
-		HasCommander:            false,
+			HasSpawnProtection:      true,
+			ScoreGainUnlocked:       false,
+			HasCommander:            false,
 		SpawnProtectionEndTime:  time.Now().Add(PLAYER_SPAWN_PROTECTION_TIME * time.Minute),
 		LastActivity:            time.Now(),
 		LastActivityWarningSent: time.Now(),

@@ -41,6 +41,8 @@ export default class UIManager {
         this.prePlaySkinPromptElement = null;
         this.x1StatusElement = null;
         this.x1StatusInterval = null;
+        this.x1PromptTimeout = null;
+        this.x1SendPromptTimeout = null;
         this._pinAutoBuildMenuOpen = false;
         this._lastGlobalRankLoginState = null;
         this.hudConfig = this.getDefaultHudConfig();
@@ -2609,37 +2611,32 @@ export default class UIManager {
                 const mapped = this.getMappedSkinAccent(currentSkin.name);
                 if (mapped) {
                     accent = mapped;
-                    localStorage.setItem("toolbarAccentColor", accent);
-                    localStorage.setItem("defaultColorIndex", String(this.getNearestPaletteIndex(accent)));
-                    if (this.core?.toolbar) {
-                        this.core.toolbar.changeColor(accent);
+                }
+                if (!mapped) {
+                    let cached = null;
+
+                    // 1) Prefer numeric ID path (works for default/veteran/premium and Supabase IDs).
+                    const numericId = Number(currentSkin.numericId ?? currentSkin.id);
+                    if (Number.isFinite(numericId) && numericId > 0) {
+                        cached = await SkinCache.getSkinById(numericId);
                     }
-                    return;
-                }
 
-                let cached = null;
+                    // 2) Fallback to name lookup (mainly Supabase skins by name).
+                    if (!cached?.image && currentSkin.name) {
+                        cached = await SkinCache.getSkinByName(currentSkin.name);
+                    }
 
-                // 1) Prefer numeric ID path (works for default/veteran/premium and Supabase IDs).
-                const numericId = Number(currentSkin.numericId ?? currentSkin.id);
-                if (Number.isFinite(numericId) && numericId > 0) {
-                    cached = await SkinCache.getSkinById(numericId);
-                }
-
-                // 2) Fallback to name lookup (mainly Supabase skins by name).
-                if (!cached?.image && currentSkin.name) {
-                    cached = await SkinCache.getSkinByName(currentSkin.name);
-                }
-
-                // 3) Final fallback: deterministic accent by skin name, so it never snaps to blue.
-                if (cached?.image) {
-                    const extracted = this.extractDominantColorFromImage(cached.image);
-                    if (extracted) {
-                        accent = extracted;
+                    // 3) Final fallback: deterministic accent by skin name, so it never snaps to blue.
+                    if (cached?.image) {
+                        const extracted = this.extractDominantColorFromImage(cached.image);
+                        if (extracted) {
+                            accent = extracted;
+                        } else {
+                            accent = this.getHashedFallbackAccent(currentSkin.name);
+                        }
                     } else {
                         accent = this.getHashedFallbackAccent(currentSkin.name);
                     }
-                } else {
-                    accent = this.getHashedFallbackAccent(currentSkin.name);
                 }
             } catch (error) {
                 console.warn("Failed to derive accent color from skin image:", error);
@@ -2647,12 +2644,28 @@ export default class UIManager {
             }
         }
 
-        localStorage.setItem("toolbarAccentColor", accent);
-        // Keep server-side base color in sync with chosen skin accent.
-        localStorage.setItem("defaultColorIndex", String(this.getNearestPaletteIndex(accent)));
+        // Always quantize to server palette so toolbar and placed entities stay identical.
+        const resolved = this.applyServerPaletteColor(accent);
+        localStorage.setItem("toolbarAccentColor", resolved);
         if (this.core?.toolbar) {
-            this.core.toolbar.changeColor(accent);
+            this.core.toolbar.changeColor(resolved);
         }
+    }
+
+    applyServerPaletteColor(accent) {
+        const palette = this.getNonSkinPalette();
+        const nearest = this.getNearestPaletteIndex(accent);
+        const safeIndex = Math.max(0, Math.min(palette.length - 1, nearest));
+        const resolved = palette[safeIndex] || this.getDefaultPaletteColor();
+
+        localStorage.setItem("defaultColorIndex", String(safeIndex));
+
+        // Keep local prediction color aligned with server palette before first snapshots arrive.
+        if (this.core?.gameManager?.player) {
+            this.core.gameManager.player.color = resolved;
+        }
+
+        return resolved;
     }
 
     normalizeSkinKey(name) {
@@ -3999,15 +4012,15 @@ export default class UIManager {
         const container = document.createElement("div");
         container.id = "autobuild-menu-container";
         container.style.position = "absolute";
-        container.style.top = "10px";
+        container.style.top = "8px";
         container.style.left = "50%";
         container.style.transform = "translateX(-50%)";
         container.style.display = "none";
-        container.style.width = "min(720px, calc(100vw - 40px))";
-        container.style.height = "58px";
+        container.style.width = "min(560px, calc(100vw - 32px))";
+        container.style.height = "46px";
         container.style.zIndex = "30";
         container.style.pointerEvents = "auto";
-        container.style.filter = "drop-shadow(0 6px 12px rgba(0, 0, 0, 0.28))";
+        container.style.filter = "drop-shadow(0 5px 10px rgba(0, 0, 0, 0.24))";
 
         const pullTab = document.createElement("button");
         pullTab.id = "top-menu-pulltab";
@@ -4018,18 +4031,18 @@ export default class UIManager {
         pullTab.style.left = "50%";
         pullTab.style.transform = "translateX(-50%)";
         pullTab.style.top = "0";
-        pullTab.style.width = "88px";
-        pullTab.style.height = "28px";
+        pullTab.style.width = "72px";
+        pullTab.style.height = "24px";
         pullTab.style.padding = "0";
         pullTab.style.border = "1px solid rgba(180, 160, 255, 0.3)";
-        pullTab.style.borderRadius = "12px";
+        pullTab.style.borderRadius = "10px";
         pullTab.style.background = "rgba(20, 10, 40, 0.6)";
-        pullTab.style.boxShadow = "0 8px 24px rgba(180, 160, 255, 0.16)";
+        pullTab.style.boxShadow = "0 6px 16px rgba(180, 160, 255, 0.14)";
         pullTab.style.color = "#e0d6ff";
         pullTab.style.cursor = "pointer";
         pullTab.style.fontWeight = "700";
-        pullTab.style.fontSize = "11px";
-        pullTab.style.letterSpacing = "0.5px";
+        pullTab.style.fontSize = "10px";
+        pullTab.style.letterSpacing = "0.3px";
         pullTab.style.textShadow = "0 1px 0 rgba(0, 0, 0, 0.35)";
         pullTab.style.transition = "transform 0.16s ease, box-shadow 0.2s ease, filter 0.2s ease";
         pullTab.addEventListener("mouseenter", () => {
@@ -4049,19 +4062,19 @@ export default class UIManager {
         actionsPanel.style.transform = "translateX(-50%)";
         actionsPanel.style.top = "0";
         actionsPanel.style.width = "100%";
-        actionsPanel.style.maxWidth = "min(720px, calc(100vw - 40px))";
-        actionsPanel.style.height = "56px";
+        actionsPanel.style.maxWidth = "min(560px, calc(100vw - 32px))";
+        actionsPanel.style.height = "44px";
         actionsPanel.style.display = "none";
-        actionsPanel.style.padding = "4px";
+        actionsPanel.style.padding = "3px";
         actionsPanel.style.boxSizing = "border-box";
-        actionsPanel.style.borderRadius = "14px";
+        actionsPanel.style.borderRadius = "11px";
         actionsPanel.style.border = "1px solid rgba(180, 160, 255, 0.3)";
         actionsPanel.style.background = "rgba(20, 10, 40, 0.6)";
-        actionsPanel.style.boxShadow = "0 8px 24px rgba(180, 160, 255, 0.2)";
+        actionsPanel.style.boxShadow = "0 6px 18px rgba(180, 160, 255, 0.16)";
         actionsPanel.style.backdropFilter = "blur(8px)";
-        actionsPanel.style.gap = "4px";
+        actionsPanel.style.gap = "3px";
         actionsPanel.style.gridTemplateColumns = "repeat(6, minmax(0, 1fr))";
-        actionsPanel.style.gridAutoRows = "22px";
+        actionsPanel.style.gridAutoRows = "18px";
         actionsPanel.style.alignItems = "stretch";
 
         const createActionButton = (label, onClick) => {
@@ -4070,17 +4083,17 @@ export default class UIManager {
             button.textContent = label;
             button.style.width = "100%";
             button.style.maxWidth = "none";
-            button.style.height = "22px";
-            button.style.padding = "0 6px";
+            button.style.height = "18px";
+            button.style.padding = "0 5px";
             button.style.border = "1px solid rgba(180, 160, 255, 0.28)";
-            button.style.borderRadius = "8px";
+            button.style.borderRadius = "6px";
             button.style.background = "rgba(20, 10, 40, 0.52)";
             button.style.boxShadow = "none";
             button.style.color = "#e0d6ff";
             button.style.cursor = "pointer";
             button.style.fontWeight = "700";
-            button.style.letterSpacing = "0.2px";
-            button.style.fontSize = "10px";
+            button.style.letterSpacing = "0.1px";
+            button.style.fontSize = "9px";
             button.style.userSelect = "none";
             button.style.whiteSpace = "nowrap";
             button.style.overflow = "hidden";
@@ -4153,7 +4166,7 @@ export default class UIManager {
         themeBtn.style.background = "rgba(24, 12, 48, 0.62)";
         themeBtn.style.borderColor = "rgba(180, 160, 255, 0.34)";
         themeBtn.style.color = "#b4a0ff";
-        themeBtn.style.fontSize = "10px";
+        themeBtn.style.fontSize = "9px";
 
         const showActions = () => {
             pullTab.style.display = "none";
@@ -4164,10 +4177,39 @@ export default class UIManager {
             actionsPanel.style.display = "none";
             pullTab.style.display = "block";
         };
-
-        // Pull-tab behavior: starts collapsed and only opens when player clicks MENU.
-        pullTab.addEventListener("click", showActions);
-        container.addEventListener("mouseleave", showMenu);
+        let hoverOpenTimer = null;
+        let hoverCloseTimer = null;
+        const supportsHover = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(hover: hover)").matches;
+        const clearHoverTimers = () => {
+            if (hoverOpenTimer) clearTimeout(hoverOpenTimer);
+            if (hoverCloseTimer) clearTimeout(hoverCloseTimer);
+            hoverOpenTimer = null;
+            hoverCloseTimer = null;
+        };
+        const scheduleShow = () => {
+            if (!supportsHover) return;
+            if (hoverCloseTimer) clearTimeout(hoverCloseTimer);
+            if (actionsPanel.style.display === "grid") return;
+            hoverOpenTimer = setTimeout(() => showActions(), 90);
+        };
+        const scheduleHide = () => {
+            if (!supportsHover) return;
+            if (this._pinAutoBuildMenuOpen) return;
+            if (hoverOpenTimer) clearTimeout(hoverOpenTimer);
+            hoverCloseTimer = setTimeout(() => showMenu(), 150);
+        };
+        if (supportsHover) {
+            pullTab.addEventListener("mouseenter", scheduleShow);
+            container.addEventListener("mouseenter", scheduleShow);
+            container.addEventListener("mouseleave", scheduleHide);
+            actionsPanel.addEventListener("mouseenter", scheduleShow);
+            actionsPanel.addEventListener("mouseleave", scheduleHide);
+        } else {
+            // Touch fallback: still allow tap to open/close.
+            pullTab.addEventListener("click", showActions);
+            container.addEventListener("mouseleave", showMenu);
+        }
+        container.addEventListener("remove", clearHoverTimers);
         this._autoBuildShowActions = showActions;
         this._autoBuildShowMenu = showMenu;
 
@@ -5032,62 +5074,52 @@ export default class UIManager {
         this.hideX1SendPrompt();
         this.hideX1ChallengePrompt();
 
-        const overlay = document.createElement("div");
-        overlay.style.position = "fixed";
-        overlay.style.inset = "0";
-        overlay.style.background = "rgba(0, 0, 0, 0.55)";
-        overlay.style.zIndex = "20000";
-        overlay.style.display = "flex";
-        overlay.style.alignItems = "center";
-        overlay.style.justifyContent = "center";
-        overlay.style.pointerEvents = "all";
-
-        const card = document.createElement("div");
-        card.style.width = "min(520px, 92vw)";
-        card.style.background = "linear-gradient(145deg, rgba(8,18,40,0.96), rgba(20,40,80,0.96))";
-        card.style.border = "2px solid rgba(100, 190, 255, 0.65)";
-        card.style.borderRadius = "14px";
-        card.style.padding = "22px 24px";
-        card.style.boxShadow = "0 18px 55px rgba(0,0,0,0.55), 0 0 25px rgba(96,193,255,0.25)";
-        card.style.color = "#eaf6ff";
-        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.top = "18px";
+        panel.style.left = "50%";
+        panel.style.transform = "translateX(-50%)";
+        panel.style.width = "min(460px, calc(100vw - 20px))";
+        panel.style.zIndex = "21000";
+        panel.style.pointerEvents = "all";
+        panel.style.background = "linear-gradient(145deg, rgba(10,20,44,0.96), rgba(20,38,78,0.96))";
+        panel.style.border = "1px solid rgba(110, 200, 255, 0.7)";
+        panel.style.borderRadius = "12px";
+        panel.style.padding = "12px 14px";
+        panel.style.boxShadow = "0 10px 28px rgba(0,0,0,0.42), 0 0 18px rgba(90,180,255,0.24)";
+        panel.style.color = "#eaf6ff";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
 
         const title = document.createElement("div");
-        title.textContent = "1v1 CHALLENGE";
-        title.style.fontSize = "22px";
+        title.textContent = "X1 challenge received";
+        title.style.fontSize = "15px";
         title.style.fontWeight = "900";
-        title.style.letterSpacing = "1.1px";
+        title.style.letterSpacing = "0.3px";
         title.style.color = "#9fe8ff";
 
         const subtitle = document.createElement("div");
-        subtitle.textContent = `${challengerName} has challenged you to a 1v1.`;
-        subtitle.style.marginTop = "10px";
-        subtitle.style.fontSize = "18px";
-        subtitle.style.fontWeight = "700";
+        subtitle.textContent = `${challengerName} challenged you to a protected X1.`;
+        subtitle.style.marginTop = "4px";
+        subtitle.style.fontSize = "13px";
+        subtitle.style.fontWeight = "600";
         subtitle.style.color = "#ffffff";
 
-        const description = document.createElement("div");
-        description.textContent = "Do you want to accept this duel now?";
-        description.style.marginTop = "8px";
-        description.style.fontSize = "14px";
-        description.style.opacity = "0.92";
-
         const actions = document.createElement("div");
-        actions.style.marginTop = "20px";
+        actions.style.marginTop = "10px";
         actions.style.display = "flex";
-        actions.style.gap = "12px";
+        actions.style.gap = "8px";
         actions.style.justifyContent = "flex-end";
 
         const declineButton = document.createElement("button");
         declineButton.type = "button";
         declineButton.textContent = "Decline";
         declineButton.style.border = "1px solid rgba(255, 120, 120, 0.65)";
-        declineButton.style.background = "rgba(150, 30, 30, 0.25)";
+        declineButton.style.background = "rgba(150, 30, 30, 0.28)";
         declineButton.style.color = "#ffd6d6";
-        declineButton.style.fontSize = "14px";
+        declineButton.style.fontSize = "12px";
         declineButton.style.fontWeight = "700";
-        declineButton.style.padding = "10px 16px";
-        declineButton.style.borderRadius = "10px";
+        declineButton.style.padding = "8px 12px";
+        declineButton.style.borderRadius = "8px";
         declineButton.style.cursor = "pointer";
 
         const acceptButton = document.createElement("button");
@@ -5096,10 +5128,10 @@ export default class UIManager {
         acceptButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
         acceptButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
         acceptButton.style.color = "#e8ffef";
-        acceptButton.style.fontSize = "14px";
+        acceptButton.style.fontSize = "12px";
         acceptButton.style.fontWeight = "800";
-        acceptButton.style.padding = "10px 18px";
-        acceptButton.style.borderRadius = "10px";
+        acceptButton.style.padding = "8px 14px";
+        acceptButton.style.borderRadius = "8px";
         acceptButton.style.cursor = "pointer";
 
         declineButton.addEventListener("click", () => {
@@ -5114,17 +5146,26 @@ export default class UIManager {
 
         actions.appendChild(declineButton);
         actions.appendChild(acceptButton);
-        card.appendChild(title);
-        card.appendChild(subtitle);
-        card.appendChild(description);
-        card.appendChild(actions);
-        overlay.appendChild(card);
+        panel.appendChild(title);
+        panel.appendChild(subtitle);
+        panel.appendChild(actions);
 
-        document.body.appendChild(overlay);
-        this.x1PromptElement = overlay;
+        document.body.appendChild(panel);
+        this.x1PromptElement = panel;
+        if (this.x1PromptTimeout) clearTimeout(this.x1PromptTimeout);
+        this.x1PromptTimeout = setTimeout(() => {
+            if (this.x1PromptElement) {
+                this.hideX1ChallengePrompt();
+                if (typeof onDecline === "function") onDecline();
+            }
+        }, 10000);
     }
 
     hideX1ChallengePrompt() {
+        if (this.x1PromptTimeout) {
+            clearTimeout(this.x1PromptTimeout);
+            this.x1PromptTimeout = null;
+        }
         if (this.x1PromptElement && this.x1PromptElement.parentNode) {
             this.x1PromptElement.parentNode.removeChild(this.x1PromptElement);
         }
@@ -5136,50 +5177,40 @@ export default class UIManager {
         this.hideX1SendPrompt();
         this.hideEnemyCoreActions();
 
-        const overlay = document.createElement("div");
-        overlay.style.position = "fixed";
-        overlay.style.inset = "0";
-        overlay.style.background = "rgba(0, 0, 0, 0.45)";
-        overlay.style.zIndex = "19999";
-        overlay.style.display = "flex";
-        overlay.style.alignItems = "center";
-        overlay.style.justifyContent = "center";
-        overlay.style.pointerEvents = "all";
-
-        const card = document.createElement("div");
-        card.style.width = "min(500px, 90vw)";
-        card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.96), rgba(16,30,58,0.96))";
-        card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
-        card.style.borderRadius = "14px";
-        card.style.padding = "22px 24px";
-        card.style.boxShadow = "0 16px 45px rgba(0,0,0,0.55), 0 0 22px rgba(96,193,255,0.23)";
-        card.style.color = "#eaf6ff";
-        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.top = "8px";
+        panel.style.left = "8px";
+        panel.style.transform = "none";
+        panel.style.width = "min(300px, calc(100vw - 18px))";
+        panel.style.zIndex = "20999";
+        panel.style.pointerEvents = "all";
+        panel.style.background = "linear-gradient(145deg, rgba(10,20,44,0.96), rgba(20,38,78,0.96))";
+        panel.style.border = "1px solid rgba(102, 225, 255, 0.65)";
+        panel.style.borderRadius = "12px";
+        panel.style.padding = "12px 14px";
+        panel.style.boxShadow = "0 10px 24px rgba(0,0,0,0.42), 0 0 16px rgba(96,193,255,0.21)";
+        panel.style.color = "#eaf6ff";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
 
         const title = document.createElement("div");
-        title.textContent = "CHALLENGE X1";
-        title.style.fontSize = "22px";
+        title.textContent = "Challenge X1";
+        title.style.fontSize = "14px";
         title.style.fontWeight = "900";
-        title.style.letterSpacing = "1px";
+        title.style.letterSpacing = "0.3px";
         title.style.color = "#9fe8ff";
 
         const subtitle = document.createElement("div");
-        subtitle.textContent = `Challenge ${targetName} to a protected 1v1?`;
-        subtitle.style.marginTop = "10px";
-        subtitle.style.fontSize = "18px";
-        subtitle.style.fontWeight = "700";
+        subtitle.textContent = `Send protected X1 challenge to ${targetName}?`;
+        subtitle.style.marginTop = "4px";
+        subtitle.style.fontSize = "13px";
+        subtitle.style.fontWeight = "600";
         subtitle.style.color = "#ffffff";
 
-        const description = document.createElement("div");
-        description.textContent = "If accepted, a protected arena will appear for both players.";
-        description.style.marginTop = "8px";
-        description.style.fontSize = "14px";
-        description.style.opacity = "0.92";
-
         const actions = document.createElement("div");
-        actions.style.marginTop = "20px";
+        actions.style.marginTop = "10px";
         actions.style.display = "flex";
-        actions.style.gap = "12px";
+        actions.style.gap = "8px";
         actions.style.justifyContent = "flex-end";
 
         const cancelButton = document.createElement("button");
@@ -5188,22 +5219,22 @@ export default class UIManager {
         cancelButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
         cancelButton.style.background = "rgba(120, 36, 36, 0.25)";
         cancelButton.style.color = "#ffd6d6";
-        cancelButton.style.fontSize = "14px";
+        cancelButton.style.fontSize = "12px";
         cancelButton.style.fontWeight = "700";
-        cancelButton.style.padding = "10px 16px";
-        cancelButton.style.borderRadius = "10px";
+        cancelButton.style.padding = "8px 12px";
+        cancelButton.style.borderRadius = "8px";
         cancelButton.style.cursor = "pointer";
 
         const confirmButton = document.createElement("button");
         confirmButton.type = "button";
-        confirmButton.textContent = "Challenge";
+        confirmButton.textContent = "Send";
         confirmButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
         confirmButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
         confirmButton.style.color = "#e8ffef";
-        confirmButton.style.fontSize = "14px";
+        confirmButton.style.fontSize = "12px";
         confirmButton.style.fontWeight = "800";
-        confirmButton.style.padding = "10px 18px";
-        confirmButton.style.borderRadius = "10px";
+        confirmButton.style.padding = "8px 14px";
+        confirmButton.style.borderRadius = "8px";
         confirmButton.style.cursor = "pointer";
 
         cancelButton.addEventListener("click", () => {
@@ -5218,17 +5249,26 @@ export default class UIManager {
 
         actions.appendChild(cancelButton);
         actions.appendChild(confirmButton);
-        card.appendChild(title);
-        card.appendChild(subtitle);
-        card.appendChild(description);
-        card.appendChild(actions);
-        overlay.appendChild(card);
+        panel.appendChild(title);
+        panel.appendChild(subtitle);
+        panel.appendChild(actions);
 
-        document.body.appendChild(overlay);
-        this.x1SendPromptElement = overlay;
+        document.body.appendChild(panel);
+        this.x1SendPromptElement = panel;
+        if (this.x1SendPromptTimeout) clearTimeout(this.x1SendPromptTimeout);
+        this.x1SendPromptTimeout = setTimeout(() => {
+            if (this.x1SendPromptElement) {
+                this.hideX1SendPrompt();
+                if (typeof onCancel === "function") onCancel();
+            }
+        }, 7000);
     }
 
     hideX1SendPrompt() {
+        if (this.x1SendPromptTimeout) {
+            clearTimeout(this.x1SendPromptTimeout);
+            this.x1SendPromptTimeout = null;
+        }
         if (this.x1SendPromptElement && this.x1SendPromptElement.parentNode) {
             this.x1SendPromptElement.parentNode.removeChild(this.x1SendPromptElement);
         }
@@ -5240,69 +5280,103 @@ export default class UIManager {
         this.hideX1SendPrompt();
         this.hideEnemyCoreActions();
 
-        const overlay = document.createElement("div");
-        overlay.style.position = "fixed";
-        overlay.style.inset = "0";
-        overlay.style.background = "rgba(0, 0, 0, 0.45)";
-        overlay.style.zIndex = "19999";
-        overlay.style.display = "flex";
-        overlay.style.alignItems = "center";
-        overlay.style.justifyContent = "center";
-        overlay.style.pointerEvents = "all";
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.top = "8px";
+        panel.style.left = "8px";
+        panel.style.transform = "none";
+        panel.style.zIndex = "20998";
+        panel.style.width = "min(300px, calc(100vw - 18px))";
+        panel.style.pointerEvents = "all";
+        panel.style.background = "linear-gradient(180deg, rgba(22,8,46,0.96), rgba(12,6,28,0.96))";
+        panel.style.border = "1px solid rgba(183, 123, 255, 0.48)";
+        panel.style.borderRadius = "10px";
+        panel.style.padding = "8px";
+        panel.style.boxShadow = "0 8px 20px rgba(0,0,0,0.36), 0 0 14px rgba(174, 96, 255, 0.2)";
+        panel.style.color = "#efe6ff";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
 
-        const card = document.createElement("div");
-        card.style.width = "min(560px, 92vw)";
-        card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.96), rgba(16,30,58,0.96))";
-        card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
-        card.style.borderRadius = "14px";
-        card.style.padding = "22px 24px";
-        card.style.boxShadow = "0 16px 45px rgba(0,0,0,0.55), 0 0 22px rgba(96,193,255,0.23)";
-        card.style.color = "#eaf6ff";
-        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        const header = document.createElement("div");
+        header.style.display = "flex";
+        header.style.alignItems = "center";
+        header.style.justifyContent = "space-between";
 
         const title = document.createElement("div");
         title.textContent = "Enemy Base";
-        title.style.fontSize = "22px";
+        title.style.fontSize = "15px";
         title.style.fontWeight = "900";
-        title.style.letterSpacing = "1px";
-        title.style.color = "#9fe8ff";
+        title.style.letterSpacing = "0.2px";
+        title.style.color = "#efe6ff";
+
+        const closeTopButton = document.createElement("button");
+        closeTopButton.type = "button";
+        closeTopButton.textContent = "x";
+        closeTopButton.style.width = "16px";
+        closeTopButton.style.height = "16px";
+        closeTopButton.style.display = "inline-flex";
+        closeTopButton.style.alignItems = "center";
+        closeTopButton.style.justifyContent = "center";
+        closeTopButton.style.border = "1px solid rgba(206, 141, 255, 0.48)";
+        closeTopButton.style.background = "rgba(57, 24, 86, 0.8)";
+        closeTopButton.style.color = "#f3e9ff";
+        closeTopButton.style.fontSize = "10px";
+        closeTopButton.style.fontWeight = "800";
+        closeTopButton.style.borderRadius = "5px";
+        closeTopButton.style.cursor = "pointer";
+        closeTopButton.style.lineHeight = "1";
+        closeTopButton.addEventListener("click", () => {
+            this.hideEnemyCoreActions();
+            if (typeof onCancel === "function") onCancel();
+        });
+        header.appendChild(title);
+        header.appendChild(closeTopButton);
 
         const subtitle = document.createElement("div");
         subtitle.textContent = targetName || "Player";
-        subtitle.style.marginTop = "8px";
-        subtitle.style.fontSize = "18px";
+        subtitle.style.marginTop = "4px";
+        subtitle.style.fontSize = "12px";
         subtitle.style.fontWeight = "700";
-        subtitle.style.color = "#ffffff";
+        subtitle.style.color = "#d9c6ff";
 
         const actions = document.createElement("div");
-        actions.style.marginTop = "16px";
+        actions.style.marginTop = "8px";
         actions.style.display = "grid";
-        actions.style.gap = "10px";
+        actions.style.gap = "8px";
 
         const createActionButton = (label, description, clickHandler) => {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.style.width = "100%";
             btn.style.textAlign = "left";
-            btn.style.border = "1px solid rgba(116, 212, 255, 0.55)";
-            btn.style.background = "rgba(20, 44, 82, 0.55)";
-            btn.style.color = "#eaf6ff";
-            btn.style.borderRadius = "10px";
-            btn.style.padding = "12px 14px";
+            btn.style.border = "1px solid rgba(177, 126, 255, 0.45)";
+            btn.style.background = "rgba(37, 14, 66, 0.72)";
+            btn.style.color = "#f3ebff";
+            btn.style.borderRadius = "8px";
+            btn.style.padding = "9px 10px";
             btn.style.cursor = "pointer";
             btn.style.display = "block";
             btn.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+            btn.style.transition = "filter 120ms ease, border-color 120ms ease";
 
             const t = document.createElement("div");
             t.textContent = label;
-            t.style.fontSize = "15px";
+            t.style.fontSize = "12px";
             t.style.fontWeight = "800";
 
             const d = document.createElement("div");
             d.textContent = description;
-            d.style.marginTop = "4px";
-            d.style.fontSize = "13px";
+            d.style.marginTop = "2px";
+            d.style.fontSize = "11px";
             d.style.opacity = "0.9";
+
+            btn.addEventListener("mouseenter", () => {
+                btn.style.filter = "brightness(1.07)";
+                btn.style.borderColor = "rgba(205, 156, 255, 0.82)";
+            });
+            btn.addEventListener("mouseleave", () => {
+                btn.style.filter = "brightness(1)";
+                btn.style.borderColor = "rgba(177, 126, 255, 0.45)";
+            });
 
             btn.appendChild(t);
             btn.appendChild(d);
@@ -5337,20 +5411,20 @@ export default class UIManager {
         }
 
         const cancelRow = document.createElement("div");
-        cancelRow.style.marginTop = "14px";
+        cancelRow.style.marginTop = "8px";
         cancelRow.style.display = "flex";
         cancelRow.style.justifyContent = "flex-end";
 
         const cancelButton = document.createElement("button");
         cancelButton.type = "button";
         cancelButton.textContent = "Close";
-        cancelButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
-        cancelButton.style.background = "rgba(120, 36, 36, 0.25)";
-        cancelButton.style.color = "#ffd6d6";
-        cancelButton.style.fontSize = "14px";
+        cancelButton.style.border = "1px solid rgba(206, 141, 255, 0.48)";
+        cancelButton.style.background = "rgba(57, 24, 86, 0.8)";
+        cancelButton.style.color = "#f3e9ff";
+        cancelButton.style.fontSize = "12px";
         cancelButton.style.fontWeight = "700";
-        cancelButton.style.padding = "10px 16px";
-        cancelButton.style.borderRadius = "10px";
+        cancelButton.style.padding = "6px 10px";
+        cancelButton.style.borderRadius = "7px";
         cancelButton.style.cursor = "pointer";
         cancelButton.addEventListener("click", () => {
             this.hideEnemyCoreActions();
@@ -5358,14 +5432,13 @@ export default class UIManager {
         });
         cancelRow.appendChild(cancelButton);
 
-        card.appendChild(title);
-        card.appendChild(subtitle);
-        card.appendChild(actions);
-        card.appendChild(cancelRow);
-        overlay.appendChild(card);
+        panel.appendChild(header);
+        panel.appendChild(subtitle);
+        panel.appendChild(actions);
+        panel.appendChild(cancelRow);
 
-        document.body.appendChild(overlay);
-        this.enemyCoreActionsElement = overlay;
+        document.body.appendChild(panel);
+        this.enemyCoreActionsElement = panel;
     }
 
     hideEnemyCoreActions() {
@@ -5964,62 +6037,57 @@ export default class UIManager {
     showRelocateBasePrompt(cost, onConfirm, onCancel) {
         this.hideRelocateBasePrompt();
 
-        const overlay = document.createElement("div");
-        overlay.style.position = "fixed";
-        overlay.style.inset = "0";
-        overlay.style.background = "rgba(0, 0, 0, 0.45)";
-        overlay.style.zIndex = "19999";
-        overlay.style.display = "flex";
-        overlay.style.alignItems = "center";
-        overlay.style.justifyContent = "center";
-        overlay.style.pointerEvents = "all";
-
-        const card = document.createElement("div");
-        card.style.width = "min(500px, 90vw)";
-        card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.96), rgba(16,30,58,0.96))";
-        card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
-        card.style.borderRadius = "14px";
-        card.style.padding = "22px 24px";
-        card.style.boxShadow = "0 16px 45px rgba(0,0,0,0.55), 0 0 22px rgba(96,193,255,0.23)";
-        card.style.color = "#eaf6ff";
-        card.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.top = "8px";
+        panel.style.left = "8px";
+        panel.style.zIndex = "20997";
+        panel.style.width = "min(300px, calc(100vw - 18px))";
+        panel.style.pointerEvents = "all";
+        panel.style.background = "linear-gradient(180deg, rgba(22,8,46,0.96), rgba(12,6,28,0.96))";
+        panel.style.border = "1px solid rgba(183, 123, 255, 0.48)";
+        panel.style.borderRadius = "10px";
+        panel.style.padding = "8px";
+        panel.style.boxShadow = "0 8px 20px rgba(0,0,0,0.36), 0 0 14px rgba(174, 96, 255, 0.2)";
+        panel.style.color = "#efe6ff";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
 
         const title = document.createElement("div");
         title.textContent = "RELOCATE BASE";
-        title.style.fontSize = "22px";
+        title.style.fontSize = "15px";
         title.style.fontWeight = "900";
-        title.style.letterSpacing = "1px";
-        title.style.color = "#9fe8ff";
+        title.style.letterSpacing = "0.2px";
+        title.style.color = "#efe6ff";
 
         const subtitle = document.createElement("div");
         subtitle.textContent = `Confirm relocation for ${cost} power?`;
-        subtitle.style.marginTop = "10px";
-        subtitle.style.fontSize = "18px";
+        subtitle.style.marginTop = "4px";
+        subtitle.style.fontSize = "12px";
         subtitle.style.fontWeight = "700";
-        subtitle.style.color = "#ffffff";
+        subtitle.style.color = "#d9c6ff";
 
         const description = document.createElement("div");
         description.textContent = "Your base and owned entities will move to the selected empty slot.";
-        description.style.marginTop = "8px";
-        description.style.fontSize = "14px";
+        description.style.marginTop = "2px";
+        description.style.fontSize = "11px";
         description.style.opacity = "0.92";
 
         const actions = document.createElement("div");
-        actions.style.marginTop = "20px";
+        actions.style.marginTop = "8px";
         actions.style.display = "flex";
-        actions.style.gap = "12px";
+        actions.style.gap = "8px";
         actions.style.justifyContent = "flex-end";
 
         const cancelButton = document.createElement("button");
         cancelButton.type = "button";
         cancelButton.textContent = "Cancel";
-        cancelButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
-        cancelButton.style.background = "rgba(120, 36, 36, 0.25)";
-        cancelButton.style.color = "#ffd6d6";
-        cancelButton.style.fontSize = "14px";
+        cancelButton.style.border = "1px solid rgba(206, 141, 255, 0.48)";
+        cancelButton.style.background = "rgba(57, 24, 86, 0.8)";
+        cancelButton.style.color = "#f3e9ff";
+        cancelButton.style.fontSize = "12px";
         cancelButton.style.fontWeight = "700";
-        cancelButton.style.padding = "10px 16px";
-        cancelButton.style.borderRadius = "10px";
+        cancelButton.style.padding = "6px 10px";
+        cancelButton.style.borderRadius = "7px";
         cancelButton.style.cursor = "pointer";
 
         const confirmButton = document.createElement("button");
@@ -6028,10 +6096,10 @@ export default class UIManager {
         confirmButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
         confirmButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
         confirmButton.style.color = "#e8ffef";
-        confirmButton.style.fontSize = "14px";
+        confirmButton.style.fontSize = "12px";
         confirmButton.style.fontWeight = "800";
-        confirmButton.style.padding = "10px 18px";
-        confirmButton.style.borderRadius = "10px";
+        confirmButton.style.padding = "6px 10px";
+        confirmButton.style.borderRadius = "7px";
         confirmButton.style.cursor = "pointer";
 
         cancelButton.addEventListener("click", () => {
@@ -6046,14 +6114,13 @@ export default class UIManager {
 
         actions.appendChild(cancelButton);
         actions.appendChild(confirmButton);
-        card.appendChild(title);
-        card.appendChild(subtitle);
-        card.appendChild(description);
-        card.appendChild(actions);
-        overlay.appendChild(card);
+        panel.appendChild(title);
+        panel.appendChild(subtitle);
+        panel.appendChild(description);
+        panel.appendChild(actions);
 
-        document.body.appendChild(overlay);
-        this.relocatePromptElement = overlay;
+        document.body.appendChild(panel);
+        this.relocatePromptElement = panel;
     }
 
     hideRelocateBasePrompt() {
