@@ -15,6 +15,30 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 
 const LOCAL_SESSION_KEY = 'blobl_supabase_session';
 
+function clearSupabaseAuthKeys(storage) {
+    if (!storage) return;
+    try {
+        const keysToRemove = [];
+        for (let i = 0; i < storage.length; i++) {
+            const key = storage.key(i);
+            if (key && /^sb-.*-auth-token$/.test(key)) {
+                keysToRemove.push(key);
+            }
+        }
+        for (const key of keysToRemove) {
+            storage.removeItem(key);
+        }
+    } catch (e) {
+        console.warn("Could not clear Supabase auth keys from storage:", e);
+    }
+}
+
+export function clearLocalAuthState() {
+    try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch (e) { }
+    clearSupabaseAuthKeys(localStorage);
+    clearSupabaseAuthKeys(sessionStorage);
+}
+
 // Auth functions
 export async function signUp(email, password, nickname) {
     const { data, error } = await supabase.auth.signUp({
@@ -53,9 +77,17 @@ export async function signIn(email, password) {
 }
 
 export async function signOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch (e) { }
+    let authError = null;
+    try {
+        // Local scope guarantees client-side session cleanup even if revoke fails remotely.
+        const { error } = await supabase.auth.signOut({ scope: "local" });
+        if (error) authError = error;
+    } catch (error) {
+        authError = error;
+    } finally {
+        clearLocalAuthState();
+    }
+    if (authError) throw authError;
 }
 
 export async function getCurrentUser() {

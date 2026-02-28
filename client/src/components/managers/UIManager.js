@@ -573,11 +573,11 @@ export default class UIManager {
                 if (event.target === handle) return;
                 event.preventDefault();
                 const rect = el.getBoundingClientRect();
-                const zoomFactor = Math.max(0.01, Number(getComputedStyle(el).zoom) || 1);
                 const pointerOffsetX = event.clientX - rect.left;
                 const pointerOffsetY = event.clientY - rect.top;
                 el.style.right = "auto";
                 el.style.bottom = "auto";
+                const zoomFactor = Math.max(0.01, Number(getComputedStyle(el).zoom) || 1);
                 el.style.left = `${Math.round(rect.left / zoomFactor)}px`;
                 el.style.top = `${Math.round(rect.top / zoomFactor)}px`;
 
@@ -921,7 +921,6 @@ export default class UIManager {
         this.hudEditSessionState = {
             menuWasOpen: Boolean(this.menuOpen)
         };
-
         if (this.menuOpen) {
             this.showMenuUIElements(false);
             this.showGameUIElements(true);
@@ -1426,6 +1425,10 @@ export default class UIManager {
 
         if (savedPlayerName) {
             this.DOM.menu.playerNameInput.value = savedPlayerName;
+        } else if (this.DOM?.menu?.playerNameInput) {
+            const guestName = this.generateGuestNickname();
+            this.DOM.menu.playerNameInput.value = guestName;
+            this.DOM.menu.playerNameInput.placeholder = guestName;
         }
 
         this.updateResources();
@@ -1621,23 +1624,9 @@ export default class UIManager {
             if (rowsContainer) rowsContainer.innerHTML = "";
 
             if (!leaderboardData.length) {
-                const localUser = this.core?.networkManager?.userData;
-                const localStats = localUser?.statistics;
-                if (localUser && localStats && (localUser.nickname || localUser.discord?.username)) {
-                    const row = document.createElement("div");
-                    row.className = "global-rank-row";
-                    row.innerHTML = `
-                        <span class="rank">1</span>
-                        <span class="name" title="${localUser.nickname || localUser.discord?.username || "You"}">${localUser.nickname || localUser.discord?.username || "You"}</span>
-                        <span class="score">${formatScore(localStats.highscore)}</span>
-                        <span class="playtime">${formatPlaytime(localStats.playtime)}</span>
-                        <span class="kills">${Number(localStats.kills || 0).toLocaleString("en-US")}</span>
-                    `;
-                    (rowsContainer || leaderboard).appendChild(row);
-                }
                 const empty = document.createElement("div");
                 empty.className = "global-rank-empty";
-                empty.textContent = "Global rank unavailable now (showing local profile only).";
+                empty.textContent = "Global rank unavailable now.";
                 (rowsContainer || leaderboard).appendChild(empty);
                 leaderboard.style.display = "flex";
                 return;
@@ -1714,7 +1703,27 @@ export default class UIManager {
             accountButton.dataset.boundLoginClick = "1";
             accountButton.addEventListener("click", () => {
                 const buttonText = (accountButton.textContent || "").trim().toLowerCase();
-                const shouldLogout = this.core.networkManager.loggedIn && buttonText === "logout";
+                const logoutLikeLabel = buttonText === "logout" || buttonText === "sair";
+                const shouldLogout = Boolean(this.core.networkManager.loggedIn) || logoutLikeLabel;
+                if (shouldLogout) {
+                    this.core.networkManager.logout();
+                } else {
+                    this.showSigninDialog(true);
+                }
+            });
+        }
+
+        // Fallback for cases where the account button is re-created and loses listeners.
+        if (!document.body.dataset.boundAccountDelegatedClick) {
+            document.body.dataset.boundAccountDelegatedClick = "1";
+            document.addEventListener("click", (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) return;
+                if (target.id !== "account-button") return;
+
+                const buttonText = (target.textContent || "").trim().toLowerCase();
+                const logoutLikeLabel = buttonText === "logout" || buttonText === "sair";
+                const shouldLogout = Boolean(this.core?.networkManager?.loggedIn) || logoutLikeLabel;
                 if (shouldLogout) {
                     this.core.networkManager.logout();
                 } else {
@@ -1814,6 +1823,18 @@ export default class UIManager {
             signinCancel.addEventListener("click", () => {
                 this.showSigninDialog(false);
             });
+        }
+    }
+
+    handleAccountButtonClick (buttonElement = null) {
+        const accountButton = buttonElement || this.DOM.account.accountButton || document.getElementById("account-button");
+        const buttonText = (accountButton?.textContent || "").trim().toLowerCase();
+        const logoutLikeLabel = buttonText === "logout" || buttonText === "sair";
+        const shouldLogout = Boolean(this.core?.networkManager?.loggedIn) || logoutLikeLabel;
+        if (shouldLogout) {
+            this.core.networkManager.logout();
+        } else {
+            this.showSigninDialog(true);
         }
     }
 
@@ -2031,6 +2052,8 @@ export default class UIManager {
         };
 
         if (this.DOM.account.accountButton) {
+            // Always re-bind current DOM node action (defensive against node recreation).
+            this.DOM.account.accountButton.onclick = () => this.handleAccountButtonClick(this.DOM.account.accountButton);
             // Keep both buttons visually matched when My Profile is present.
             applyLoggedButtonStyle(this.DOM.account.accountButton);
             if (isLoggedInNow) {
@@ -2049,18 +2072,14 @@ export default class UIManager {
                 if (shopButton) shopButton.style.display = "none";
                 accountDividers.forEach((hr) => { hr.style.display = "none"; });
             } else {
-                this.DOM.account.accountButton.classList.add("login");
+                this.DOM.account.accountButton.classList.remove("login");
                 this.DOM.account.accountButton.textContent = "Login";
-                this.DOM.account.accountButton.style.background = "";
-                this.DOM.account.accountButton.style.border = "";
-                this.DOM.account.accountButton.style.color = "";
-                this.DOM.account.accountButton.style.borderRadius = "";
-                this.DOM.account.accountButton.style.fontSize = "";
-                this.DOM.account.accountButton.style.fontWeight = "";
-                this.DOM.account.accountButton.style.transform = "";
+                // Keep same visual language as My Profile/Logout while logged out.
+                applyLoggedButtonStyle(this.DOM.account.accountButton);
                 if (myProfileButton) myProfileButton.style.display = "none";
                 // Show signup button when not logged in
                 if (this.DOM.account.signupButton) {
+                    applyLoggedButtonStyle(this.DOM.account.signupButton);
                     this.DOM.account.signupButton.style.display = "flex";
                     this.DOM.account.signupButton.style.alignItems = "center";
                     this.DOM.account.signupButton.style.justifyContent = "center";
@@ -4375,31 +4394,48 @@ export default class UIManager {
             } catch (e) {}
         }
 
-        const defaultNames = ["Nova", "Orbit", "Pulse", "Core", "Flux",
-            "Echo", "Atlas", "Vector", "Drift", "Zen",
-            "Cipher", "Frost", "Blaze", "Shadow", "Ember", "NovaX", "Glint", "Aero"
-        ];
-        let playerName = this.DOM.menu.playerNameInput.value.trim();
-
+        let playerName = this.normalizePlayerName(this.DOM.menu.playerNameInput.value);
         if (!playerName) {
-            // Pick a random name from the defaultNames array
-            playerName = defaultNames[Math.floor(Math.random() * defaultNames.length)];
-        } else {
-            // Limit to 12 bytes
-            const encoder = new TextEncoder();
-            let encodedName = encoder.encode(playerName);
-
-            if (encodedName.length > 12) {
-                playerName = playerName.slice(0, 12); // Initial cut to 12 characters
-                encodedName = encoder.encode(playerName);
-                while (encodedName.length > 12 && playerName.length > 0) {
-                    playerName = playerName.slice(0, -1); // Trim from the end
-                    encodedName = encoder.encode(playerName);
-                }
+            playerName = this.generateGuestNickname();
+            if (this.DOM?.menu?.playerNameInput) {
+                this.DOM.menu.playerNameInput.value = playerName;
+                this.DOM.menu.playerNameInput.placeholder = playerName;
             }
         }
 
         return playerName;
+    }
+
+    normalizePlayerName (rawName) {
+        const input = String(rawName || "").trim();
+        if (!input) return "";
+
+        // Keep guest names clean and compatible with server-side 12-byte limit.
+        let playerName = input.replace(/[^a-zA-Z0-9_]/g, "");
+        if (!playerName) return "";
+
+        const encoder = new TextEncoder();
+        let encodedName = encoder.encode(playerName);
+        if (encodedName.length <= 12) return playerName;
+
+        playerName = playerName.slice(0, 12);
+        encodedName = encoder.encode(playerName);
+        while (encodedName.length > 12 && playerName.length > 0) {
+            playerName = playerName.slice(0, -1);
+            encodedName = encoder.encode(playerName);
+        }
+        return playerName;
+    }
+
+    generateGuestNickname () {
+        const themedNames = [
+            "Unknown", "UnknownX", "WarGhost", "HexShade", "VoidHex", "CipherX",
+            "ShadowX", "DarkNode", "NullEcho", "RogueHex", "NightOps", "LostCore",
+            "WardenX", "IronHex", "GhostNet", "PhantomX", "HexDrift", "WarpCore"
+        ];
+        const base = themedNames[Math.floor(Math.random() * themedNames.length)] || "Unknown";
+        const suffix = Math.floor(Math.random() * 90) + 10; // 10-99
+        return this.normalizePlayerName(`${base}${suffix}`);
     }
 
     showMenuContainer (show) {

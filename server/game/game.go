@@ -1141,20 +1141,21 @@ func updateUnits(player *Player, duration time.Duration, players []*Player) {
 			continue
 		}
 
-		// Update unit position
-		if unit.UpdatePosition(duration, units) {
-			applyPortalTeleportForUnit(unit, portalPairs)
-			applyWildPortalTeleportForUnit(unit, wildPortals)
-
-			if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
-				math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
-				unit.MarkForRemoval()
-				handleUnitDestroyed(unit)
-				continue
+			// Update unit position and always evaluate portal teleport, even when
+			// movement snapped to target in this tick (UpdatePosition returns false).
+			moved := unit.UpdatePosition(duration, units)
+			teleportedOwned := applyPortalTeleportForUnit(unit, portalPairs)
+			teleportedWild := applyWildPortalTeleportForUnit(unit, wildPortals)
+			if moved || teleportedOwned || teleportedWild {
+				if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
+					math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
+					unit.MarkForRemoval()
+					handleUnitDestroyed(unit)
+					continue
+				}
+				updatedUnits = append(updatedUnits, unit)
 			}
-			updatedUnits = append(updatedUnits, unit)
 		}
-	}
 
 	// Trigger a single update event for all updated units
 	if len(updatedUnits) > 0 {
