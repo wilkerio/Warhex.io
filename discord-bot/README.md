@@ -1,10 +1,9 @@
 # Warhex Discord Bot
 
-Bot de Discord separado para `Warhex.io` com comandos slash:
+Bot de Discord separado para `Warhex.io` com foco em ranking.
 
-- `/rank` -> Top 10 global (Supabase)
-- `/profile <player>` -> perfil/estatisticas
-- `/status` -> status do bot e opcionalmente do servidor
+- `/rank` -> Top 10 atual/global
+- `w!rank` -> comando por prefixo (texto)
 
 ## Setup
 
@@ -25,4 +24,4 @@ Bot de Discord separado para `Warhex.io` com comandos slash:
 ## Observacoes
 
 - Use `SUPABASE_SERVICE_ROLE_KEY` apenas no servidor/bot (nunca no client).
-- Se definir `GAME_STATUS_URL`, o `/status` tenta consultar esse endpoint JSON.
+- Se definir `GAME_STATUS_URL`, o `/rank atual` tenta consultar esse endpoint JSON.

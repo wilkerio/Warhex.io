@@ -3,11 +3,11 @@
     "guildId": "1303903882816127048",
     "modules": {
       "rankCommand": true,
-      "profileCommand": true,
-      "statusCommand": true,
+      "profileCommand": false,
+      "statusCommand": false,
       "welcomeOnJoin": false,
       "welcomeDmOnJoin": false,
-      "aiAutoChat": true,
+      "aiAutoChat": false,
       "announcements": false,
       "autoStatusPost": false
     },
@@ -24,7 +24,7 @@
       "footerText": "Warhex.io"
     },
     "features": {
-      "allowPublicProfileLookup": true,
+      "allowPublicProfileLookup": false,
       "allowGlobalRank": true
     },
     "updatedAt": "2026-02-26T18:27:11.600Z"

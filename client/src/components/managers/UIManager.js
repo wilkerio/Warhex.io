@@ -1,7 +1,7 @@
 import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
-import { signUp, signIn, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings } from "../../network/supabaseClient.js";
+import { signUp, signIn, signInWithDiscord, signInWithGoogle, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -58,6 +58,7 @@ export default class UIManager {
         this._autoBuildShowMenu = null;
         this._startupRandomSkinApplied = false;
         this.hideMenuSecondaryPanels = false;
+        this.discordOnboardingInProgress = false;
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -89,6 +90,7 @@ export default class UIManager {
         this.loadHudConfigFromAccount();
         this.setupLanguageSelector();
         this.applyLanguage({ refreshLeaderboard: true });
+        this.maybeHandlePendingSocialOnboarding();
     }
 
     t (key, vars = {}) {
@@ -174,6 +176,15 @@ export default class UIManager {
         setPlaceholder("#signup-email", "dialog.email");
         setPlaceholder("#signup-nickname", "dialog.nickname");
         setPlaceholder("#signup-password", "dialog.password");
+        const lang = this.languageManager.getLanguage();
+        const defaultDiscordLabel = lang === "pt" ? "Cadastrar com Discord" : (lang === "es" ? "Registrarse con Discord" : "Sign up with Discord");
+        const defaultGoogleLabel = lang === "pt" ? "Cadastrar com Google" : (lang === "es" ? "Registrarse con Google" : "Sign up with Google");
+        const discordLabel = this.t("dialog.signUpDiscord");
+        const googleLabel = this.t("dialog.signUpGoogle");
+        const discordBtn = document.querySelector("#signup-discord");
+        const googleBtn = document.querySelector("#signup-google");
+        if (discordBtn) discordBtn.textContent = (!discordLabel || discordLabel === "dialog.signUpDiscord") ? defaultDiscordLabel : discordLabel;
+        if (googleBtn) googleBtn.textContent = (!googleLabel || googleLabel === "dialog.signUpGoogle") ? defaultGoogleLabel : googleLabel;
         setText("#signup-submit", "dialog.createAccountBtn");
         setText("#signup-cancel", "dialog.cancel");
         setText("#signin-dialog h2", "dialog.loginTitle");
@@ -1478,6 +1489,8 @@ export default class UIManager {
                 signupEmail: "signup-email",
                 signupNickname: "signup-nickname",
                 signupPassword: "signup-password",
+                signupDiscord: "signup-discord",
+                signupGoogle: "signup-google",
                 signupSubmit: "signup-submit",
                 signupCancel: "signup-cancel",
                 // Signin dialog inputs
@@ -1855,6 +1868,8 @@ export default class UIManager {
         const guestButton = this.DOM.account.guestButton || document.getElementById("guest-button");
         const signupSubmit = this.DOM.account.signupSubmit || document.getElementById("signup-submit");
         const signupCancel = this.DOM.account.signupCancel || document.getElementById("signup-cancel");
+        const signupDiscord = this.DOM.account.signupDiscord || document.getElementById("signup-discord");
+        const signupGoogle = this.DOM.account.signupGoogle || document.getElementById("signup-google");
         const signinSubmit = this.DOM.account.signinSubmit || document.getElementById("signin-submit");
         const signinCancel = this.DOM.account.signinCancel || document.getElementById("signin-cancel");
 
@@ -1949,6 +1964,20 @@ export default class UIManager {
             });
         }
 
+        if (signupDiscord && !signupDiscord.dataset.boundSignupDiscord) {
+            signupDiscord.dataset.boundSignupDiscord = "1";
+            signupDiscord.addEventListener("click", async () => {
+                await this.startSocialOAuth("discord");
+            });
+        }
+
+        if (signupGoogle && !signupGoogle.dataset.boundSignupGoogle) {
+            signupGoogle.dataset.boundSignupGoogle = "1";
+            signupGoogle.addEventListener("click", async () => {
+                await this.startSocialOAuth("google");
+            });
+        }
+
         // Signin dialog handlers
         if (signinSubmit && !signinSubmit.dataset.boundSigninSubmit) {
             signinSubmit.dataset.boundSigninSubmit = "1";
@@ -2009,6 +2038,131 @@ export default class UIManager {
         const dialog = this.DOM.account.signinDialog || document.getElementById("signin-dialog");
         if (dialog) {
             dialog.style.display = show ? "flex" : "none";
+        }
+    }
+
+    normalizeNicknameForAccount (value = "") {
+        const sanitized = String(value || "")
+            .trim()
+            .replace(/\s+/g, "_")
+            .replace(/[^a-zA-Z0-9_]/g, "")
+            .slice(0, 20);
+        return sanitized;
+    }
+
+    resolveOAuthNicknameFromUser (user) {
+        const metadata = user?.user_metadata || {};
+        const candidates = [
+            metadata.preferred_username,
+            metadata.user_name,
+            metadata.full_name,
+            metadata.name,
+            metadata.nickname,
+            (user?.email || "").split("@")[0]
+        ];
+        for (const candidate of candidates) {
+            const normalized = this.normalizeNicknameForAccount(candidate);
+            if (normalized.length >= 3) return normalized;
+        }
+        return "";
+    }
+
+    async promptOAuthNicknameChoice (provider = "Discord") {
+        const user = await getCurrentUser();
+        const oauthNickname = this.resolveOAuthNicknameFromUser(user);
+        const currentNickname = this.core?.networkManager?.userData?.nickname || "";
+        const defaultNickname = currentNickname || oauthNickname || "Player";
+
+        const useOAuthNickname = confirm(this.t("dialog.oauthNicknameChoice", { provider, nickname: oauthNickname || provider }));
+        let targetNickname = "";
+
+        if (useOAuthNickname && oauthNickname) {
+            targetNickname = oauthNickname;
+        } else {
+            const custom = prompt(this.t("dialog.customNicknamePrompt"), defaultNickname);
+            if (custom == null) return null;
+            targetNickname = this.normalizeNicknameForAccount(custom);
+        }
+
+        if (targetNickname.length < 3) {
+            alert(this.t("error.nicknameShort"));
+            return null;
+        }
+
+        if (!/^[a-zA-Z0-9_]+$/.test(targetNickname)) {
+            alert(this.t("error.nicknameInvalid"));
+            return null;
+        }
+
+        return targetNickname;
+    }
+
+    async startSocialOAuth (provider = "discord") {
+        const normalizedProvider = String(provider || "").toLowerCase();
+        try {
+            localStorage.setItem("warhex_oauth_pending_provider", normalizedProvider);
+        } catch (e) {}
+
+        try {
+            if (normalizedProvider === "google") {
+                await signInWithGoogle();
+            } else {
+                await signInWithDiscord();
+            }
+        } catch (error) {
+            try { localStorage.removeItem("warhex_oauth_pending_provider"); } catch (e) {}
+            const rawMessage = String(error?.message || "");
+            const normalizedMessage = rawMessage.toLowerCase();
+            const providerDisabled = normalizedMessage.includes("unsupported provider") || normalizedMessage.includes("provider is not enabled");
+            if (providerDisabled) {
+                alert(this.t(normalizedProvider === "google" ? "error.googleProviderDisabled" : "error.discordProviderDisabled"));
+                return;
+            }
+            alert(this.t("error.discordLoginFailed", { message: error.message }));
+        }
+    }
+
+    async maybeHandlePendingSocialOnboarding () {
+        if (this.discordOnboardingInProgress) return;
+        let pendingProvider = "";
+        try {
+            pendingProvider = String(localStorage.getItem("warhex_oauth_pending_provider") || "").toLowerCase();
+        } catch (e) {
+            pendingProvider = "";
+        }
+        if (!pendingProvider) return;
+        if (!this.core?.networkManager?.loggedIn) return;
+
+        this.discordOnboardingInProgress = true;
+        try {
+            try { localStorage.removeItem("warhex_oauth_pending_provider"); } catch (e) {}
+
+            const providerLabel = pendingProvider === "google" ? "Google" : "Discord";
+            const selectedNickname = await this.promptOAuthNicknameChoice(providerLabel);
+            if (selectedNickname) {
+                await updateAuthNickname(selectedNickname);
+                try {
+                    await this.core?.networkManager?.updateUserData?.({ nickname: selectedNickname });
+                } catch (e) {}
+                try {
+                    if (this.core?.networkManager?.userData) {
+                        this.core.networkManager.userData.nickname = selectedNickname;
+                    }
+                } catch (e) {}
+                this.updateAccount();
+                this.updateAccountButton();
+            }
+
+            if (pendingProvider === "discord") {
+                const shouldOpenInvite = confirm(this.t("dialog.discordJoinPrompt"));
+                if (shouldOpenInvite) {
+                    window.open("https://discord.gg/YAEG9qJGMh", "_blank", "noopener,noreferrer");
+                }
+            }
+        } catch (error) {
+            alert(this.t("error.discordLoginFailed", { message: error?.message || "Unknown error" }));
+        } finally {
+            this.discordOnboardingInProgress = false;
         }
     }
 
@@ -2232,6 +2386,7 @@ export default class UIManager {
                 if (discordButton) discordButton.style.display = "none";
                 if (shopButton) shopButton.style.display = "none";
                 accountDividers.forEach((hr) => { hr.style.display = "none"; });
+                this.maybeHandlePendingSocialOnboarding();
             } else {
                 this.DOM.account.accountButton.classList.remove("login");
                 this.DOM.account.accountButton.textContent = this.t("menu.login");
@@ -4241,6 +4396,21 @@ export default class UIManager {
     }
 
     closeSettingsAfterChoice () {
+        // If HUD edit session is active, fully close it and restore last saved HUD layout.
+        if (this.hudEditSessionOverlay) {
+            this.finishHudEditSession({ save: false });
+            return;
+        }
+
+        // Safety: never leave edit-mode artifacts behind when closing settings.
+        if (this.hudCustomizeMode) {
+            this.setHudCustomizeMode(false);
+            this.setHudEditPreviewPanels(false);
+            this.showUnitStyleEditor(false);
+            this.showKeybindEditor(false);
+            this.applyHudConfig();
+        }
+
         this.showGameSettingsPanel(false);
         this._pinAutoBuildMenuOpen = false;
         if (typeof this._autoBuildShowMenu === "function") {

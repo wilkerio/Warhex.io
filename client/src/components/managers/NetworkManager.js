@@ -13,7 +13,7 @@ import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
-import { clearLocalAuthState, fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
+import { clearLocalAuthState, fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, updateUserProgressStats, updateUserProgressStatsKeepalive, ensureUserRow } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -298,7 +298,17 @@ export default class NetworkManager {
                 throw error;
             }
 
-            const row = Array.isArray(data) ? data[0] : data;
+            // Get nickname from auth metadata if not in table
+            const user = await getCurrentUser();
+            let row = Array.isArray(data) ? data[0] : data;
+            if (!row && user && this.userId) {
+                console.log("No users row found. Ensuring row exists for OAuth/new account:", this.userId);
+                const ensured = await ensureUserRow(user, this.userData?.nickname || "");
+                if (ensured?.success && ensured?.data) {
+                    row = ensured.data;
+                }
+            }
+
             if (row) {
                 this.userData = row;
                 this.userData.statistics = {
@@ -336,8 +346,7 @@ export default class NetworkManager {
                 console.log('No user data found in table for id:', this.userId);
                 this.userData = null;
             }
-            // Get nickname from auth metadata if not in table
-            const user = await getCurrentUser();
+
             if (user && user.user_metadata && user.user_metadata.nickname) {
                 if (!this.userData) {
                     this.userData = {};

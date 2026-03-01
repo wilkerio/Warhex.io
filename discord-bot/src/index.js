@@ -4,7 +4,7 @@ const { commandMap } = require("./commands");
 const { createDashboardServer } = require("./dashboard/server");
 const { getGuildSettings } = require("./dashboard/store");
 const { generateAiWelcomeTemplate, generateAiDiscordReply, isAiWelcomeEnabled } = require("./openai");
-const PREFIX = "w!";
+const PREFIX = "w!rank";
 const aiChatMemory = new Map();
 const aiAmbientCooldowns = new Map();
 const aiAmbientActiveWindows = new Map();
@@ -24,7 +24,7 @@ const client = new Client({
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`[Discord Bot] Logged in as ${readyClient.user.tag}`);
-  console.log(`[Discord Bot] Prefix commands enabled: ${PREFIX}*`);
+  console.log(`[Discord Bot] Prefix command enabled: ${PREFIX}`);
   console.log("[Discord Bot] If prefix commands do not respond, enable 'Message Content Intent' in Discord Developer Portal > Bot.");
   if (!config.enableGuildMembersIntent) {
     console.log("[Discord Bot] Welcome on join is OFF (set BOT_ENABLE_GUILD_MEMBERS_INTENT=true and enable 'Server Members Intent' in Discord Portal).");
@@ -63,9 +63,6 @@ function createTextCommandContext(message, commandName, args) {
   let replied = false;
   const optionMap = new Map();
 
-  if (commandName === "profile") {
-    optionMap.set("player", args.join(" ").trim());
-  }
   if (commandName === "rank") {
     const modeRaw = (args[0] || "").toLowerCase();
     if (["atual", "global"].includes(modeRaw)) optionMap.set("modo", modeRaw);
@@ -327,96 +324,19 @@ client.on(Events.MessageCreate, async (message) => {
     if (handled) return;
   }
 
-  if (!content.toLowerCase().startsWith(PREFIX)) return;
+  const prefixMatch = content.match(/^w!rank(?:\s+(.+))?$/i);
+  if (!prefixMatch) return;
 
-  const raw = content.slice(PREFIX.length).trim();
-  if (!raw) {
-    await message.reply("Use `w!rank`, `w!profile <nome>`, `w!status`, `w!chat <mensagem>`, `w!testwelcome` ou `w!testwelcomedm`.");
-    return;
-  }
-
-  const [commandNameRaw, ...args] = raw.split(/\s+/);
-  const commandName = commandNameRaw.toLowerCase();
-
-  if (commandName === "testwelcome") {
-    if (!message.guild) {
-      await message.reply("Use esse comando dentro de um servidor.");
-      return;
-    }
-    const fakeMember = message.member;
-    if (!fakeMember) {
-      await message.reply("Nao consegui identificar seu membro no servidor.");
-      return;
-    }
-    try {
-      const result = await sendWelcomeToConfiguredChannel(fakeMember, { isTest: true, requestedBy: message.author });
-      if (!result.ok) {
-        const hints = {
-          welcome_disabled: "Boas-vindas desativadas neste servidor (ative no painel).",
-          welcome_channel_missing: "Defina o canal de boas-vindas no painel.",
-          invalid_channel: "Canal configurado invalido ou sem permissao."
-        };
-        await message.reply(hints[result.reason] || `Nao foi possivel testar (${result.reason}).`);
-        return;
-      }
-      await message.reply(`Teste de boas-vindas enviado no canal <#${result.channelId}>.`);
-    } catch (error) {
-      console.error("w!testwelcome failed:", error);
-      await message.reply("Erro ao enviar teste de boas-vindas.");
-    }
-    return;
-  }
-
-  if (commandName === "testwelcomedm") {
-    if (!message.guild) {
-      await message.reply("Use esse comando dentro de um servidor.");
-      return;
-    }
-    const fakeMember = message.member;
-    if (!fakeMember) {
-      await message.reply("Nao consegui identificar seu membro no servidor.");
-      return;
-    }
-    try {
-      const result = await sendWelcomeDmToMember(fakeMember, { isTest: true });
-      if (!result.ok) {
-        const hints = {
-          welcome_dm_disabled: "Boas-vindas privadas desativadas neste servidor (ative no painel).",
-          dm_failed: "Nao consegui enviar DM (usuario bloqueou DM ou falta permissao)."
-        };
-        await message.reply(hints[result.reason] || `Nao foi possivel testar DM (${result.reason}).`);
-        return;
-      }
-      await message.reply("Teste de boas-vindas privada enviado na sua DM.");
-    } catch (error) {
-      console.error("w!testwelcomedm failed:", error);
-      await message.reply("Erro ao enviar teste de DM.");
-    }
-    return;
-  }
-
-  if (commandName === "chat" || commandName === "ia") {
-    const userText = args.join(" ").trim();
-    if (!userText) {
-      await message.reply("Use `w!chat <mensagem>` para conversar comigo.");
-      return;
-    }
-    const handled = await tryAiConversationReply(message, userText);
-    if (!handled) await message.reply("IA indisponivel agora. Tente novamente em instantes.");
-    return;
-  }
-
-  const command = commandMap.get(commandName);
-  if (!command) {
-    await message.reply(`Comando nao encontrado. Tente: \`${PREFIX}rank\`, \`${PREFIX}profile nome\`, \`${PREFIX}status\`, \`${PREFIX}chat oi\`, \`${PREFIX}testwelcome\`, \`${PREFIX}testwelcomedm\``);
-    return;
-  }
+  const raw = String(prefixMatch[1] || "").trim();
+  const args = raw ? raw.split(/\s+/) : [];
+  const command = commandMap.get("rank");
+  if (!command) return;
 
   try {
-    const ctx = createTextCommandContext(message, commandName, args);
+    const ctx = createTextCommandContext(message, "rank", args);
     await command.execute(ctx);
   } catch (error) {
-    console.error(`Prefix command ${PREFIX}${commandName} failed:`, error);
+    console.error(`Prefix command ${PREFIX} failed:`, error);
     await message.reply("Erro ao executar comando.");
   }
 });

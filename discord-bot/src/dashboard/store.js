@@ -28,8 +28,8 @@ function getDefaultGuildSettings(guildId) {
     guildId,
     modules: {
       rankCommand: true,
-      profileCommand: true,
-      statusCommand: true,
+      profileCommand: false,
+      statusCommand: false,
       welcomeOnJoin: false,
       welcomeDmOnJoin: false,
       aiAutoChat: false,
@@ -49,7 +49,7 @@ function getDefaultGuildSettings(guildId) {
       footerText: "Warhex.io"
     },
     features: {
-      allowPublicProfileLookup: true,
+      allowPublicProfileLookup: false,
       allowGlobalRank: true
     },
     updatedAt: null
@@ -58,7 +58,7 @@ function getDefaultGuildSettings(guildId) {
 
 function getGuildSettings(guildId) {
   const all = readAll();
-  return {
+  const merged = {
     ...getDefaultGuildSettings(guildId),
     ...(all[guildId] || {}),
     modules: {
@@ -78,6 +78,19 @@ function getGuildSettings(guildId) {
       ...((all[guildId] || {}).features || {})
     }
   };
+
+  // Bot simplificado: manter apenas rank.
+  merged.modules.profileCommand = false;
+  merged.modules.statusCommand = false;
+  merged.modules.welcomeOnJoin = false;
+  merged.modules.welcomeDmOnJoin = false;
+  merged.modules.aiAutoChat = false;
+  merged.modules.announcements = false;
+  merged.modules.autoStatusPost = false;
+  merged.features.allowPublicProfileLookup = false;
+  merged.features.allowGlobalRank = true;
+
+  return merged;
 }
 
 function saveGuildSettings(guildId, incoming) {

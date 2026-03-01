@@ -330,88 +330,16 @@
             <h3>Modulos</h3>
             <div class="checks">
               ${checkRow("Comando /rank", "modules.rankCommand", s.modules.rankCommand)}
-              ${checkRow("Comando /profile", "modules.profileCommand", s.modules.profileCommand)}
-              ${checkRow("Comando /status", "modules.statusCommand", s.modules.statusCommand)}
-              ${checkRow("Boas-vindas ao entrar", "modules.welcomeOnJoin", s.modules.welcomeOnJoin)}
-              ${checkRow("Boas-vindas no privado (DM)", "modules.welcomeDmOnJoin", s.modules.welcomeDmOnJoin)}
-              ${checkRow("Movimentar servidor (IA conversa no chat)", "modules.aiAutoChat", s.modules.aiAutoChat)}
-              ${checkRow("Anuncios", "modules.announcements", s.modules.announcements)}
-              ${checkRow("Auto post de status", "modules.autoStatusPost", s.modules.autoStatusPost)}
-              ${checkRow("Permitir rank global", "features.allowGlobalRank", s.features.allowGlobalRank)}
-              ${checkRow("Permitir profile publico", "features.allowPublicProfileLookup", s.features.allowPublicProfileLookup)}
             </div>
-          </section>
-
-          <section class="card">
-            <h3>Canais</h3>
-            <div class="field">
-              <label>ID do usuario (teste para mencao)</label>
-              <input id="channelTestUserIdInput" type="text" placeholder="Seu ID (opcional para anuncios/logs/status, usado no welcome)">
-            </div>
-            <div class="field">
-              <label>Canal da IA (movimentar servidor)</label>
-              <div style="display:flex; gap:8px; align-items:center;">
-                <select data-path="channels.aiChatChannelId">${buildChannelOptions(s.channels.aiChatChannelId)}</select>
-                <button id="testAiChatChannelBtn" type="button">Testar IA</button>
-              </div>
-            </div>
-            <div class="field">
-              <label>Canal de boas-vindas</label>
-              <div style="display:flex; gap:8px; align-items:center;">
-                <select data-path="channels.welcomeChannelId">${buildChannelOptions(s.channels.welcomeChannelId)}</select>
-                <button id="testWelcomeChannelInlineBtn" type="button">Testar</button>
-              </div>
-            </div>
-            <div class="field">
-              <label>Canal de anuncios</label>
-              <div style="display:flex; gap:8px; align-items:center;">
-                <select data-path="channels.announcementsChannelId">${buildChannelOptions(s.channels.announcementsChannelId)}</select>
-                <button id="testAnnouncementsChannelBtn" type="button">Testar</button>
-              </div>
-            </div>
-            <div class="field">
-              <label>Canal de logs</label>
-              <div style="display:flex; gap:8px; align-items:center;">
-                <select data-path="channels.logsChannelId">${buildChannelOptions(s.channels.logsChannelId)}</select>
-                <button id="testLogsChannelBtn" type="button">Testar</button>
-              </div>
-            </div>
-            <div class="field">
-              <label>Canal de status</label>
-              <div style="display:flex; gap:8px; align-items:center;">
-                <select data-path="channels.statusChannelId">${buildChannelOptions(s.channels.statusChannelId)}</select>
-                <button id="testStatusChannelBtn" type="button">Testar</button>
-              </div>
-            </div>
-          </section>
-
-          <section class="card">
-            <h3>Mensagens</h3>
-            <div class="field">
-              <label>Mensagem de boas-vindas</label>
-              <textarea data-path="messages.welcomeText" placeholder="Ex: Bem-vindo {user}! Objetivo: construir e defender sua base, evoluir tropas e subir no rank.">${s.messages.welcomeText || ""}</textarea>
-            </div>
-            <div class="muted" style="font-size:12px; margin-top:-4px; margin-bottom:8px;">Variaveis: <code>{user}</code>, <code>{username}</code>, <code>{server}</code></div>
-            <div class="field">
-              <label>Mensagem privada (DM)</label>
-              <textarea data-path="messages.welcomeDmText" placeholder="Ex: Oi {username}! No Warhex.io voce constroi base, gerencia power e evolui tropas para dominar o mapa.">${s.messages.welcomeDmText || ""}</textarea>
-            </div>
-            <div class="field" style="display:flex; gap:8px; flex-wrap:wrap;">
-              <button id="testWelcomeDmInlineBtn" type="button">Testar mensagem privada</button>
-            </div>
-            <div class="field">
-              <label>Footer personalizado</label>
-              <input type="text" data-path="messages.footerText" value="${(s.messages.footerText || "").replace(/"/g, "&quot;")}">
-            </div>
-            <div class="muted" style="font-size:12px;">Atualizado em: ${s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "nunca"}</div>
           </section>
 
           <section class="card">
             <h3>Resumo</h3>
             <div class="field"><label>Servidor</label><div>${guild.name}</div></div>
             <div class="field"><label>ID</label><div class="muted">${guild.id}</div></div>
-            <div class="field"><label>Canais detectados</label><div>${state.channels.length}</div></div>
-            <div class="field"><label>Dica</label><div class="muted">Depois podemos ligar isso em comandos reais por servidor (canal de anúncios, logs, etc).</div></div>
+            <div class="field"><label>Comando de Prefixo</label><div><code>w!rank</code></div></div>
+            <div class="field"><label>Slash Command</label><div><code>/rank</code></div></div>
+            <div class="field"><label>Dica</label><div class="muted">Bot simplificado: somente ranking.</div></div>
           </section>
 
           <div class="actions">
@@ -423,12 +351,6 @@
 
       root.querySelector("#reloadGuildBtn").addEventListener("click", () => selectGuild(guild.id));
       root.querySelector("#saveGuildBtn").addEventListener("click", saveSelectedGuildSettings);
-      root.querySelector("#testWelcomeChannelInlineBtn")?.addEventListener("click", () => testConfiguredChannel("welcome"));
-      root.querySelector("#testAiChatChannelBtn")?.addEventListener("click", () => testConfiguredChannel("ai_chat"));
-      root.querySelector("#testAnnouncementsChannelBtn")?.addEventListener("click", () => testConfiguredChannel("announcements"));
-      root.querySelector("#testLogsChannelBtn")?.addEventListener("click", () => testConfiguredChannel("logs"));
-      root.querySelector("#testStatusChannelBtn")?.addEventListener("click", () => testConfiguredChannel("status"));
-      root.querySelector("#testWelcomeDmInlineBtn")?.addEventListener("click", () => testWelcome("dm"));
     }
 
     function setByPath(obj, path, value) {
@@ -458,6 +380,20 @@
     async function saveSelectedGuildSettings() {
       if (!state.selectedGuildId) return;
       const payload = collectSettingsFromForm();
+      payload.modules = {
+        rankCommand: payload?.modules?.rankCommand !== false,
+        profileCommand: false,
+        statusCommand: false,
+        welcomeOnJoin: false,
+        welcomeDmOnJoin: false,
+        aiAutoChat: false,
+        announcements: false,
+        autoStatusPost: false
+      };
+      payload.features = {
+        allowGlobalRank: true,
+        allowPublicProfileLookup: false
+      };
       const result = await api(`/api/guilds/${state.selectedGuildId}/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

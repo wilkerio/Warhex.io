@@ -76,6 +76,174 @@ export async function signIn(email, password) {
     return data;
 }
 
+export async function signInWithDiscord() {
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "discord",
+        options: {
+            redirectTo,
+            // Keep control in UI so we can surface friendly errors before navigation.
+            skipBrowserRedirect: true
+        }
+    });
+    if (error) throw error;
+    if (!data?.url) throw new Error("Missing Discord OAuth URL.");
+    if (typeof window !== "undefined") {
+        window.location.assign(data.url);
+    }
+    return data;
+}
+
+export async function signInWithGoogle() {
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+            redirectTo,
+            // Keep control in UI so we can surface friendly errors before navigation.
+            skipBrowserRedirect: true,
+            // Force Google account chooser so user can pick which email to use.
+            queryParams: {
+                prompt: "select_account"
+            }
+        }
+    });
+    if (error) throw error;
+    if (!data?.url) throw new Error("Missing Google OAuth URL.");
+    if (typeof window !== "undefined") {
+        window.location.assign(data.url);
+    }
+    return data;
+}
+
+export async function updateAuthNickname(nickname) {
+    const cleanNickname = String(nickname || "").trim();
+    if (!cleanNickname) throw new Error("Nickname is required.");
+    const { data, error } = await supabase.auth.updateUser({
+        data: {
+            nickname: cleanNickname
+        }
+    });
+    if (error) throw error;
+    return data;
+}
+
+function deriveNicknameFromAuthUser(authUser, preferredNickname = "") {
+    const normalize = (value) => String(value || "")
+        .trim()
+        .replace(/\s+/g, "_")
+        .replace(/[^a-zA-Z0-9_]/g, "")
+        .slice(0, 20);
+
+    const candidates = [
+        preferredNickname,
+        authUser?.user_metadata?.nickname,
+        authUser?.user_metadata?.preferred_username,
+        authUser?.user_metadata?.user_name,
+        authUser?.user_metadata?.full_name,
+        authUser?.user_metadata?.name,
+        (authUser?.email || "").split("@")[0],
+        "Player"
+    ];
+
+    for (const candidate of candidates) {
+        const value = normalize(candidate);
+        if (value.length >= 3) return value;
+    }
+    return "Player";
+}
+
+function normalizeUserRow(row = {}) {
+    const statistics = {
+        ...(row.statistics || {}),
+        highscore: Number(row.highscore ?? row.statistics?.highscore ?? 0),
+        kills: Number(row.total_kills ?? row.statistics?.kills ?? 0),
+        playtime: Number(row.playtime ?? row.statistics?.playtime ?? 0)
+    };
+    const progression = {
+        ...(row.progression || {}),
+        level: Number(row.level ?? row.progression?.level ?? 1),
+        xp: Number(row.xp ?? row.progression?.xp ?? 0)
+    };
+    return {
+        ...row,
+        statistics,
+        progression
+    };
+}
+
+export async function ensureUserRow(authUser, preferredNickname = "") {
+    try {
+        const userId = authUser?.id;
+        if (!userId) return { success: false, error: "missing_user_id", data: null };
+
+        const nickname = deriveNicknameFromAuthUser(authUser, preferredNickname);
+        const usernameBase = `${nickname}_${String(userId).slice(0, 6)}`.replace(/[^a-zA-Z0-9_]/g, "");
+        const payloadCandidates = [
+            // Rich payload (for newer schemas)
+            {
+                id: userId,
+                email: authUser?.email || null,
+                nickname,
+                username: usernameBase.slice(0, 20),
+                highscore: 0,
+                total_kills: 0,
+                playtime: 0,
+                level: 1,
+                xp: 0,
+                coins: 0,
+                selected_skin: 0,
+                progression: { level: 1, xp: 0 },
+                statistics: { highscore: 0, kills: 0, playtime: 0 },
+                skins: { equipped: 0, unlocked: [0] }
+            },
+            // Common payload (legacy schemas)
+            {
+                id: userId,
+                email: authUser?.email || null,
+                nickname,
+                highscore: 0,
+                total_kills: 0,
+                playtime: 0,
+                progression: { level: 1, xp: 0 },
+                statistics: { highscore: 0, kills: 0, playtime: 0 }
+            },
+            // Minimal payload (guarantee core identity fields)
+            {
+                id: userId,
+                email: authUser?.email || null,
+                nickname
+            },
+            // Absolute fallback if email column is absent/not writable
+            {
+                id: userId,
+                nickname
+            }
+        ];
+
+        let lastError = null;
+        for (const payload of payloadCandidates) {
+            const { data, error } = await supabase
+                .from("users")
+                .upsert(payload, { onConflict: "id" })
+                .select("*")
+                .single();
+
+            if (!error) {
+                return { success: true, data: normalizeUserRow(data) };
+            }
+
+            lastError = error;
+        }
+
+        console.error("Error ensuring user row:", lastError);
+        return { success: false, error: lastError, data: null };
+    } catch (error) {
+        console.error("Error in ensureUserRow:", error);
+        return { success: false, error, data: null };
+    }
+}
+
 export async function signOut() {
     let authError = null;
     try {

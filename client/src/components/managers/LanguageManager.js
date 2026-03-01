@@ -44,6 +44,12 @@ const DICT = {
         "dialog.email": "Email",
         "dialog.nickname": "Nickname",
         "dialog.password": "Password",
+        "dialog.signUpDiscord": "Sign up with Discord",
+        "dialog.signUpGoogle": "Sign up with Google",
+        "dialog.oauthNicknameChoice": "Use your {provider} nickname ({nickname}) for this account?\nPress OK to use it or Cancel to type another.",
+        "dialog.discordNicknameChoice": "Use your Discord nickname ({nickname}) for this account?\nPress OK for Discord nickname or Cancel to type another.",
+        "dialog.customNicknamePrompt": "Type the nickname you want to use:",
+        "dialog.discordJoinPrompt": "Your Discord login worked. Do you want to join the Warhex Discord server now?",
         "dialog.createAccountBtn": "Create Account",
         "dialog.cancel": "Cancel",
         "dialog.loginTitle": "Login",
@@ -133,7 +139,10 @@ const DICT = {
         "error.signupFailed": "Sign up failed: {message}",
         "success.accountCreated": "Account created! Please check your email to verify your account.",
         "error.signinMissing": "Please enter email and password.",
-        "error.loginFailed": "Login failed: {message}"
+        "error.loginFailed": "Login failed: {message}",
+        "error.discordProviderDisabled": "Discord login is not configured yet. Enable Discord provider in Supabase Auth settings.",
+        "error.googleProviderDisabled": "Google login is not configured yet. Enable Google provider in Supabase Auth settings.",
+        "error.discordLoginFailed": "Discord login failed: {message}"
     },
     pt: {
         "language.label": "Idioma",
@@ -177,6 +186,12 @@ const DICT = {
         "dialog.email": "E-mail",
         "dialog.nickname": "Apelido",
         "dialog.password": "Senha",
+        "dialog.signUpDiscord": "Cadastrar com Discord",
+        "dialog.signUpGoogle": "Cadastrar com Google",
+        "dialog.oauthNicknameChoice": "Quer usar seu nick do {provider} ({nickname}) nesta conta?\nOK para usar ou Cancelar para escolher outro.",
+        "dialog.discordNicknameChoice": "Quer usar seu nick do Discord ({nickname}) nesta conta?\nOK para usar o Discord ou Cancelar para escolher outro.",
+        "dialog.customNicknamePrompt": "Digite o nick que voce quer usar:",
+        "dialog.discordJoinPrompt": "Seu login com Discord funcionou. Deseja entrar no servidor do Discord do Warhex agora?",
         "dialog.createAccountBtn": "Criar conta",
         "dialog.cancel": "Cancelar",
         "dialog.loginTitle": "Entrar",
@@ -266,7 +281,10 @@ const DICT = {
         "error.signupFailed": "Cadastro falhou: {message}",
         "success.accountCreated": "Conta criada! Verifique seu e-mail para confirmar.",
         "error.signinMissing": "Digite e-mail e senha.",
-        "error.loginFailed": "Falha no login: {message}"
+        "error.loginFailed": "Falha no login: {message}",
+        "error.discordProviderDisabled": "O login com Discord ainda nao esta configurado. Ative o provider Discord no Auth do Supabase.",
+        "error.googleProviderDisabled": "O login com Google ainda nao esta configurado. Ative o provider Google no Auth do Supabase.",
+        "error.discordLoginFailed": "Falha no login com Discord: {message}"
     },
     es: {
         "language.label": "Idioma",
@@ -309,6 +327,12 @@ const DICT = {
         "dialog.createAccountDesc": "¡Únete a Warhex.io y desbloquea funciones exclusivas!",
         "dialog.email": "Correo",
         "dialog.nickname": "Apodo",
+        "dialog.signUpDiscord": "Registrarse con Discord",
+        "dialog.signUpGoogle": "Registrarse con Google",
+        "dialog.oauthNicknameChoice": "Quieres usar tu nick de {provider} ({nickname}) en esta cuenta?\nOK para usarlo o Cancelar para escribir otro.",
+        "dialog.discordNicknameChoice": "Quieres usar tu nick de Discord ({nickname}) en esta cuenta?\nOK para usar Discord o Cancelar para escribir otro.",
+        "dialog.customNicknamePrompt": "Escribe el nick que quieres usar:",
+        "dialog.discordJoinPrompt": "Tu inicio con Discord funciono. Quieres unirte ahora al servidor de Discord de Warhex?",
         "dialog.password": "Contraseña",
         "dialog.createAccountBtn": "Crear cuenta",
         "dialog.cancel": "Cancelar",
@@ -399,7 +423,10 @@ const DICT = {
         "error.signupFailed": "Registro fallido: {message}",
         "success.accountCreated": "¡Cuenta creada! Revisa tu correo para verificarla.",
         "error.signinMissing": "Ingresa correo y contraseña.",
-        "error.loginFailed": "Error de inicio de sesión: {message}"
+        "error.loginFailed": "Error de inicio de sesión: {message}",
+        "error.discordProviderDisabled": "El inicio con Discord aun no esta configurado. Activa el proveedor Discord en Auth de Supabase.",
+        "error.googleProviderDisabled": "El inicio con Google aun no esta configurado. Activa el proveedor Google en Auth de Supabase.",
+        "error.discordLoginFailed": "Error de inicio con Discord: {message}"
     }
 };
 
@@ -448,3 +475,5 @@ export default class LanguageManager {
         return template.replace(/\{(\w+)\}/g, (_, name) => `${vars[name] ?? ""}`);
     }
 }
+
+
