@@ -1,4 +1,4 @@
-// Importing required libraries
+﻿// Importing required libraries
 const express = require("express");
 const axios = require("axios");
 const { Client, GatewayIntentBits } = require("discord.js");
@@ -17,10 +17,6 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware setup
 app.use(cookieParser()); // Middleware to parse cookies
-app.use(cors({
-    origin: ["https://blobl.io"], // frontend URL
-    credentials: true, // Enable sending cookies
-}));
 app.use(express.json());
 
 // Initialize Firebase Admin
@@ -59,6 +55,40 @@ const {
     ACHIEVEMENT_45M_SCORE_ROLE_ID,
     ACHIEVEMENT_50M_SCORE_ROLE_ID,
 } = process.env;
+
+const parseCSV = (value) => (value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const configuredOrigins = parseCSV(process.env.CORS_ALLOWED_ORIGINS);
+const allowedOrigins = configuredOrigins.length > 0
+    ? configuredOrigins
+    : [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "http://127.0.0.1:9090",
+        "http://127.0.0.1:9091"
+    ];
+
+const APP_URL = (process.env.APP_URL || allowedOrigins[0] || "http://localhost:3000").trim();
+const COOKIE_DOMAIN = (process.env.COOKIE_DOMAIN || "").trim();
+const cookieDomainOption = COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {};
+const isLocalOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || "");
+const isValidOrigin = (origin) => Boolean(origin) && (allowedOrigins.includes(origin) || isLocalOrigin(origin));
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || isValidOrigin(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+}));
 
 const ROLES = ["admin", "moderator"];
 
@@ -299,18 +329,18 @@ const setTokens = (res, accessToken, refreshToken) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "Strict",
-        maxAge: 15 * 60 * 1000, // Access token for 15 minutes
-        domain: ".blobl.io", // Ensure cookies are accessible across subdomains
-        path: "/"
+        maxAge: 15 * 60 * 1000,
+        path: "/",
+        ...cookieDomainOption,
     });
 
     res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "Strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // Refresh token for 7 days
-        domain: ".blobl.io", // Ensure cookies are accessible across subdomains
-        path: "/"
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: "/",
+        ...cookieDomainOption,
     });
 };
 
@@ -449,7 +479,7 @@ app.get("/discord/callback", async (req, res) => {
             // Send a message to the verified channel
             const channel = await client.channels.fetch(VERIFIED_CHANNEL_ID);
             if (channel) {
-                channel.send(`🎉 <@${user.id}> has successfully linked their Discord account to Blobl.io! You are now verified!`);
+                channel.send(`ðŸŽ‰ <@${user.id}> has successfully linked their Discord account to Blobl.io! You are now verified!`);
             } else {
                 console.error("Channel not found.");
             }
@@ -468,7 +498,7 @@ app.get("/discord/callback", async (req, res) => {
         setTokens(res, accessToken, refreshToken);
 
         // Redirect to main application
-        res.redirect(`https://blobl.io`);
+        res.redirect(APP_URL);
 
     } catch (error) {
         console.error("Error during Discord OAuth2 process:", error.response ? error.response.data : error.message);
@@ -494,8 +524,8 @@ app.get("/check", (req, res) => {
 
 // Logout endpoint
 app.post("/logout", (req, res) => {
-    res.clearCookie("accessToken", { domain: ".blobl.io", path: "/" });
-    res.clearCookie("refreshToken", { domain: ".blobl.io", path: "/" });
+    res.clearCookie("accessToken", { path: "/", ...cookieDomainOption });
+    res.clearCookie("refreshToken", { path: "/", ...cookieDomainOption });
     res.send("Logged out successfully");
 });
 
@@ -522,20 +552,14 @@ app.get("/user", authenticateToken, async (req, res) => {
 
 });
 
-// Utility function to validate the origin
-const isValidOrigin = (origin) => {
-    const allowedOrigins = ['http://127.0.0.1:8080', 'http://127.0.0.1:8081', , 'https://fra1.blobl.io'];
-    return allowedOrigins.includes(origin);
-};
-
 // Middleware to validate origin
 const validateOrigin = (req, res, next) => {
     const origin = req.headers.origin;
-    if (isValidOrigin(origin)) {
-        next(); // Proceed if the origin is valid
-    } else {
-        res.status(403).send('Forbidden: Invalid Origin'); // Block the request if the origin is invalid
+    if (!origin || isValidOrigin(origin)) {
+        next();
+        return;
     }
+    res.status(403).send("Forbidden: Invalid Origin");
 };
 
 app.post("/api/user", validateOrigin, async (req, res) => {
@@ -694,7 +718,7 @@ app.post("/api/user/update/stats", validateOrigin, async (req, res) => {
             if (channel) {
                 const roundPlaytimeFormatted = formatPlaytime(data.playtime); // Convert round playtime to human-readable format
                 channel.send(
-                    `🏆 <@${userId}> unlocked a new achievement: **${unlockedAchievement.key}**! (Playtime: **${roundPlaytimeFormatted}**)`
+                    `ðŸ† <@${userId}> unlocked a new achievement: **${unlockedAchievement.key}**! (Playtime: **${roundPlaytimeFormatted}**)`
                 );
             }
         }
@@ -715,3 +739,4 @@ app.post("/api/user/update/stats", validateOrigin, async (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
+

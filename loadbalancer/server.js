@@ -1,54 +1,79 @@
-const express = require('express');
+﻿const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const { spawn } = require('child_process');
 
-// Configuration
+const parseNumber = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const parseCsv = (value) => (value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const parsePorts = (value, fallback) => {
+    const parsed = parseCsv(value)
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0);
+    return parsed.length > 0 ? parsed : fallback;
+};
+
 const config = {
-    defaultPort: 3002,
-    serverPortStart: 9090,
-    maxServerCount: 2,
-    maxPlayerCount: 24, // Max players per server
-    serverStartCmd: 'go run main.go', // Command to start the server
-    serverAddress: "localhost", 
+    defaultPort: parseNumber(process.env.DIRECTORY_PORT, 3002),
+    serverPortStart: parseNumber(process.env.SERVER_PORT_START, 9090),
+    maxServerCount: parseNumber(process.env.MAX_SERVER_COUNT, 2),
+    maxPlayerCount: parseNumber(process.env.MAX_PLAYER_COUNT, 24),
+    serverAddress: (process.env.SERVER_ADDRESS || '127.0.0.1:9090').trim(),
+    serverCwd: (process.env.SERVER_CWD || '').trim(),
+    autoSpawnServers: String(process.env.AUTO_SPAWN_SERVERS || 'false').toLowerCase() === 'true',
+    allowedOrigins: parseCsv(process.env.CORS_ALLOWED_ORIGINS),
+    initialPorts: parsePorts(process.env.SERVER_PORTS, [9090, 9091])
 };
 
 const app = express();
 app.use(cors({
-    origin: ["https://blobl.io"], // Frontend URL
+    origin: (origin, callback) => {
+        if (!origin || config.allowedOrigins.length === 0 || config.allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error('Not allowed by CORS'));
+    }
 }));
 
-let servers = [];
-let serverProcesses = [];
+const servers = [];
+const serverProcesses = [];
 
-// Function to convert port to path segment
 function portToPathSegment(port) {
     const basePort = config.serverPortStart;
-    const pathIndex = port - basePort + 1; 
+    const pathIndex = port - basePort + 1;
     return `ffa${pathIndex}`;
 }
 
-// Function to fetch player count from the game server
 const getPlayerCount = async (port) => {
     try {
         const response = await axios.get(`http://127.0.0.1:${port}/playercount`);
         if (response.status === 200) {
-            return response.data.player_count; 
+            return Number(response.data.player_count || 0);
         }
-        console.error(`Error fetching player count: ${response.status}`);
-        return 0; // Return 0 if error occurs
+        return 0;
     } catch (error) {
-        console.error(`Failed to fetch player count from port ${port}:`, error);
-        return 0; // Return 0 in case of error
+        return 0;
     }
 };
 
-// Function to start a new game server and log its output
 const startServer = (port) => {
     return new Promise((resolve, reject) => {
+        if (!config.serverCwd) {
+            reject(new Error('SERVER_CWD is required when AUTO_SPAWN_SERVERS=true'));
+            return;
+        }
+
         const serverProcess = spawn('go', ['run', 'main.go'], {
-            cwd: 'g:\\Users\\Windows\\Downloads\\codes\\blobl.io-main\\blobl.io-main\\server\\main',
-            env: { ...process.env, PORT: port },
+            cwd: config.serverCwd,
+            env: { ...process.env, PORT: String(port) },
         });
 
         serverProcess.stdout.on('data', (data) => {
@@ -70,69 +95,84 @@ const startServer = (port) => {
     });
 };
 
-app.get('/get-server', async (req, res) => {
-    //!INFO: Balancing between 2 servers
+const ensureServersConfigured = () => {
+    if (servers.length > 0) return;
 
-    // Fetch player counts for all servers
+    const uniquePorts = [...new Set(config.initialPorts)].slice(0, config.maxServerCount);
+    uniquePorts.forEach((port) => {
+        servers.push({ port, playerCount: 0 });
+    });
+};
+
+app.get('/get-server', async (req, res) => {
+    if (servers.length === 0) {
+        return res.status(503).json({ error: 'No game servers configured' });
+    }
+
     const serverPlayerCounts = await Promise.all(
-        servers.map(async server => ({
+        servers.map(async (server) => ({
             server,
             playerCount: await getPlayerCount(server.port)
         }))
     );
 
-    // Destructure the first two servers
-    const [firstServer, secondServer] = serverPlayerCounts;
+    let selectedServer = serverPlayerCounts[0] || null;
 
-    // Determine which server to route the player to
-    let selectedServer = null;
+    for (const candidate of serverPlayerCounts) {
+        if (!selectedServer) {
+            selectedServer = candidate;
+            continue;
+        }
 
-    if (firstServer.playerCount < config.maxPlayerCount && secondServer.playerCount === 0) {
-        // Route to the first server if it's not full and the second server is empty
-        selectedServer = firstServer;
-    } else {
-        // Balance players between the two servers once the second server starts being used
-        if (firstServer.playerCount <= secondServer.playerCount && firstServer.playerCount < config.maxPlayerCount) {
-            selectedServer = firstServer;
-        } else if (secondServer.playerCount < config.maxPlayerCount) {
-            selectedServer = secondServer;
+        const selectedIsFull = selectedServer.playerCount >= config.maxPlayerCount;
+        const candidateHasRoom = candidate.playerCount < config.maxPlayerCount;
+
+        if (selectedIsFull && candidateHasRoom) {
+            selectedServer = candidate;
+            continue;
+        }
+
+        if (candidateHasRoom && candidate.playerCount < selectedServer.playerCount) {
+            selectedServer = candidate;
         }
     }
 
-    // Return the selected server or a 404 error if no servers are available
-    if (selectedServer) {
-        return res.json({
-            server_address: `${config.serverAddress}/${portToPathSegment(selectedServer.server.port)}`
-        });
-    } else {
+    if (!selectedServer || selectedServer.playerCount >= config.maxPlayerCount) {
         return res.status(404).json({ error: 'No available servers' });
     }
+
+    return res.json({
+        server_address: `${config.serverAddress}/${portToPathSegment(selectedServer.server.port)}`
+    });
 });
 
-// Start the directory server
 app.listen(config.defaultPort, async () => {
     console.log(`Directory server listening on port ${config.defaultPort}`);
 
-    // Start two game servers initially
-    try {
-        await Promise.all([
-            startServer(config.serverPortStart),
-            startServer(config.serverPortStart + 1),
-        ]);
-        console.log(`Started two game servers on ports ${config.serverPortStart} and ${config.serverPortStart + 1}`);
-    } catch (error) {
-        console.error('Error starting the servers:', error);
-        process.exit(1);
+    if (config.autoSpawnServers) {
+        try {
+            const portsToSpawn = [];
+            for (let i = 0; i < config.maxServerCount; i++) {
+                portsToSpawn.push(config.serverPortStart + i);
+            }
+
+            await Promise.all(portsToSpawn.map((port) => startServer(port)));
+            console.log(`Auto-started ${portsToSpawn.length} game servers.`);
+            return;
+        } catch (error) {
+            console.error('Error auto-starting servers:', error);
+            process.exit(1);
+        }
     }
+
+    ensureServersConfigured();
+    console.log(`Using preconfigured server ports: ${servers.map((s) => s.port).join(', ')}`);
 });
 
-// Clean up server processes on exit
 process.on('exit', () => {
-    console.log('Cleaning up server processes...');
-    serverProcesses.forEach(proc => proc.kill());
+    serverProcesses.forEach((proc) => proc.kill());
 });
 
-// Handle termination signals to clean up before exiting
 process.on('SIGINT', () => {
     process.exit();
 });

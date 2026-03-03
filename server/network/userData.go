@@ -1,4 +1,4 @@
-package network
+﻿package network
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"server/game"
 	"sync"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -254,6 +256,13 @@ func MapRoleToPermission(role string) game.Permission {
 	}
 }
 
+func getAuthAPIBaseURL() string {
+	baseURL := strings.TrimRight(os.Getenv("AUTH_API_BASE_URL"), "/")
+	if baseURL == "" {
+		return "http://127.0.0.1:3001"
+	}
+	return baseURL
+}
 type UserStatsPayload struct {
 	UserId string `json:"userId"`
 	Data   struct {
@@ -302,7 +311,7 @@ func UpdateUserStats(userId string, score uint32, kills uint32, playtime time.Du
 	}
 
 	// Create the HTTP request
-	req, err := http.NewRequest(http.MethodPost, "https://auth.blobl.io/api/user/update/stats", bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/user/update/stats", getAuthAPIBaseURL()), bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		log.Printf("Failed to create HTTP request: %v", err)
 		return nil, false
@@ -341,3 +350,5 @@ func UpdateUserStats(userId string, score uint32, kills uint32, playtime time.Du
 	// Return the newly unlocked skins
 	return response.NewlyUnlockedSkins, true
 }
+
+

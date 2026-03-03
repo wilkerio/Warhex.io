@@ -14,6 +14,62 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 });
 
 const LOCAL_SESSION_KEY = 'blobl_supabase_session';
+const SKINS_CACHE_TTL_MS = 10 * 60 * 1000;
+const LEADERBOARD_CACHE_TTL_MS = 60 * 1000;
+const STORAGE_LIST_PAGE_SIZE = 100;
+const STORAGE_LIST_MAX_REQUESTS = 20;
+
+let skinsCache = {
+    data: [],
+    fetchedAt: 0,
+    inFlight: null
+};
+
+let leaderboardCache = {
+    key: "",
+    data: [],
+    fetchedAt: 0,
+    inFlight: null
+};
+
+function isTransientSupabaseError(error) {
+    const status = Number(error?.status || error?.code || 0);
+    const message = String(error?.message || "").toLowerCase();
+    if (status === 429 || status === 503 || status === 504) return true;
+    return message.includes("too many")
+        || message.includes("timeout")
+        || message.includes("temporarily unavailable")
+        || message.includes("connection");
+}
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryWithBackoff(operation, {
+    retries = 2,
+    initialDelayMs = 400
+} = {}) {
+    let attempt = 0;
+    let waitMs = initialDelayMs;
+    let lastError = null;
+
+    while (attempt <= retries) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error;
+            if (attempt === retries || !isTransientSupabaseError(error)) {
+                throw error;
+            }
+            await delay(waitMs);
+            waitMs *= 2;
+            attempt += 1;
+        }
+    }
+
+    throw lastError;
+}
 
 function clearSupabaseAuthKeys(storage) {
     if (!storage) return;
@@ -292,17 +348,26 @@ export async function restoreSessionFromStorage() {
 }
 
 // Recursively list all files in the Supabase storage bucket (supports nested folders)
-async function listAllStorageFiles(prefix = '') {
-    const pageSize = 100;
+async function listAllStorageFiles(prefix = '', state = { requests: 0 }) {
+    if (state.requests >= STORAGE_LIST_MAX_REQUESTS) {
+        return [];
+    }
+
+    const pageSize = STORAGE_LIST_PAGE_SIZE;
     const files = [];
     let page = 0;
 
     while (true) {
-        const { data, error } = await supabase.storage.from('skins').list(prefix, {
+        if (state.requests >= STORAGE_LIST_MAX_REQUESTS) {
+            break;
+        }
+
+        state.requests += 1;
+        const { data, error } = await retryWithBackoff(() => supabase.storage.from('skins').list(prefix, {
             limit: pageSize,
             offset: page * pageSize,
             sortBy: { column: 'name', order: 'asc' }
-        });
+        }));
 
         if (error) {
             throw error;
@@ -319,7 +384,7 @@ async function listAllStorageFiles(prefix = '') {
                 files.push({ ...entry, fullPath });
             } else {
                 // Treat as folder and recurse
-                const nested = await listAllStorageFiles(fullPath);
+                const nested = await listAllStorageFiles(fullPath, state);
                 files.push(...nested);
             }
         }
@@ -335,6 +400,16 @@ async function listAllStorageFiles(prefix = '') {
 
 // Function to fetch skins from Supabase storage bucket (PNG and SVG, nested folders supported)
 export async function fetchSkins() {
+    const now = Date.now();
+    if (skinsCache.data.length > 0 && (now - skinsCache.fetchedAt) < SKINS_CACHE_TTL_MS) {
+        return skinsCache.data;
+    }
+
+    if (skinsCache.inFlight) {
+        return skinsCache.inFlight;
+    }
+
+    skinsCache.inFlight = (async () => {
     try {
         const files = await listAllStorageFiles('');
 
@@ -363,11 +438,24 @@ export async function fetchSkins() {
             });
 
         console.log('Fetched skins from storage:', skins.length, 'files');
+        skinsCache = {
+            ...skinsCache,
+            data: skins,
+            fetchedAt: Date.now()
+        };
         return skins;
     } catch (error) {
         console.error('Error in fetchSkins:', error);
+        if (skinsCache.data.length > 0) {
+            return skinsCache.data;
+        }
         return [];
+    } finally {
+        skinsCache.inFlight = null;
     }
+    })();
+
+    return skinsCache.inFlight;
 }
 
 // Fetch skins catalog from database (includes level/shop skins)
@@ -687,6 +775,18 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
 
     try {
         const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
+        const cacheKey = `top:${safeLimit}`;
+        const now = Date.now();
+        if (leaderboardCache.key === cacheKey && leaderboardCache.data.length > 0 && (now - leaderboardCache.fetchedAt) < LEADERBOARD_CACHE_TTL_MS) {
+            return leaderboardCache.data;
+        }
+
+        if (leaderboardCache.key === cacheKey && leaderboardCache.inFlight) {
+            return leaderboardCache.inFlight;
+        }
+
+        leaderboardCache.key = cacheKey;
+        leaderboardCache.inFlight = (async () => {
         const queryAttempts = [
             () => supabase.from("users").select("nickname, username, email, highscore, playtime, total_kills, statistics").limit(200),
             () => supabase.from("users").select("nickname, username, email, statistics").limit(200),
@@ -705,10 +805,22 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
 
         if (error) {
             console.error("Error fetching global account leaderboard:", error);
+            if (leaderboardCache.data.length > 0) {
+                return leaderboardCache.data;
+            }
             return [];
         }
-        return mapLeaderboardRows(data, safeLimit);
+        const mapped = mapLeaderboardRows(data, safeLimit);
+        leaderboardCache.data = mapped;
+        leaderboardCache.fetchedAt = Date.now();
+        return mapped;
+        })();
+
+        const result = await leaderboardCache.inFlight;
+        leaderboardCache.inFlight = null;
+        return result;
     } catch (error) {
+        leaderboardCache.inFlight = null;
         console.error("Error in fetchGlobalAccountLeaderboard:", error);
         try {
             const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
@@ -727,12 +839,21 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
                 }), 4500);
                 if (!resp.ok) continue;
                 const rows = await resp.json();
-                return mapLeaderboardRows(rows, safeLimit);
+                const mapped = mapLeaderboardRows(rows, safeLimit);
+                leaderboardCache.data = mapped;
+                leaderboardCache.fetchedAt = Date.now();
+                return mapped;
             }
 
+            if (leaderboardCache.data.length > 0) {
+                return leaderboardCache.data;
+            }
             return [];
         } catch (fallbackError) {
             console.error("Global leaderboard fallback failed:", fallbackError);
+            if (leaderboardCache.data.length > 0) {
+                return leaderboardCache.data;
+            }
             return [];
         }
     }

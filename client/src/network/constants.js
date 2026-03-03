@@ -1,4 +1,4 @@
-/*
+﻿/*
 Contains multiple utility functions
 TODO: move those function into a seperate file
 
@@ -21,8 +21,16 @@ TODO:
 };*/
 
 
+const runtimeLocation = typeof window !== "undefined"
+    ? window.location
+    : (typeof self !== "undefined" ? self.location : null);
+
+const runtimeHost = runtimeLocation ? runtimeLocation.host : "127.0.0.1:9090";
+const runtimeProtocol = runtimeLocation ? runtimeLocation.protocol : "http:";
+const runtimeScheme = runtimeProtocol === "https:" ? "https" : "http";
+
 export const Servers = {
-    "Frankfurt": "https://fra1.blobl.io",
+    "Default": `${runtimeScheme}://${runtimeHost}`,
 };
 
 export const MessageTypes = {
@@ -920,3 +928,5 @@ export function darkenColor (hex, percent) {
 function rgbToHex (r, g, b) {
     return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
+
+

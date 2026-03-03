@@ -1,29 +1,28 @@
-// import Worker from './network.worker.js'; // Note: Uncomment when using Webpack to bundle the worker (also see _initWorker())
+﻿// import Worker from './network.worker.js'; // Note: Uncomment when using Webpack to bundle the worker (also see _initWorker())
 
 export default class Network {
-    constructor (loadBalancerAddress, core) {
+    constructor(loadBalancerAddress, core) {
         this.core = core;
-        this.loadBalancerAddress = loadBalancerAddress;
-        this.isDev = this.isLocalDomain(); // Detect if it's a local domain
+        this.loadBalancerAddress = this.normalizeBaseUrl(loadBalancerAddress);
+        this.isDev = this.isLocalDomain();
         this.serverAddress = null;
 
-        // Event listeners
         this.eventListeners = {
             open: [],
             message: [],
             close: [],
             error: [],
         };
+
         this.worker = null;
-        this.retryDelay = 3000; // Delay between retries in milliseconds
+        this.retryDelay = 3000;
         this._initWorker();
     }
 
-    _initWorker () {
-        //this.worker = new Worker({type: 'module' }); // Webpack, bundled
-        this.worker = new Worker('src/network/network.worker.js', { type: 'module'}); // Local dev, unbundled
+    _initWorker() {
+        // this.worker = new Worker({ type: 'module' }); // Webpack, bundled
+        this.worker = new Worker('src/network/network.worker.js', { type: 'module' }); // Local dev, unbundled
 
-        // Listen for messages from the worker
         this.worker.onmessage = (event) => {
             const { type, data } = event.data;
             switch (type) {
@@ -44,73 +43,133 @@ export default class Network {
                 default:
                     console.warn('Unknown message type:', type);
             }
-        }
-    };
+        };
+    }
 
-    async connect () {
+    normalizeBaseUrl(url) {
+        if (!url || typeof url !== 'string') return '';
+        return url.trim().replace(/\/+$/, '');
+    }
+
+    toWebSocketUrl(address) {
+        if (!address || typeof address !== 'string') {
+            return null;
+        }
+
+        const trimmed = address.trim();
+
+        if (/^wss?:\/\//i.test(trimmed)) {
+            return trimmed;
+        }
+
+        if (/^https?:\/\//i.test(trimmed)) {
+            return trimmed.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
+        }
+
+        const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        if (trimmed.startsWith('//')) {
+            return `${scheme}:${trimmed}`;
+        }
+
+        return `${scheme}://${trimmed}`;
+    }
+
+    async resolveProductionAddress() {
+        const forcedWs = (window.__WARHEX_WS_URL__ || '').trim();
+        if (forcedWs) {
+            return forcedWs;
+        }
+
+        if (this.loadBalancerAddress) {
+            try {
+                const response = await fetch(`${this.loadBalancerAddress}/get-server`, { method: 'GET' });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && typeof data.server_address === 'string' && data.server_address.trim()) {
+                        return data.server_address.trim();
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch server from load balancer:', error);
+            }
+        }
+
+        const fallback = (window.__WARHEX_GAME_WS_HOST__ || '').trim();
+        if (fallback) {
+            return fallback;
+        }
+
+        return window.location.hostname;
+    }
+
+    async connect() {
         if (this.isDev) {
-            // Development mode: Connect to localhost
             this.serverAddress = '127.0.0.1:9090';
             this.worker.postMessage({ type: 'connect', data: `ws://${this.serverAddress}` });
-
-        } else {
-            // Production mode: Connect directly to Frankfurt server
-            this.serverAddress = 'fra1.blobl.io';
-            this.worker.postMessage({ type: 'connect', data: `wss://${this.serverAddress}` });
+            return;
         }
+
+        const address = await this.resolveProductionAddress();
+        const wsUrl = this.toWebSocketUrl(address);
+
+        if (!wsUrl) {
+            this.onError('No server address available.');
+            this.retryConnect();
+            return;
+        }
+
+        this.serverAddress = wsUrl;
+        this.worker.postMessage({ type: 'connect', data: wsUrl });
     }
 
-    async retryConnect () {
+    async retryConnect() {
         console.log(`Reconnecting in ${this.retryDelay / 1000} seconds...`);
         await this.delay(this.retryDelay);
-        this.connect(); // Try to reconnect
+        this.connect();
     }
 
-    onConnect (data) {
+    onConnect(data) {
         console.log('Connected to server:', data);
         this.triggerEvent('open', data);
     }
 
-    onDisconnect (data) {
+    onDisconnect(data) {
         console.warn('Disconnected from server:', data);
         this.triggerEvent('close', data);
     }
 
-    onMessage (data) {
+    onMessage(data) {
         this.triggerEvent('message', data);
     }
 
-    onError (data) {
+    onError(data) {
         console.error('Worker error:', data);
         this.triggerEvent('error', data);
     }
 
-    sendMessage (message) {
+    sendMessage(message) {
         this.worker.postMessage({ type: 'sendMessage', data: message.encodeMessage() });
     }
 
-    // Triggering events for listeners
-    triggerEvent (type, data) {
+    triggerEvent(type, data) {
         this.eventListeners[type]?.forEach((callback) => callback(data));
     }
 
-    // Add event listener method
-    addEventListener (type, callback) {
+    addEventListener(type, callback) {
         if (this.eventListeners[type]) {
             this.eventListeners[type].push(callback);
         } else {
-            console.warn("Unknown event type:", type);
+            console.warn('Unknown event type:', type);
         }
     }
 
-    isLocalDomain () {
-        // Check if the current hostname is a local domain
+    isLocalDomain() {
         const localDomains = ['localhost', '127.0.0.1'];
         const hostname = window.location.hostname;
         return localDomains.includes(hostname);
     }
 
-    static async pingServer (serverAddress) {
+    static async pingServer(serverAddress) {
         try {
             const startTime = performance.now();
             const response = await fetch(`${serverAddress}/ping`, { method: 'HEAD' });
@@ -118,14 +177,14 @@ export default class Network {
                 throw new Error(`Server returned status: ${response.status}`);
             }
             const endTime = performance.now();
-            return endTime - startTime; // Returns the ping time in milliseconds
+            return endTime - startTime;
         } catch (error) {
             console.error(`Failed to ping server ${serverAddress}:`, error);
-            return Infinity; // Return a high number if the server is unreachable
+            return Infinity;
         }
     }
 
-    delay (ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+    delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 }
