@@ -162,9 +162,9 @@ func startProtectionCheckLoop() {
 	for range ticker.C {
 		State.RLock()
 		for _, player := range State.Players {
-				if player.HasProtection() && time.Now().After(player.GetProtectionEndTime()) {
-					player.RemoveProtection()
-				}
+			if player.HasProtection() && time.Now().After(player.GetProtectionEndTime()) {
+				player.RemoveProtection()
+			}
 
 			// Self-heal stale duel state to avoid combat lock.
 			player.RLock()
@@ -1141,21 +1141,20 @@ func updateUnits(player *Player, duration time.Duration, players []*Player) {
 			continue
 		}
 
-			// Update unit position and always evaluate portal teleport, even when
-			// movement snapped to target in this tick (UpdatePosition returns false).
-			moved := unit.UpdatePosition(duration, units)
-			teleportedOwned := applyPortalTeleportForUnit(unit, portalPairs)
-			teleportedWild := applyWildPortalTeleportForUnit(unit, wildPortals)
-			if moved || teleportedOwned || teleportedWild {
-				if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
-					math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
-					unit.MarkForRemoval()
-					handleUnitDestroyed(unit)
-					continue
-				}
-				updatedUnits = append(updatedUnits, unit)
+		// Update unit position
+		if unit.UpdatePosition(duration, units) {
+			applyPortalTeleportForUnit(unit, portalPairs)
+			applyWildPortalTeleportForUnit(unit, wildPortals)
+
+			if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
+				math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
+				unit.MarkForRemoval()
+				handleUnitDestroyed(unit)
+				continue
 			}
+			updatedUnits = append(updatedUnits, unit)
 		}
+	}
 
 	// Trigger a single update event for all updated units
 	if len(updatedUnits) > 0 {
@@ -1540,11 +1539,10 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 		if otherPlayer.ID == player.ID {
 			if hasSpawnProtection {
 				for _, unit := range units {
-						if !unit.IsWithinRadius(IntToFloat(basePosition), float32(PLAYER_SPAWN_PROTECTION_RADIUS-unit.Size)) {
-							player.UnlockScoreGain()
-							player.RemoveProtection()
-							break
-						}
+					if !unit.IsWithinRadius(IntToFloat(basePosition), float32(PLAYER_SPAWN_PROTECTION_RADIUS-unit.Size)) {
+						player.RemoveProtection()
+						break
+					}
 				}
 			}
 			continue
@@ -2102,9 +2100,8 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		Generating: Generating{
 			Power: 1, // 1 per sec
 		},
-			HasSpawnProtection:      true,
-			ScoreGainUnlocked:       false,
-			HasCommander:            false,
+		HasSpawnProtection:      true,
+		HasCommander:            false,
 		SpawnProtectionEndTime:  time.Now().Add(PLAYER_SPAWN_PROTECTION_TIME * time.Minute),
 		LastActivity:            time.Now(),
 		LastActivityWarningSent: time.Now(),

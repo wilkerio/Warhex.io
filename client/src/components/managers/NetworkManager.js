@@ -13,7 +13,7 @@ import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
-import { clearLocalAuthState, fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, updateUserProgressStats, updateUserProgressStatsKeepalive, ensureUserRow } from "../../network/supabaseClient.js";
+import { fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -298,17 +298,7 @@ export default class NetworkManager {
                 throw error;
             }
 
-            // Get nickname from auth metadata if not in table
-            const user = await getCurrentUser();
-            let row = Array.isArray(data) ? data[0] : data;
-            if (!row && user && this.userId) {
-                console.log("No users row found. Ensuring row exists for OAuth/new account:", this.userId);
-                const ensured = await ensureUserRow(user, this.userData?.nickname || "");
-                if (ensured?.success && ensured?.data) {
-                    row = ensured.data;
-                }
-            }
-
+            const row = Array.isArray(data) ? data[0] : data;
             if (row) {
                 this.userData = row;
                 this.userData.statistics = {
@@ -346,7 +336,8 @@ export default class NetworkManager {
                 console.log('No user data found in table for id:', this.userId);
                 this.userData = null;
             }
-
+            // Get nickname from auth metadata if not in table
+            const user = await getCurrentUser();
             if (user && user.user_metadata && user.user_metadata.nickname) {
                 if (!this.userData) {
                     this.userData = {};
@@ -398,19 +389,62 @@ export default class NetworkManager {
 
     async checkLoginStatus () {
         try {
-            const forceLoggedOut = localStorage.getItem("blobl_force_logged_out") === "1";
-            if (forceLoggedOut) {
-                clearLocalAuthState();
-                try { localStorage.removeItem("blobl_user_data"); } catch (e) {}
-                try { localStorage.removeItem("blobl_force_logged_out"); } catch (e) {}
-                this.loggedIn = false;
-                this.userId = null;
-                this.userData = null;
-                this.core.uiManager.updateAccountButton();
-                return;
-            }
-
+            // Fast-path: use persisted session and userData for instant UI
             try {
+                const rawSession = localStorage.getItem('blobl_supabase_session');
+                const rawUser = localStorage.getItem('blobl_user_data');
+                if (rawSession) {
+                    try {
+                        const sess = JSON.parse(rawSession);
+                        if (sess && sess.user && sess.user.id) {
+                            this.loggedIn = true;
+                            this.userId = sess.user.id;
+                            console.log('Restored session quick (local):', this.userId);
+                            if (rawUser) {
+                                try {
+                                    this.userData = JSON.parse(rawUser);
+                                    this.userData.statistics = {
+                                        ...(this.userData.statistics || {}),
+                                        highscore: Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0),
+                                        kills: Number(this.userData.total_kills ?? this.userData.statistics?.kills ?? 0),
+                                        playtime: Number(this.userData.playtime ?? this.userData.statistics?.playtime ?? 0)
+                                    };
+                                    this.userData.progression = {
+                                        ...(this.userData.progression || {}),
+                                        level: Number(this.userData.level ?? this.userData.progression?.level ?? 1),
+                                        xp: Number(this.userData.xp ?? this.userData.progression?.xp ?? 0)
+                                    };
+                                    console.log('Restored userData quick (local):', this.userData);
+                                    this.core.uiManager.updateAccount();
+                                } catch (e) {
+                                    console.warn('Failed to parse local userData:', e);
+                                }
+                            }
+                            // Kick off background restore + fetch but don't await here
+                            (async () => {
+                                try {
+                                    const restored = await restoreSessionFromStorage();
+                                    if (restored && restored.user && restored.user.id) {
+                                        if (!this.loggedIn || this.userId !== restored.user.id) {
+                                            this.loggedIn = true;
+                                            this.userId = restored.user.id;
+                                        }
+                                    }
+                                    await this.getUserData();
+                                } catch (e) {
+                                    console.warn('Background restore failed:', e);
+                                }
+                            })();
+                            // fast-path done
+                            this.core.uiManager.updateAccountButton();
+                            return;
+                        }
+                    } catch (e) {
+                        console.warn('Failed parsing local session:', e);
+                    }
+                }
+
+                // Fallback: normal getSession flow if no local session
                 const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
                 if (sessionError) console.error('Error getting supabase session:', sessionError);
                 const session = sessionData?.session || null;
@@ -421,18 +455,12 @@ export default class NetworkManager {
                     console.log('Calling getUserData for userId:', this.userId);
                     await this.getUserData();
                 } else {
-                    clearLocalAuthState();
-                    try { localStorage.removeItem("blobl_user_data"); } catch (e) {}
                     this.loggedIn = false;
-                    this.userId = null;
                     this.userData = null;
                 }
             } catch (e) {
                 console.error('Error during checkLoginStatus flow:', e);
-                clearLocalAuthState();
-                try { localStorage.removeItem("blobl_user_data"); } catch (err) {}
                 this.loggedIn = false;
-                this.userId = null;
                 this.userData = null;
             }
         } catch (error) {
@@ -443,29 +471,16 @@ export default class NetworkManager {
     }
 
     async logout () {
-        let signOutError = null;
         try {
-            await Promise.race([
-                signOut(),
-                new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error("Sign out timeout")), 4000);
-                })
-            ]);
-        } catch (error) {
-            signOutError = error;
-        } finally {
-            clearLocalAuthState();
-            try { localStorage.removeItem("blobl_user_data"); } catch (e) {}
-            try { localStorage.setItem("blobl_force_logged_out", "1"); } catch (e) {}
+            await signOut();
             this.loggedIn = false;
-            this.userId = null;
             this.userData = null;
             this.core.uiManager.updateAccount();
             this.core.uiManager.updateAccountButton();
+            try { localStorage.removeItem('blobl_user_data'); } catch(e) {}
             window.location.reload();
-        }
-        if (signOutError) {
-            console.error("Error during logout:", signOutError);
+        } catch (error) {
+            console.error("Error during logout:", error);
         }
     }
 

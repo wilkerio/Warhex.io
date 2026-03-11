@@ -41,7 +41,6 @@ type Player struct {
 	Base                   *Base
 	SpawnProtectionEndTime time.Time
 	HasSpawnProtection     bool
-	ScoreGainUnlocked      bool
 	RelocateCount          uint32
 	NextRelocateAllowedAt  time.Time
 	NextPortalAllowedAt    time.Time
@@ -272,22 +271,12 @@ func (p *Player) WasBaseDamagedWithin(window time.Duration) bool {
 
 func (p *Player) IncrementScore(value uint32) {
 	p.Lock()
-	if !p.ScoreGainUnlocked {
-		p.Unlock()
-		return
-	}
 	p.Score += uint32(value)
 	p.Unlock()
 	changes, changed := State.Leaderboard.Update(State.Players)
 	if changed {
 		TriggerLeaderboardUpdateEvent(&changes)
 	}
-}
-
-func (p *Player) UnlockScoreGain() {
-	p.Lock()
-	defer p.Unlock()
-	p.ScoreGainUnlocked = true
 }
 
 func (p *Player) IncrementKills(value uint32) {
