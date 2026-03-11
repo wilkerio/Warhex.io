@@ -3992,42 +3992,6 @@ export default class UIManager {
         tabContainer.innerHTML = ""; // Clear existing tabs
     }
 
-    _maskProfanity (text) {
-        if (!text || typeof text !== "string") return text;
-
-        // Client-side profanity masking for common PT-BR insults/slurs.
-        const patterns = [
-            /filha\s*da\s*puta/gi,
-            /filho\s*da\s*puta/gi,
-            /filh[ao]\s*da\s*\w+/gi,
-            /\bputa\b/gi,
-            /\bputo\b/gi,
-            /\bcaralho\b/gi,
-            /\bporra\b/gi,
-            /\bmerda\b/gi,
-            /\bcu\b/gi,
-            /\bfdp\b/gi,
-            /\bidiota\b/gi,
-            /\botario\b/gi,
-            /\barrombado\b/gi,
-            /\bdesgracado\b/gi,
-            /\bvagabundo\b/gi,
-            /\bimbecil\b/gi,
-            /\bburro\b/gi
-        ];
-
-        const mask = (match) => {
-            const firstVisible = (match.match(/[A-Za-z0-9]/) || ["*"])[0];
-            return `${firstVisible}****`;
-        };
-
-        let output = text;
-        patterns.forEach((pattern) => {
-            output = output.replace(pattern, mask);
-        });
-        return output;
-    }
-
     _updateCost () {
         this.upgradeCostElements.forEach(i => {
             const { cost, element } = i;
@@ -4065,14 +4029,13 @@ export default class UIManager {
 
     addChatMessage (username, message, color, player = null) {
         if (!this.DOM.chat.messages) return;
-        const safeMessage = this._maskProfanity(message);
 
         // Create a new chat message div
         const messageDiv = document.createElement("div");
         messageDiv.classList.add("message");
 
         // Check for mention
-        if (this.core.gameManager.player && safeMessage.includes('@' + this.core.gameManager.player.name)) {
+        if (this.core.gameManager.player && message.includes('@' + this.core.gameManager.player.name)) {
             messageDiv.classList.add("mention-highlight");
         }
 
@@ -4090,7 +4053,7 @@ export default class UIManager {
         // Create and set message span
         const messageSpan = document.createElement("span");
         messageSpan.classList.add("text");
-        messageSpan.textContent = safeMessage;
+        messageSpan.textContent = message;
 
         // Append username and message spans to message div
         messageDiv.appendChild(usernameSpan);
@@ -4099,20 +4062,8 @@ export default class UIManager {
         // Append the new message div to the chat messages container
         this.DOM.chat.messages.appendChild(messageDiv);
 
-        // Ensure no more than 15 messages are shown
-        this.limitChatMessages(15);
-
         // Scroll to the bottom to show the latest message
         this.DOM.chat.messages.scrollTop = this.DOM.chat.messages.scrollHeight;
-    }
-
-    // Helper method to limit the number of chat messages displayed
-    limitChatMessages (maxMessages) {
-        const messages = this.DOM.chat.messages.querySelectorAll(".message");
-        if (messages.length > maxMessages) {
-            // Remove the oldest message
-            this.DOM.chat.messages.removeChild(messages[0]);
-        }
     }
 
     handleUsernameClick (player) {

@@ -404,19 +404,12 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	maxRadiusNeutralByType := maxRadiusNeutralBase
 
 	switch buildingType {
-	case game.BARRACKS:
+	case game.BARRACKS, game.WALL:
 		minRadius = game.PLAYER_MAX_BUILDING_RADIUS
 		minRadiusNeutralBase = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
-		// Barracks fixed slightly outside the ring.
+		// Barracks and walls sit on the same fixed outer ring.
 		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
 		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
-	case game.WALL:
-		size := game.GetBuildingSize(buildingType)
-		minRadius += size
-		minRadiusNeutralBase += size
-		// Wall can be placed freely and a bit outside the ring.
-		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 16
-		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 16
 	case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.PORTAL, game.GENERATOR, game.HOUSE:
 		// These must remain inside ring: building edge cannot cross max radius.
 		size := game.GetBuildingSize(buildingType)
@@ -432,7 +425,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	tolerance := 4
-	if buildingType == game.BARRACKS {
+	if buildingType == game.BARRACKS || buildingType == game.WALL {
 		// Extra buffer for fixed outer-ring placement.
 		tolerance = 12
 	}
@@ -440,8 +433,8 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	// Validation for building placement
 	isPlayerRadiusValid := false
 
-	if buildingType == game.BARRACKS {
-		// Walls and barracks must be at the border
+	if buildingType == game.BARRACKS || buildingType == game.WALL {
+		// Walls and barracks must stay on the fixed border ring.
 		isPlayerRadiusValid = uint16(math.Floor(distance)) >= uint16(maxRadiusByType-tolerance) &&
 			uint16(math.Ceil(distance)) <= uint16(maxRadiusByType+tolerance)
 	} else {
@@ -1335,10 +1328,7 @@ var (
 )
 
 func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
-	maxLength := 64
-	rateLimit := 5 * time.Second
-
-	if len(payload) == 0 || len(payload) > maxLength {
+	if len(payload) == 0 {
 		log.Println("Invalid payload length for a chat message. Payload length:", len(payload))
 		return
 	}
@@ -1354,46 +1344,7 @@ func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
 	// Copy payload to avoid race conditions
 	message := payload[:]
 
-	// Lock and check message state
-	messageMx.Lock()
-
-	// Get or create player message state
-	state, exists := messageState[player.ID]
-	if !exists {
-		state = &PlayerMessageState{}
-		messageState[player.ID] = state
-	}
-
-	// Check rate limit
-	now := time.Now()
-	if now.Sub(state.lastMessageTime) < rateLimit {
-		messageMx.Unlock() // Release lock before returning
-		log.Println("Rate limit exceeded for player:", player.ID)
-		return
-	}
-
-	// Check for duplicate messages
-	messageStr := string(message)
-	if messageStr == state.lastMessage {
-		messageMx.Unlock() // Release lock before returning
-		log.Println("Duplicate message detected for player:", player.ID)
-		return
-	}
-
-	// Update message state before unlocking
-	state.lastMessageTime = now
-	state.lastMessage = messageStr
-
-	messageMx.Unlock() // Unlock after updating state
-
-	// Apply profanity filtering
-	cleanMessage := filterProfanity(messageStr)
-
-	// Convert the cleaned message back to bytes
-	cleanMessageBytes := []byte(cleanMessage)
-
-	// Broadcast the sanitized message to all except the sender
-	broadcastChatMessage(player.ID, cleanMessageBytes)
+	broadcastChatMessage(player.ID, message)
 }
 
 func handleClientActivity(conn *websocket.Conn, payload []byte) {

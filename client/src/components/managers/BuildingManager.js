@@ -539,9 +539,9 @@ export class BuildingManager {
                     maxRadius = minRadius;
                     break;
                 case BuildingTypes.WALL:
-                    // Wall can be placed freely and a bit outside the ring.
-                    minRadius += this.buildingToPlace.building.size;
-                    maxRadius = closestBase.buildingRadius.max + 16;
+                    // Keep walls on the same outer alignment used by barracks.
+                    minRadius = closestBase.buildingRadius.max + 34;
+                    maxRadius = minRadius;
                     break;
                 case BuildingTypes.SIMPLE_TURRET:
                 case BuildingTypes.SNIPER_TURRET:
@@ -1721,8 +1721,8 @@ export class BuildingManager {
                 maxRadius = minRadius;
                 break;
             case BuildingTypes.WALL:
-                minRadius += buildingSize;
-                maxRadius = base.buildingRadius.max + 16;
+                minRadius = base.buildingRadius.max + 34;
+                maxRadius = minRadius;
                 break;
             case BuildingTypes.SIMPLE_TURRET:
             case BuildingTypes.SNIPER_TURRET:

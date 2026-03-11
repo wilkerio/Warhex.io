@@ -195,8 +195,6 @@ export default class Message {
     }
 
     static createChatMessageMessage (text) {
-        // Truncate the name if it exceeds 64 characters
-        text = text.slice(0, 64);
         const textBytes = new TextEncoder().encode(text);
         const payload = new Uint8Array(textBytes.length);
         payload.set(textBytes);
