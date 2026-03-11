@@ -41,6 +41,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
 
       - name: Verify client build
         working-directory: client
@@ -80,17 +81,35 @@ jobs:
           PORT="${SSH_PORT:-22}"
           ssh-keyscan -p "$PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
+      - name: Verify SSH connectivity
+        shell: bash
+        run: |
+          PORT="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 \
+            -p "$PORT" \
+            "${SSH_USER}@${SSH_HOST}" "echo connected"
+
       - name: Upload deploy script
         shell: bash
         run: |
           PORT="${SSH_PORT:-22}"
-          scp -P "$PORT" scripts/deploy.sh "${SSH_USER}@${SSH_HOST}:/tmp/infinity-deploy.sh"
+          scp -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -P "$PORT" \
+            scripts/deploy.sh "${SSH_USER}@${SSH_HOST}:/tmp/infinity-deploy.sh"
 
       - name: Run remote deployment
         shell: bash
         run: |
           PORT="${SSH_PORT:-22}"
-          ssh -p "$PORT" "${SSH_USER}@${SSH_HOST}" \
+          ssh -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -p "$PORT" "${SSH_USER}@${SSH_HOST}" \
             "chmod +x /tmp/infinity-deploy.sh && \
             APP_DIR='${APP_DIR:-/opt/infinity.io}' \
             DEPLOY_BRANCH='${DEPLOY_BRANCH:-main}' \
