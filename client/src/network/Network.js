@@ -20,8 +20,13 @@ export default class Network {
     }
 
     _initWorker() {
-        // this.worker = new Worker({ type: 'module' }); // Webpack, bundled
-        this.worker = new Worker('src/network/network.worker.js', { type: 'module' }); // Local dev, unbundled
+        // Prefer the bundled worker in production builds, but keep the native path for local dev.
+        if (typeof __webpack_require__ === 'function') {
+            const BundledWorker = require('./network.worker.js');
+            this.worker = new BundledWorker();
+        } else {
+            this.worker = new Worker('src/network/network.worker.js', { type: 'module' });
+        }
 
         this.worker.onmessage = (event) => {
             const { type, data } = event.data;
@@ -49,6 +54,10 @@ export default class Network {
     normalizeBaseUrl(url) {
         if (!url || typeof url !== 'string') return '';
         return url.trim().replace(/\/+$/, '');
+    }
+
+    buildDirectGameAddress() {
+        return `${window.location.host}/ffa1`;
     }
 
     toWebSocketUrl(address) {
@@ -99,7 +108,7 @@ export default class Network {
             return fallback;
         }
 
-        return window.location.hostname;
+        return this.buildDirectGameAddress();
     }
 
     async connect() {
