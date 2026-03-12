@@ -96,6 +96,37 @@ function portToPathSegment(port) {
     return `ffa${pathIndex}`;
 }
 
+function getRequestedOrigin(req) {
+    const candidates = [
+        req.get('origin'),
+        req.get('referer'),
+        `${req.protocol}://${req.get('host')}`
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+        try {
+            const url = new URL(candidate);
+            return url;
+        } catch (error) {
+            // Ignore malformed candidates and keep trying.
+        }
+    }
+
+    return null;
+}
+
+function getPublicServerAddress(req, pathSegment) {
+    const requestedOrigin = getRequestedOrigin(req);
+    if (requestedOrigin) {
+        const hostname = requestedOrigin.hostname.toLowerCase();
+        if (hostname === 'warhex.io' || hostname === 'www.warhex.io' || hostname === 'api.warhex.io') {
+            return `warhex.io/${pathSegment}`;
+        }
+    }
+
+    return `${config.serverAddress}/${pathSegment}`;
+}
+
 const getPlayerCount = async (port) => {
     try {
         const response = await axios.get(`http://127.0.0.1:${port}/playercount`);
@@ -186,7 +217,7 @@ app.get('/get-server', async (req, res) => {
     }
 
     return res.json({
-        server_address: `${config.serverAddress}/${portToPathSegment(selectedServer.server.port)}`
+        server_address: getPublicServerAddress(req, portToPathSegment(selectedServer.server.port))
     });
 });
 
