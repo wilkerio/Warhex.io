@@ -1537,8 +1537,8 @@ export default class NetworkManager {
     }
 
     handleSpawnBullet (payload) {
-        const { isPlayer, ownerID, objectID, bulletID, targetPosition } = payload;
-        const bulletPosition = targetPosition;
+        const { isPlayer, ownerID, objectID, bulletID } = payload;
+        const bulletPosition = payload.position || payload.targetPosition;
         const buildingID = objectID;
         let base = null;
         if (isPlayer) {
@@ -1546,26 +1546,28 @@ export default class NetworkManager {
         } else /*isNeutral*/ {
             base = this.core.gameManager.getNeutralById(ownerID);
         }
-        if (!base) return;
+        if (!base || !bulletPosition) return;
 
         const turret = base.getBuilding(buildingID);
-        if (!turret) return;
+        if (!turret?.bulletDetails) return;
         const bullet = new Bullet(turret.bulletDetails, base.color, bulletPosition, bulletID);
-        base.spawnBullet(bullet, bulletPosition, turret);
+        const initialTargetPosition = turret.targetPoint || bulletPosition;
+        base.spawnBullet(bullet, initialTargetPosition, turret);
     }
 
     handleUnitSpawnBullet (payload) {
-        const { playerID, objectID, bulletID, targetPosition } = payload;
-        const bulletPosition = targetPosition;
+        const { playerID, objectID, bulletID } = payload;
+        const bulletPosition = payload.position || payload.targetPosition;
         const unitID = objectID;
         const player = this.core.gameManager.getPlayerById(playerID);
-        if (!player) return;
+        if (!player || !bulletPosition) return;
 
         const unit = player.getUnit(unitID);
         if (!unit?.bulletDetails) return;
 
         const bullet = new Bullet(unit.bulletDetails, player.color, bulletPosition, bulletID);
-        player.spawnBullet(bullet, bulletPosition, unit);
+        const initialTargetPosition = unit.targetPosition || bulletPosition;
+        player.spawnBullet(bullet, initialTargetPosition, unit);
     }
 
     handleRemoveBullet (payload) {

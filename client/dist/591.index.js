@@ -10,4 +10,4 @@
 * For inquiries, please contact: contact.blobl@gmail.com.
 */
 
-"use strict";(self.webpackChunkblobl_io=self.webpackChunkblobl_io||[]).push([[591],{591:e=>{e.exports=function(){throw new Error("ws does not work in the browser. Browser clients must use the native WebSocket object")}}}]);
+"use strict";(self.webpackChunkwarhex_io=self.webpackChunkwarhex_io||[]).push([[591],{591:e=>{e.exports=function(){throw new Error("ws does not work in the browser. Browser clients must use the native WebSocket object")}}}]);

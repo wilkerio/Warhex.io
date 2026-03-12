@@ -6,13 +6,18 @@ import ThemeManager from "../components/managers/ThemeManager.js";
 export default class Bullet extends Renderable {
     constructor (details, color, position = { x: 0, y: 0 }, id = -1) {
         super();
+        const safeDetails = details || {
+            type: BulletTypes.BASIC,
+            size: 10,
+            speed: 600
+        };
         this.id = id;
-        this.type = details.type;
-        this.size = details.size;
+        this.type = safeDetails.type;
+        this.size = safeDetails.size;
         this.targetPosition = { ...position };
         this.position = { ...position };
         this.color = color;
-        this.speed = details.speed; // Speed in pixels per second
+        this.speed = safeDetails.speed; // Speed in pixels per second
 
         // Fading properties
         this.isFadingOut = false;

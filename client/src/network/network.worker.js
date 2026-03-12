@@ -887,10 +887,10 @@ function decodeSpawnBullet (payload) {
     const ownerID = dataView.getUint8(1);
     const objectID = dataView.getUint8(2);
     const bulletID = dataView.getUint8(3);
-    const targetPositionX = dataView.getFloat32(4);
-    const targetPositionY = dataView.getFloat32(8);
+    const positionX = dataView.getFloat32(4);
+    const positionY = dataView.getFloat32(8);
 
-    return { isPlayer, ownerID, objectID, bulletID, targetPosition: { x: targetPositionX, y: targetPositionY } };
+    return { isPlayer, ownerID, objectID, bulletID, position: { x: positionX, y: positionY } };
 }
 
 function decodeSpawnUnitBullet (payload) {
@@ -898,10 +898,10 @@ function decodeSpawnUnitBullet (payload) {
     const playerID = dataView.getUint8(0);
     const objectID = dataView.getUint8(1);
     const bulletID = dataView.getUint8(2);
-    const targetPositionX = dataView.getFloat32(3);
-    const targetPositionY = dataView.getFloat32(7);
+    const positionX = dataView.getFloat32(3);
+    const positionY = dataView.getFloat32(7);
 
-    return { playerID, objectID, bulletID, targetPosition: { x: targetPositionX, y: targetPositionY } };
+    return { playerID, objectID, bulletID, position: { x: positionX, y: positionY } };
 }
 
 

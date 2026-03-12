@@ -774,9 +774,28 @@ export function getUnitDetails (unitType, unitVariant) {
 export function getBulletDetails (buildingType, buildingVariant) {
     // Find the key corresponding to the buildingType
     const buildingKey = Object.keys(BuildingTypes).find(key => BuildingTypes[key] === buildingType);
-    const details = Object.values(BulletDetails[buildingKey] || {})
+    const detailsByBuilding = BulletDetails[buildingKey];
+    if (!detailsByBuilding) return null;
+
+    // Preferred path: explicit variant field (kept for backward/forward compatibility).
+    const explicitMatch = Object.values(detailsByBuilding)
         .find(detail => detail && detail.variant === buildingVariant);
-    return details || null;
+    if (explicitMatch) return explicitMatch;
+
+    // Fallback path: resolve variant enum name and map directly to bullet detail key.
+    const variantsByBuilding = BuildingVariantTypes[buildingKey];
+    if (!variantsByBuilding) {
+        return detailsByBuilding.BASIC || null;
+    }
+
+    const variantName = Object.keys(variantsByBuilding)
+        .find(key => variantsByBuilding[key] === buildingVariant);
+
+    if (variantName && detailsByBuilding[variantName]) {
+        return detailsByBuilding[variantName];
+    }
+
+    return detailsByBuilding.BASIC || null;
 }
 
 export function getUnitBulletDetails (unitType, unitVariant) {
