@@ -138,6 +138,7 @@ export async function signInWithDiscord() {
         provider: "discord",
         options: {
             redirectTo,
+            scopes: "identify email",
             // Keep control in UI so we can surface friendly errors before navigation.
             skipBrowserRedirect: true
         }
@@ -228,18 +229,131 @@ function normalizeUserRow(row = {}) {
     };
 }
 
+function cleanupOAuthParamsFromCurrentUrl() {
+    if (typeof window === "undefined") return;
+    try {
+        const url = new URL(window.location.href);
+        const queryKeys = [
+            "code",
+            "state",
+            "error",
+            "error_description",
+            "provider_token",
+            "provider_refresh_token"
+        ];
+
+        let changed = false;
+        queryKeys.forEach((key) => {
+            if (url.searchParams.has(key)) {
+                url.searchParams.delete(key);
+                changed = true;
+            }
+        });
+
+        if (url.hash && url.hash.length > 1) {
+            const rawHash = url.hash.slice(1);
+            const hashParams = new URLSearchParams(rawHash);
+            const hashKeys = [
+                "access_token",
+                "refresh_token",
+                "expires_at",
+                "expires_in",
+                "token_type",
+                "provider_token",
+                "provider_refresh_token",
+                "error",
+                "error_description"
+            ];
+            hashKeys.forEach((key) => {
+                if (hashParams.has(key)) {
+                    hashParams.delete(key);
+                    changed = true;
+                }
+            });
+            const rebuiltHash = hashParams.toString();
+            url.hash = rebuiltHash ? `#${rebuiltHash}` : "";
+        }
+
+        if (!changed) return;
+        const cleanUrl = `${url.pathname}${url.search}${url.hash}`;
+        window.history.replaceState({}, document.title, cleanUrl);
+    } catch (e) {
+        console.warn("Could not cleanup OAuth params from URL:", e);
+    }
+}
+
+function storeOAuthLastError(message = "") {
+    try {
+        const text = String(message || "").trim();
+        if (!text) {
+            localStorage.removeItem("warhex_oauth_last_error");
+            return;
+        }
+        localStorage.setItem("warhex_oauth_last_error", text);
+    } catch (e) {}
+}
+
+export async function consumeOAuthCallbackSession() {
+    if (typeof window === "undefined") {
+        return { consumed: false, session: null, error: null };
+    }
+
+    try {
+        const url = new URL(window.location.href);
+        const oauthError = url.searchParams.get("error");
+        const oauthErrorDescription = url.searchParams.get("error_description");
+        if (oauthError) {
+            storeOAuthLastError(oauthErrorDescription || oauthError);
+            cleanupOAuthParamsFromCurrentUrl();
+            return {
+                consumed: true,
+                session: null,
+                error: new Error(oauthErrorDescription || oauthError)
+            };
+        }
+
+        const code = url.searchParams.get("code");
+        if (!code || typeof supabase?.auth?.exchangeCodeForSession !== "function") {
+            return { consumed: false, session: null, error: null };
+        }
+
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        cleanupOAuthParamsFromCurrentUrl();
+
+        if (error) {
+            storeOAuthLastError(error?.message || "OAuth exchange failed.");
+            return { consumed: true, session: null, error };
+        }
+
+        const session = data?.session || null;
+        storeOAuthLastError("");
+        try {
+            if (session) {
+                localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(session));
+            }
+        } catch (e) {
+            console.warn("Could not persist OAuth session to localStorage:", e);
+        }
+
+        return { consumed: true, session, error: null };
+    } catch (error) {
+        return { consumed: false, session: null, error };
+    }
+}
+
 export async function ensureUserRow(authUser, preferredNickname = "") {
     try {
         const userId = authUser?.id;
         if (!userId) return { success: false, error: "missing_user_id", data: null };
 
         const nickname = deriveNicknameFromAuthUser(authUser, preferredNickname);
+        const resolvedEmail = authUser?.email || authUser?.user_metadata?.email || `${userId}@oauth.local`;
         const usernameBase = `${nickname}_${String(userId).slice(0, 6)}`.replace(/[^a-zA-Z0-9_]/g, "");
         const payloadCandidates = [
             // Rich payload (for newer schemas)
             {
                 id: userId,
-                email: authUser?.email || null,
+                email: resolvedEmail,
                 nickname,
                 username: usernameBase.slice(0, 20),
                 highscore: 0,
@@ -256,7 +370,7 @@ export async function ensureUserRow(authUser, preferredNickname = "") {
             // Common payload (legacy schemas)
             {
                 id: userId,
-                email: authUser?.email || null,
+                email: resolvedEmail,
                 nickname,
                 highscore: 0,
                 total_kills: 0,
@@ -267,7 +381,7 @@ export async function ensureUserRow(authUser, preferredNickname = "") {
             // Minimal payload (guarantee core identity fields)
             {
                 id: userId,
-                email: authUser?.email || null,
+                email: resolvedEmail,
                 nickname
             },
             // Absolute fallback if email column is absent/not writable

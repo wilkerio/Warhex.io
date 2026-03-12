@@ -93,6 +93,7 @@ export default class UIManager {
         this.loadHudConfigFromAccount();
         this.setupLanguageSelector();
         this.applyLanguage({ refreshLeaderboard: true });
+        this.maybeShowOAuthError();
         this.maybeHandlePendingSocialOnboarding();
     }
 
@@ -228,12 +229,20 @@ export default class UIManager {
         const lang = this.languageManager.getLanguage();
         const defaultDiscordLabel = lang === "pt" ? "Cadastrar com Discord" : (lang === "es" ? "Registrarse con Discord" : "Sign up with Discord");
         const defaultGoogleLabel = lang === "pt" ? "Cadastrar com Google" : (lang === "es" ? "Registrarse con Google" : "Sign up with Google");
+        const defaultSigninDiscordLabel = lang === "pt" ? "Entrar com Discord" : (lang === "es" ? "Iniciar con Discord" : "Continue with Discord");
+        const defaultSigninGoogleLabel = lang === "pt" ? "Entrar com Google" : (lang === "es" ? "Iniciar con Google" : "Continue with Google");
         const discordLabel = this.t("dialog.signUpDiscord");
         const googleLabel = this.t("dialog.signUpGoogle");
+        const signinDiscordLabel = this.t("dialog.signInDiscord");
+        const signinGoogleLabel = this.t("dialog.signInGoogle");
         const discordBtn = document.querySelector("#signup-discord");
         const googleBtn = document.querySelector("#signup-google");
+        const signinDiscordBtn = document.querySelector("#signin-discord");
+        const signinGoogleBtn = document.querySelector("#signin-google");
         if (discordBtn) discordBtn.textContent = (!discordLabel || discordLabel === "dialog.signUpDiscord") ? defaultDiscordLabel : discordLabel;
         if (googleBtn) googleBtn.textContent = (!googleLabel || googleLabel === "dialog.signUpGoogle") ? defaultGoogleLabel : googleLabel;
+        if (signinDiscordBtn) signinDiscordBtn.textContent = (!signinDiscordLabel || signinDiscordLabel === "dialog.signInDiscord") ? defaultSigninDiscordLabel : signinDiscordLabel;
+        if (signinGoogleBtn) signinGoogleBtn.textContent = (!signinGoogleLabel || signinGoogleLabel === "dialog.signInGoogle") ? defaultSigninGoogleLabel : signinGoogleLabel;
         setText("#signup-submit", "dialog.createAccountBtn");
         setText("#signup-cancel", "dialog.cancel");
         setText("#signin-dialog h2", "dialog.loginTitle");
@@ -1545,6 +1554,8 @@ export default class UIManager {
                 // Signin dialog inputs
                 signinEmail: "signin-email",
                 signinPassword: "signin-password",
+                signinDiscord: "signin-discord",
+                signinGoogle: "signin-google",
                 signinSubmit: "signin-submit",
                 signinCancel: "signin-cancel",
                 progression: {
@@ -1919,6 +1930,8 @@ export default class UIManager {
         const signupCancel = this.DOM.account.signupCancel || document.getElementById("signup-cancel");
         const signupDiscord = this.DOM.account.signupDiscord || document.getElementById("signup-discord");
         const signupGoogle = this.DOM.account.signupGoogle || document.getElementById("signup-google");
+        const signinDiscord = this.DOM.account.signinDiscord || document.getElementById("signin-discord");
+        const signinGoogle = this.DOM.account.signinGoogle || document.getElementById("signin-google");
         const signinSubmit = this.DOM.account.signinSubmit || document.getElementById("signin-submit");
         const signinCancel = this.DOM.account.signinCancel || document.getElementById("signin-cancel");
 
@@ -2023,6 +2036,20 @@ export default class UIManager {
         if (signupGoogle && !signupGoogle.dataset.boundSignupGoogle) {
             signupGoogle.dataset.boundSignupGoogle = "1";
             signupGoogle.addEventListener("click", async () => {
+                await this.startSocialOAuth("google");
+            });
+        }
+
+        if (signinDiscord && !signinDiscord.dataset.boundSigninDiscord) {
+            signinDiscord.dataset.boundSigninDiscord = "1";
+            signinDiscord.addEventListener("click", async () => {
+                await this.startSocialOAuth("discord");
+            });
+        }
+
+        if (signinGoogle && !signinGoogle.dataset.boundSigninGoogle) {
+            signinGoogle.dataset.boundSigninGoogle = "1";
+            signinGoogle.addEventListener("click", async () => {
                 await this.startSocialOAuth("google");
             });
         }
@@ -4936,6 +4963,15 @@ export default class UIManager {
             this.ensureHudCollapseControls();
             this.applyHudCollapsedStates();
         }
+    }
+
+    maybeShowOAuthError () {
+        try {
+            const rawError = String(localStorage.getItem("warhex_oauth_last_error") || "").trim();
+            if (!rawError) return;
+            localStorage.removeItem("warhex_oauth_last_error");
+            alert(this.t("error.discordLoginFailed", { message: rawError }));
+        } catch (e) {}
     }
 
     showDiscordJoinPrompt (inviteUrl = "https://discord.gg/Q337spAqR7") {

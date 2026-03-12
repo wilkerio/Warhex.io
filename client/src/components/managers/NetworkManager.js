@@ -13,7 +13,7 @@ import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
-import { fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
+import { consumeOAuthCallbackSession, ensureUserRow, fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -200,13 +200,30 @@ export default class NetworkManager {
         this.userData.playtime = statistics.playtime;
     }
 
+    async hydrateAuthenticatedSession (session) {
+        const authUser = session?.user;
+        if (!authUser?.id) return;
+
+        this.loggedIn = true;
+        this.userId = authUser.id;
+
+        try {
+            const preferredNickname = this.userData?.nickname || authUser?.user_metadata?.nickname || "";
+            await ensureUserRow(authUser, preferredNickname);
+        } catch (error) {
+            console.warn("Failed to ensure user row during auth session hydration:", error);
+        }
+
+        await this.getUserData();
+    }
+
     async initialize () {
         // Listen for auth state changes
         onAuthStateChange(async (event, session) => {
-            if (event === 'SIGNED_IN') {
-                this.loggedIn = true;
-                this.userId = session.user.id;
-                await this.getUserData();
+            const authEvent = String(event || "");
+            const isAuthenticatedEvent = authEvent === "SIGNED_IN" || authEvent === "INITIAL_SESSION";
+            if (isAuthenticatedEvent && session?.user) {
+                await this.hydrateAuthenticatedSession(session);
                 this.core.uiManager.updateAccountButton();
             } else if (event === 'SIGNED_OUT') {
                 this.loggedIn = false;
@@ -337,6 +354,26 @@ export default class NetworkManager {
             } else {
                 console.log('No user data found in table for id:', this.userId);
                 this.userData = null;
+                try {
+                    const authUser = await getCurrentUser();
+                    if (authUser?.id) {
+                        const ensured = await ensureUserRow(authUser, authUser?.user_metadata?.nickname || "");
+                        if (ensured?.success && ensured?.data) {
+                            this.userData = ensured.data;
+                        } else {
+                            const { data: retryData, error: retryError } = await supabase
+                                .from('users')
+                                .select('*')
+                                .eq('id', this.userId)
+                                .maybeSingle();
+                            if (!retryError && retryData) {
+                                this.userData = retryData;
+                            }
+                        }
+                    }
+                } catch (ensureError) {
+                    console.warn('Could not ensure missing user row after OAuth/login:', ensureError);
+                }
             }
             // Get nickname from auth metadata if not in table
             const user = await getCurrentUser();
@@ -391,6 +428,20 @@ export default class NetworkManager {
 
     async checkLoginStatus () {
         try {
+            try {
+                const oauthResult = await consumeOAuthCallbackSession();
+                if (oauthResult?.error) {
+                    console.error("OAuth callback processing error:", oauthResult.error);
+                }
+                if (oauthResult?.session?.user?.id) {
+                    await this.hydrateAuthenticatedSession(oauthResult.session);
+                    this.core.uiManager.updateAccountButton();
+                    return;
+                }
+            } catch (oauthError) {
+                console.error("Failed to process OAuth callback:", oauthError);
+            }
+
             // Fast-path: use persisted session and userData for instant UI
             try {
                 const rawSession = localStorage.getItem('blobl_supabase_session');
@@ -431,8 +482,10 @@ export default class NetworkManager {
                                             this.loggedIn = true;
                                             this.userId = restored.user.id;
                                         }
+                                        await this.hydrateAuthenticatedSession(restored);
+                                    } else {
+                                        await this.getUserData();
                                     }
-                                    await this.getUserData();
                                 } catch (e) {
                                     console.warn('Background restore failed:', e);
                                 }
@@ -452,10 +505,7 @@ export default class NetworkManager {
                 const session = sessionData?.session || null;
                 console.log('Supabase session on checkLoginStatus:', session);
                 if (session && session.user) {
-                    this.loggedIn = true;
-                    this.userId = session.user.id;
-                    console.log('Calling getUserData for userId:', this.userId);
-                    await this.getUserData();
+                    await this.hydrateAuthenticatedSession(session);
                 } else {
                     this.loggedIn = false;
                     this.userData = null;
