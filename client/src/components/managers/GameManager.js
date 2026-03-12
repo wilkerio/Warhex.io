@@ -25,8 +25,8 @@ class GameManager {
                 generationRate: 0
             },
             protectionTime: {
-                current: 2, // This will store elapsed time in minutes
-                max: 2 // minutes
+                current: 0,
+                max: 0
             },
         }
 
@@ -171,26 +171,13 @@ class GameManager {
     }
 
     startProtectionTimer () {
-        // Clear any existing timer
+        // Spawn protection is now unlimited while active (until server removes it).
         if (this.protectionTimer) {
             clearInterval(this.protectionTimer);
+            this.protectionTimer = null;
         }
 
-        // Reset the timer
-        this.resources.protectionTime.current = this.resources.protectionTime.max;
-
-        // Start a new timer that updates every second
-        this.protectionTimer = setInterval(() => {
-            if (this.resources.protectionTime.current > 0) {
-                this.resources.protectionTime.current--;
-
-                this.core.uiManager.updateResources();
-            } else {
-                // Protection time has reached 0, clear the timer
-                clearInterval(this.protectionTimer);
-                this.protectionTimer = null; // Reset the timer reference
-            }
-        }, 60000); // Update every minute
+        this.core.uiManager.updateResources();
     }
 
     startGameLoop () {

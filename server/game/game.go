@@ -162,10 +162,6 @@ func startProtectionCheckLoop() {
 	for range ticker.C {
 		State.RLock()
 		for _, player := range State.Players {
-			if player.HasProtection() && time.Now().After(player.GetProtectionEndTime()) {
-				player.RemoveProtection()
-			}
-
 			// Self-heal stale duel state to avoid combat lock.
 			player.RLock()
 			inDuel := player.InDuel
@@ -310,11 +306,11 @@ func startWildPortalLoop() {
 					if !tooClose {
 						break
 					}
-						spawnPos = randomPortalPositionWithRadius(mapRadius, spawnPadding)
-						attempts++
-					}
+					spawnPos = randomPortalPositionWithRadius(mapRadius, spawnPadding)
+					attempts++
+				}
 
-					destination := randomPortalPositionWithRadius(mapRadius, spawnPadding+40)
+				destination := randomPortalPositionWithRadius(mapRadius, spawnPadding+40)
 				State.WildPortals[portalID] = &WildPortal{
 					ID:           portalID,
 					Position:     spawnPos,
@@ -500,11 +496,11 @@ func startUnitSpawnLoop() {
 					continue
 				}
 
-					// Frequencies are configured in milliseconds (legacy parity).
-					if spawning.Frequency.Current > 0 {
-						decrement := uint16(100) // 100ms tick
-						spawning.Frequency.Decrement(decrement)
-					}
+				// Frequencies are configured in milliseconds (legacy parity).
+				if spawning.Frequency.Current > 0 {
+					decrement := uint16(100) // 100ms tick
+					spawning.Frequency.Decrement(decrement)
+				}
 
 				// Only proceed if the frequency has reached zero
 				if spawning.Frequency.Get() == 0 {
@@ -1000,9 +996,9 @@ func applyPortalTeleportForUnit(unit *Unit, portalPairs []portalPair) bool {
 	}
 
 	var (
-		closestSource     *Building
+		closestSource      *Building
 		closestDestination *Building
-		minDistanceSq     = float64(math.MaxFloat64)
+		minDistanceSq      = float64(math.MaxFloat64)
 	)
 
 	for _, pair := range portalPairs {
@@ -1237,9 +1233,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					continue
 				}
 
-					if isBulletCollidingWithUnit(bullet, unit) {
-						unitHealth := unit.Health.Current
-						bulletHealth := bullet.Health.Current
+				if isBulletCollidingWithUnit(bullet, unit) {
+					unitHealth := unit.Health.Current
+					bulletHealth := bullet.Health.Current
 
 					isAlive := bullet.TakeDamage(unitHealth)
 					if !isAlive { // Bullet is destroyed
@@ -1248,10 +1244,10 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 						otherPlayer.Base.RemoveBullet(bullet.ID)
 					}
 
-						damage := bulletHealth
-						if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
-							damage *= uint16(bullet.DamageMultiplier)
-						}
+					damage := bulletHealth
+					if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
+						damage *= uint16(bullet.DamageMultiplier)
+					}
 
 					isAlive = unit.TakeDamage(damage)
 					if !isAlive { // Unit is destroyed
@@ -1265,11 +1261,11 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 			}
 		}
 
-			for _, building := range buildings {
-				// Skip units that are marked for removal
-				if building.IsMarkedForRemoval() {
-					continue
-				}
+		for _, building := range buildings {
+			// Skip units that are marked for removal
+			if building.IsMarkedForRemoval() {
+				continue
+			}
 
 			for _, bullet := range bullets {
 				// Skip bullets that are marked for removal
@@ -1298,98 +1294,98 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 						handleBuildingDestroyed(building, player.Base)
 						break // Building destroyed no need for more bullet checks for that building
 					}
-					}
+				}
+			}
+		}
+
+		// Unit-fired bullets can also damage the enemy core.
+		playerBasePosition := IntToFloat(player.Base.Position)
+		otherPlayer.RLock()
+		attackerUnits := make([]*Unit, 0, len(otherPlayer.Units))
+		for _, u := range otherPlayer.Units {
+			attackerUnits = append(attackerUnits, u)
+		}
+		otherPlayer.RUnlock()
+
+		for _, bullet := range bullets {
+			if bullet.isMarkedForRemoval() {
+				continue
+			}
+			if !bullet.IsFiredByUnit() {
+				continue
+			}
+
+			// Spawn protection blocks core damage unless they are duel opponents.
+			if player.HasProtection() && !AreDuelOpponents(player, otherPlayer) {
+				continue
+			}
+
+			coreRadius := (float32(player.Base.Health.Current)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS + float32(bullet.Size)
+			if !bullet.IsWithinRadius(playerBasePosition, coreRadius) {
+				continue
+			}
+
+			playerHealth := player.Base.Health.Current
+			bulletHealth := bullet.Health.Current
+
+			isBulletAlive := bullet.TakeDamage(playerHealth)
+			if !isBulletAlive {
+				TriggerBulletRemoveEvent(otherPlayer.Base.Owner, bullet.ID)
+				bullet.MarkForRemoval()
+				otherPlayer.Base.RemoveBullet(bullet.ID)
+			}
+
+			isBaseAlive := player.Base.TakeDamage(bulletHealth)
+			if !isBaseAlive {
+				if !player.IsMarkedForRemoval() {
+					scoreIncrement := (player.Score / 100) * 50
+					powerIncrement := math.Min((float64(player.Score)/100)*10, 6000)
+					otherPlayer.IncrementScore(scoreIncrement)
+					otherPlayer.IncrementKills(1)
+					otherPlayer.Resources.Power.Increment(uint16(powerIncrement))
+					player.MarkForRemoval()
+					TriggerPlayerKilledEvent(player, otherPlayer)
+				}
+			} else {
+				TriggerBaseHealthUpdateEvent(player.Base)
+			}
+
+			// Core retaliates: closest attacking unit also takes damage.
+			var (
+				closestAttacker   *Unit
+				closestDistanceSq = float64(math.MaxFloat64)
+			)
+			for _, attacker := range attackerUnits {
+				if attacker == nil || attacker.IsMarkedForRemoval() {
+					continue
+				}
+				dx := float64(attacker.Position.X - playerBasePosition.X)
+				dy := float64(attacker.Position.Y - playerBasePosition.Y)
+				distanceSq := dx*dx + dy*dy
+				if distanceSq < closestDistanceSq {
+					closestDistanceSq = distanceSq
+					closestAttacker = attacker
 				}
 			}
 
-			// Unit-fired bullets can also damage the enemy core.
-			playerBasePosition := IntToFloat(player.Base.Position)
-			otherPlayer.RLock()
-			attackerUnits := make([]*Unit, 0, len(otherPlayer.Units))
-			for _, u := range otherPlayer.Units {
-				attackerUnits = append(attackerUnits, u)
-			}
-			otherPlayer.RUnlock()
-
-			for _, bullet := range bullets {
-				if bullet.isMarkedForRemoval() {
-					continue
-				}
-				if !bullet.IsFiredByUnit() {
-					continue
+			if closestAttacker != nil {
+				retaliationDamage := bulletHealth
+				if retaliationDamage < 80 {
+					retaliationDamage = 80
 				}
 
-				// Spawn protection blocks core damage unless they are duel opponents.
-				if player.HasProtection() && !AreDuelOpponents(player, otherPlayer) {
-					continue
-				}
-
-				coreRadius := (float32(player.Base.Health.Current)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS + float32(bullet.Size)
-				if !bullet.IsWithinRadius(playerBasePosition, coreRadius) {
-					continue
-				}
-
-				playerHealth := player.Base.Health.Current
-				bulletHealth := bullet.Health.Current
-
-				isBulletAlive := bullet.TakeDamage(playerHealth)
-				if !isBulletAlive {
-					TriggerBulletRemoveEvent(otherPlayer.Base.Owner, bullet.ID)
-					bullet.MarkForRemoval()
-					otherPlayer.Base.RemoveBullet(bullet.ID)
-				}
-
-				isBaseAlive := player.Base.TakeDamage(bulletHealth)
-				if !isBaseAlive {
-					if !player.IsMarkedForRemoval() {
-						scoreIncrement := (player.Score / 100) * 50
-						powerIncrement := math.Min((float64(player.Score)/100)*10, 6000)
-						otherPlayer.IncrementScore(scoreIncrement)
-						otherPlayer.IncrementKills(1)
-						otherPlayer.Resources.Power.Increment(uint16(powerIncrement))
-						player.MarkForRemoval()
-						TriggerPlayerKilledEvent(player, otherPlayer)
-					}
+				attackerAlive := closestAttacker.TakeDamage(retaliationDamage)
+				if !attackerAlive {
+					closestAttacker.MarkForRemoval()
+					handleUnitDestroyed(closestAttacker)
 				} else {
-					TriggerBaseHealthUpdateEvent(player.Base)
-				}
-
-					// Core retaliates: closest attacking unit also takes damage.
-					var (
-						closestAttacker   *Unit
-						closestDistanceSq = float64(math.MaxFloat64)
-					)
-					for _, attacker := range attackerUnits {
-						if attacker == nil || attacker.IsMarkedForRemoval() {
-							continue
-						}
-						dx := float64(attacker.Position.X - playerBasePosition.X)
-						dy := float64(attacker.Position.Y - playerBasePosition.Y)
-						distanceSq := dx*dx + dy*dy
-						if distanceSq < closestDistanceSq {
-							closestDistanceSq = distanceSq
-							closestAttacker = attacker
-						}
-					}
-
-					if closestAttacker != nil {
-						retaliationDamage := bulletHealth
-						if retaliationDamage < 80 {
-							retaliationDamage = 80
-						}
-
-						attackerAlive := closestAttacker.TakeDamage(retaliationDamage)
-						if !attackerAlive {
-							closestAttacker.MarkForRemoval()
-							handleUnitDestroyed(closestAttacker)
-						} else {
-							TriggerUnitHealthUpdateEvent(closestAttacker.Player, closestAttacker)
-					}
+					TriggerUnitHealthUpdateEvent(closestAttacker.Player, closestAttacker)
 				}
 			}
+		}
 
-			for _, rock := range State.Rocks {
-				for _, bullet := range bullets {
+		for _, rock := range State.Rocks {
+			for _, bullet := range bullets {
 				// Skip bullets that are marked for removal
 				if bullet.isMarkedForRemoval() {
 					continue
@@ -1433,9 +1429,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					continue
 				}
 
-					if isBulletCollidingWithUnit(bullet, unit) {
-						unitHealth := unit.Health.Current
-						bulletHealth := bullet.Health.Current
+				if isBulletCollidingWithUnit(bullet, unit) {
+					unitHealth := unit.Health.Current
+					bulletHealth := bullet.Health.Current
 
 					isAlive := bullet.TakeDamage(unitHealth)
 					if !isAlive { // Bullet is destroyed
@@ -1444,10 +1440,10 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 						neutral.Base.RemoveBullet(bullet.ID)
 					}
 
-						damage := bulletHealth
-						if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
-							damage *= uint16(bullet.DamageMultiplier)
-						}
+					damage := bulletHealth
+					if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
+						damage *= uint16(bullet.DamageMultiplier)
+					}
 
 					isAlive = unit.TakeDamage(damage)
 					if !isAlive { // Unit is destroyed
@@ -1528,12 +1524,8 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 			continue
 		}
 
-			hasSpawnProtection := otherPlayer.HasProtection()
-			if hasSpawnProtection && time.Now().After(otherPlayer.GetProtectionEndTime()) {
-				otherPlayer.RemoveProtection()
-				hasSpawnProtection = false
-			}
-			basePosition := otherPlayer.Base.Position
+		hasSpawnProtection := otherPlayer.HasProtection()
+		basePosition := otherPlayer.Base.Position
 
 		// Same player checks own units if left spawn protection
 		if otherPlayer.ID == player.ID {
@@ -1594,13 +1586,13 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 				continue
 			}
 
-				// Check if unit is colliding with the core
-				otherPlayerHealth := otherPlayer.Base.Health.Current
-				isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(otherPlayerHealth)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS+unitSize)
-				if isNearCore {
-					unitDamage := unit.Damage
-					unitIsAlive := unit.TakeDamage(otherPlayerHealth)
-					otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitDamage)
+			// Check if unit is colliding with the core
+			otherPlayerHealth := otherPlayer.Base.Health.Current
+			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(otherPlayerHealth)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS+unitSize)
+			if isNearCore {
+				unitDamage := unit.Damage
+				unitIsAlive := unit.TakeDamage(otherPlayerHealth)
+				otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitDamage)
 
 				if !otherPlayerIsAlive {
 					// Calculate the score and power increment
@@ -1682,13 +1674,13 @@ func checkNeutralBaseCollisions(player *Player, neutrals []*NeutralBase, units [
 				continue
 			}
 
-				// Check if unit is colliding with the core
-				neutralBaseHealth := neutral.Base.Health.Current
-				isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(neutralBaseHealth)/NEUTRAL_BASE_INITIAL_HEALTH)*NEUTRAL_BASE_MAX_CORE_RADIUS+unitSize)
-				if isNearCore {
-					unitDamage := unit.Damage
-					unitIsAlive := unit.TakeDamage(neutralBaseHealth)
-					neutralBaseIsAlive := neutral.Base.TakeDamage(unitDamage)
+			// Check if unit is colliding with the core
+			neutralBaseHealth := neutral.Base.Health.Current
+			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(neutralBaseHealth)/NEUTRAL_BASE_INITIAL_HEALTH)*NEUTRAL_BASE_MAX_CORE_RADIUS+unitSize)
+			if isNearCore {
+				unitDamage := unit.Damage
+				unitIsAlive := unit.TakeDamage(neutralBaseHealth)
+				neutralBaseIsAlive := neutral.Base.TakeDamage(unitDamage)
 
 				if !neutralBaseIsAlive {
 					handleNeutralBaseCaptured(player, neutral)
@@ -2102,7 +2094,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		},
 		HasSpawnProtection:      true,
 		HasCommander:            false,
-		SpawnProtectionEndTime:  time.Now().Add(PLAYER_SPAWN_PROTECTION_TIME * time.Minute),
+		SpawnProtectionEndTime:  time.Time{},
 		LastActivity:            time.Now(),
 		LastActivityWarningSent: time.Now(),
 		RemoveFlag:              false,

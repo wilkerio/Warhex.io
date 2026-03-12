@@ -4921,10 +4921,9 @@ export default class UIManager {
     }
 
     updateResources () {
-        const { power, protectionTime } = this.core.gameManager.resources;
-        const protectionTimeDisplay = protectionTime.current > 0
-            ? `${protectionTime.current}min`
-            : "<1min";
+        const { power } = this.core.gameManager.resources;
+        const hasSpawnProtection = !!this.core.gameManager.player?.hasSpawnProtection;
+        const protectionTimeDisplay = hasSpawnProtection ? "Unlimited" : "Off";
 
         this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max} (+${power.generationRate}/s)</span>`;
         this.DOM.game.resources.shield.innerHTML = `Protection: <span>${protectionTimeDisplay}</span>`;
