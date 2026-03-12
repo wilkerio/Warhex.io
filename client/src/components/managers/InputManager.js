@@ -87,12 +87,27 @@ export default class InputManager {
             if (upgradePanelOpen && upgradeHotkeys.includes(key)) {
                 return;
             }
-            if (key === keyToggleMap) {
-                if (this.core.uiManager.isChatInputFocused) {
-                    return
+            const isTabKey = event.key === "Tab";
+            const activeElement = document.activeElement;
+            const activeTag = activeElement?.tagName?.toLowerCase?.() || "";
+            const isFormFocused = Boolean(
+                activeElement &&
+                (activeTag === "input" || activeTag === "textarea" || activeTag === "select" || activeElement.isContentEditable)
+            );
+            if (key === keyToggleMap || isTabKey) {
+                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen || isFormFocused) {
+                    return;
+                }
+                if (isTabKey) {
+                    // Keep Tab from moving browser focus while playing.
+                    event.preventDefault();
+                }
+                // Toggle actions should only fire once per key press.
+                if (event.repeat) {
+                    return;
                 }
                 // Toggle map overview (zoomed out) for better visualization
-                if (typeof this.core.toggleMapView === 'function') {
+                if (typeof this.core.toggleMapView === "function") {
                     this.core.toggleMapView();
                 } else {
                     this.core.miniMap.toggleFullScreen();

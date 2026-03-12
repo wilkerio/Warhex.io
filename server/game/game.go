@@ -1203,6 +1203,43 @@ func checkRockCollisions(units []*Unit) {
 	}
 }
 
+func isPlayerBaseDefeated(base *Base) bool {
+	if base == nil {
+		return true
+	}
+
+	base.Health.RLock()
+	currentHealth := base.Health.Current
+	maxHealth := base.Health.Max
+	base.Health.RUnlock()
+
+	if currentHealth == 0 || maxHealth == 0 {
+		return true
+	}
+
+	currentRatio := float32(currentHealth) / float32(maxHealth)
+	thresholdRatio := float32(PLAYER_CORE_ELIMINATION_PERCENT) / 100
+	return currentRatio <= thresholdRatio
+}
+
+func getPlayerCoreRadius(base *Base) float32 {
+	if base == nil {
+		return 0
+	}
+
+	base.Health.RLock()
+	currentHealth := base.Health.Current
+	maxHealth := base.Health.Max
+	base.Health.RUnlock()
+
+	if maxHealth == 0 {
+		return 0
+	}
+
+	currentRatio := float32(currentHealth) / float32(maxHealth)
+	return currentRatio * PLAYER_MAX_CORE_RADIUS
+}
+
 // ! TODO: Optimize this shit
 func checkBulletCollisions(player *Player, players []*Player, neutrals []*NeutralBase, units []*Unit, buildings []*Building) {
 	for _, otherPlayer := range players {
@@ -1320,7 +1357,7 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 				continue
 			}
 
-			coreRadius := (float32(player.Base.Health.Current)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS + float32(bullet.Size)
+			coreRadius := getPlayerCoreRadius(player.Base) + float32(bullet.Size)
 			if !bullet.IsWithinRadius(playerBasePosition, coreRadius) {
 				continue
 			}
@@ -1336,6 +1373,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 			}
 
 			isBaseAlive := player.Base.TakeDamage(bulletHealth)
+			if isBaseAlive && isPlayerBaseDefeated(player.Base) {
+				isBaseAlive = false
+			}
 			if !isBaseAlive {
 				if !player.IsMarkedForRemoval() {
 					scoreIncrement := (player.Score / 100) * 50
@@ -1588,11 +1628,14 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 
 			// Check if unit is colliding with the core
 			otherPlayerHealth := otherPlayer.Base.Health.Current
-			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(otherPlayerHealth)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS+unitSize)
+			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), getPlayerCoreRadius(otherPlayer.Base)+unitSize)
 			if isNearCore {
 				unitDamage := unit.Damage
 				unitIsAlive := unit.TakeDamage(otherPlayerHealth)
 				otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitDamage)
+				if otherPlayerIsAlive && isPlayerBaseDefeated(otherPlayer.Base) {
+					otherPlayerIsAlive = false
+				}
 
 				if !otherPlayerIsAlive {
 					// Calculate the score and power increment
@@ -1806,10 +1849,12 @@ func applyExplosionDamage(unit *Unit) {
 			}
 
 			basePosition := player.Base.Position
-			otherPlayerHealth := player.Base.Health.Get()
-			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(otherPlayerHealth)/PLAYER_INITIAL_HEALTH)*PLAYER_MAX_CORE_RADIUS+explosionRadius)
+			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), getPlayerCoreRadius(player.Base)+explosionRadius)
 			if isNearCore {
 				isAlive := player.Base.TakeDamage(damage)
+				if isAlive && isPlayerBaseDefeated(player.Base) {
+					isAlive = false
+				}
 				TriggerBaseHealthUpdateEvent(player.Base)
 				if !isAlive {
 					player.MarkForRemoval()

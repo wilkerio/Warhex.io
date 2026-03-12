@@ -98,12 +98,14 @@ const (
 	// Player configuration
 	PLAYER_INITIAL_POPULATION = 8
 	PLAYER_INITIAL_HEALTH     = 2000
-		PLAYER_INITIAL_POWER = 6000
-		PLAYER_MAX_POWER     = 6000
+	PLAYER_INITIAL_POWER      = 6000
+	PLAYER_MAX_POWER          = 6000
+	// Base is considered defeated at or below this percentage of max health.
+	PLAYER_CORE_ELIMINATION_PERCENT = 35
 
 	// Player timeout and protection settings
 	PLAYER_TIMEOUT                 = 10 // Minutes
-	PLAYER_SPAWN_PROTECTION_TIME   = 2 // Minutes
+	PLAYER_SPAWN_PROTECTION_TIME   = 2  // Minutes
 	PLAYER_SPAWN_PROTECTION_RADIUS = 306 + 145
 	PORTAL_LIFETIME_SECONDS        = 30
 	PORTAL_COOLDOWN_SECONDS        = 300
@@ -136,7 +138,7 @@ const (
 	KICK_REASON_TIMEOUT   = 0
 	KICK_REASON_SCRIPTING = 1
 
-	COMMANDER_COST = 1500
+	COMMANDER_COST     = 1500
 	RELOCATE_BASE_COST = 4000
 
 	// Spawn settings
