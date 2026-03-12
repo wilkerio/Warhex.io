@@ -5,7 +5,7 @@ import ThemeManager from "../components/managers/ThemeManager.js";
 import SkinCache from "../components/SkinCache.js";
 
 export default class Player extends Renderable {
-    constructor (id, name = "blobl.io", color, skinID = null, position = { x: 0, y: 0 }, health = 2000, hasSpawnProtection = true) {
+    constructor (id, name = "Warhex.io", color, skinID = null, position = { x: 0, y: 0 }, health = 2000, hasSpawnProtection = true) {
         super();
         this.isVisible = true;
         this.isClient = false; // Indicates whether this player instance is the client player

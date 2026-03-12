@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /src/
+Disallow: /node_modules/
+Disallow: /blobfuscator/
+Disallow: /dist/
+Disallow: /package.json
+Disallow: /package-lock.json
+Disallow: /auth/
+Disallow: /internal/
+
+Sitemap: https://warhex.io/sitemap.xml
