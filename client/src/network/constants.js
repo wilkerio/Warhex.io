@@ -739,6 +739,15 @@ export const UnitBulletDetails = {
             speed: 700,
             size: 12
         },
+    },
+    TRI_COMMANDER: {
+        type: UnitTypes.TRI_COMMANDER,
+        BASIC: {
+            variant: UnitVariantTypes.TRI_COMMANDER.BASIC,
+            type: BulletTypes.BASIC,
+            speed: 700,
+            size: 12
+        },
     }
 }
 

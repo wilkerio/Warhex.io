@@ -4,10 +4,10 @@ import Unit from "../Unit.js";
 
 
 export default class TriCommander extends Unit {
-    constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1) {
+    constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1, health = 700, maxHealth = 700) {
         const details = getUnitDetails(UnitTypes.TRI_COMMANDER, variant);
 
-        super(id, UnitTypes.TRI_COMMANDER, color, details, position, variant);
+        super(id, UnitTypes.TRI_COMMANDER, color, details, position, variant, health, maxHealth);
 
         this.flameAnimationTime = 0; // Time tracker for flame animation
 
@@ -26,7 +26,7 @@ export default class TriCommander extends Unit {
     }
 
     _updateBulletDetails () {
-        this.bulletDetails = getUnitBulletDetails(UnitTypes.ANTI_TANK_COMMANDER, this.variant);
+        this.bulletDetails = getUnitBulletDetails(UnitTypes.TRI_COMMANDER, this.variant);
     }
 
     triggerRecoil () {

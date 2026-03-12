@@ -1538,6 +1538,7 @@ export default class NetworkManager {
 
     handleSpawnBullet (payload) {
         const { isPlayer, ownerID, objectID, bulletID, targetPosition } = payload;
+        const bulletPosition = targetPosition;
         const buildingID = objectID;
         let base = null;
         if (isPlayer) {
@@ -1549,19 +1550,22 @@ export default class NetworkManager {
 
         const turret = base.getBuilding(buildingID);
         if (!turret) return;
-        const bullet = new Bullet(turret.bulletDetails, base.color, targetPosition, bulletID);
-        base.spawnBullet(bullet, targetPosition, turret);
+        const bullet = new Bullet(turret.bulletDetails, base.color, bulletPosition, bulletID);
+        base.spawnBullet(bullet, bulletPosition, turret);
     }
 
     handleUnitSpawnBullet (payload) {
         const { playerID, objectID, bulletID, targetPosition } = payload;
+        const bulletPosition = targetPosition;
         const unitID = objectID;
         const player = this.core.gameManager.getPlayerById(playerID);
         if (!player) return;
 
         const unit = player.getUnit(unitID);
-        const bullet = new Bullet(unit.bulletDetails, player.color, targetPosition, bulletID);
-        player.spawnBullet(bullet, targetPosition, unit);
+        if (!unit?.bulletDetails) return;
+
+        const bullet = new Bullet(unit.bulletDetails, player.color, bulletPosition, bulletID);
+        player.spawnBullet(bullet, bulletPosition, unit);
     }
 
     handleRemoveBullet (payload) {
@@ -1579,6 +1583,7 @@ export default class NetworkManager {
 
     handleBulletPositionUpdate (payload) {
         const { isPlayer, ownerID, bulletID, targetPosition } = payload;
+        const bulletPosition = targetPosition;
         let base = null;
         if (isPlayer) {
             base = this.core.gameManager.getPlayerById(ownerID);
@@ -1589,7 +1594,7 @@ export default class NetworkManager {
 
         const bullet = base.getBullet(bulletID);
         if (bullet) {
-            bullet.setTargetPosition(targetPosition);
+            bullet.setTargetPosition(bulletPosition);
         }
     }
 
