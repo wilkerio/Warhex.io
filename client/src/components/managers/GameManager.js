@@ -205,6 +205,7 @@ class GameManager {
 
         this.players.forEach(player => player.update(deltaTime));
         this.neutrals.forEach(neutral => neutral.update(deltaTime));
+        this.core.unitManager?.refreshSelectionHud?.();
     }
 
     setClientPlayer (player) {

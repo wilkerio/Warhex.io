@@ -3283,6 +3283,39 @@ button:hover {
   box-shadow: none !important;
 }
 
+#soldier-selection-counter {
+  position: fixed;
+  top: 8px;
+  left: 0;
+  right: auto;
+  z-index: 1002;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(20, 10, 40, 0.74);
+  border: 1px solid rgba(180, 160, 255, 0.36);
+  box-shadow: 0 8px 24px rgba(180, 160, 255, 0.2);
+  color: #e7dcff;
+  font-family: 'Ubuntu', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  backdrop-filter: blur(8px);
+}
+
+#soldier-selection-counter .soldier-counter-label {
+  opacity: 0.92;
+  font-size: 13px;
+}
+
+#soldier-selection-counter .soldier-counter-value {
+  color: #ffffff;
+  font-size: 16px;
+  min-width: 52px;
+  text-align: right;
+}
+
 .unit-control-button {
   display: flex;
   flex-direction: row;

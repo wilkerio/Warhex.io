@@ -3,7 +3,7 @@ import Tank from "../../entities/units/Tank.js";
 import SiegeTank from "../../entities/units/SiegeTank.js";
 import Commander from "../../entities/units/Commander.js";
 import TriCommander from "../../entities/units/TriCommander.js";
-import { UnitTypes } from "../../network/constants.js";
+import { BuildingTypes, BuildingVariantTypes, UnitTypes } from "../../network/constants.js";
 
 // Define a namespace/module for buildings
 export const Units = {
@@ -48,7 +48,76 @@ export default class UnitManager {
     }
 
     hasSelectedUnits () {
+        this.refreshSelectionHud();
         return this.selectedUnits.length > 0;
+    }
+
+    refreshSelectionHud () {
+        const player = this.core?.gameManager?.player;
+        const activeUnits = Array.isArray(player?.units) ? player.units : [];
+        const spawningUnits = Array.isArray(player?.spawningUnits) ? player.spawningUnits : [];
+
+        if (!activeUnits.length && !spawningUnits.length) {
+            this.selectedUnits = [];
+            this.core?.uiManager?.updateSoldierSelectionCounter?.(0, 0);
+            return;
+        }
+
+        // Keep selection list synced with currently active player units.
+        const activeSet = new Set(activeUnits);
+        this.selectedUnits = this.selectedUnits.filter(unit => activeSet.has(unit));
+        const selectedSoldiers = this.selectedUnits.reduce((count, unit) =>
+            count + (unit?.type === UnitTypes.SOLDIER ? 1 : 0), 0);
+        if (selectedSoldiers <= 0) {
+            this.core?.uiManager?.updateSoldierSelectionCounter?.(0, 0);
+            return;
+        }
+
+        const allUnits = [...activeUnits, ...spawningUnits];
+        const spawnedSoldiers = activeUnits.reduce(
+            (count, unit) => count + (unit?.type === UnitTypes.SOLDIER ? 1 : 0),
+            0
+        );
+
+        const getUnitPopulation = (unitType) => {
+            switch (unitType) {
+                case UnitTypes.SOLDIER:
+                    return 2;
+                case UnitTypes.TANK:
+                    return 15;
+                case UnitTypes.SIEGE_TANK:
+                    return 40;
+                default:
+                    return 0;
+            }
+        };
+
+        const nonSoldierUsedPopulation = allUnits.reduce((total, unit) => {
+            if (!unit || unit.type === UnitTypes.SOLDIER) return total;
+            return total + getUnitPopulation(unit.type);
+        }, 0);
+
+        let totalPopulationCapacity = 8; // PLAYER_INITIAL_POPULATION
+        const capturedNeutrals = Array.isArray(this.core?.gameManager?.capturedNeutrals)
+            ? this.core.gameManager.capturedNeutrals
+            : [];
+        totalPopulationCapacity += capturedNeutrals.length * 32; // NEUTRAL_BASE_POPULATION
+
+        const countHouseCapacity = (buildings = []) => buildings.reduce((cap, building) => {
+            if (!building || building.type !== BuildingTypes.HOUSE) return cap;
+            if (building.variant === BuildingVariantTypes.HOUSE.LARGE_HOUSE) return cap + 6;
+            return cap + 3;
+        }, 0);
+
+        totalPopulationCapacity += countHouseCapacity(player?.buildings || []);
+        for (const neutral of capturedNeutrals) {
+            totalPopulationCapacity += countHouseCapacity(neutral?.buildings || []);
+        }
+
+        const availableForSoldiers = Math.max(0, totalPopulationCapacity - nonSoldierUsedPopulation);
+        const totalSoldierSlots = Math.max(spawnedSoldiers, Math.floor(availableForSoldiers / 2));
+
+        this.core?.uiManager?.updateSoldierSelectionCounter?.(spawnedSoldiers, totalSoldierSlots);
     }
 
     clearSelection () {
@@ -56,6 +125,7 @@ export default class UnitManager {
             unit.isSelected = false;
         });
         this.selectedUnits = [];
+        this.refreshSelectionHud();
     }
 
     handleMouseDown (mousePosition, button) {
@@ -123,6 +193,7 @@ export default class UnitManager {
                 unit.isSelected = true;
             }
         });
+        this.refreshSelectionHud();
     }
 
     selectUnitsByTypes(unitTypes = [], options = {}) {
@@ -142,6 +213,7 @@ export default class UnitManager {
             }
             unit.isSelected = true;
         });
+        this.refreshSelectionHud();
     }
 
     selectArmyCombatUnits () {
@@ -181,6 +253,7 @@ export default class UnitManager {
             this.selectedUnits.push(commander);
         }
         commander.isSelected = true;
+        this.refreshSelectionHud();
         return true;
     }
 
@@ -223,6 +296,6 @@ export default class UnitManager {
                 }
             }
         });
-
+        this.refreshSelectionHud();
     }
 }

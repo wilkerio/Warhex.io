@@ -59,6 +59,7 @@ export default class UIManager {
         this._startupRandomSkinApplied = false;
         this.hideMenuSecondaryPanels = false;
         this.discordOnboardingInProgress = false;
+        this.soldierSelectionCounterElement = null;
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -66,6 +67,7 @@ export default class UIManager {
         this.skinPersistTimeout = null;
 
         this.initializeUIElements();
+        this.ensureSoldierSelectionCounter();
         this.embedPlayControlsIntoAccountCard();
         this.loadHudConfig();
         this.initializeSkinsFromCache(); // First: load from localStorage cache
@@ -101,6 +103,52 @@ export default class UIManager {
         const normalized = String(value).trim().toLowerCase();
         const logoutLocalized = this.t("menu.logout").toLowerCase();
         return normalized === "logout" || normalized === "sair" || normalized === "cerrar sesion" || normalized === logoutLocalized;
+    }
+
+    ensureSoldierSelectionCounter () {
+        if (this.soldierSelectionCounterElement?.isConnected) return;
+
+        const gameContainer = this.DOM?.game?.container || document.getElementById("game-container");
+        if (!gameContainer) return;
+
+        let counter = document.getElementById("soldier-selection-counter");
+        if (!counter) {
+            counter = document.createElement("div");
+            counter.id = "soldier-selection-counter";
+            counter.style.display = "none";
+
+            const label = document.createElement("span");
+            label.className = "soldier-counter-label";
+
+            const value = document.createElement("span");
+            value.className = "soldier-counter-value";
+
+            counter.appendChild(label);
+            counter.appendChild(value);
+            gameContainer.appendChild(counter);
+        }
+
+        this.soldierSelectionCounterElement = counter;
+    }
+
+    updateSoldierSelectionCounter (selectedCount = 0, totalCount = 0) {
+        this.ensureSoldierSelectionCounter();
+        const counter = this.soldierSelectionCounterElement;
+        if (!counter) return;
+
+        if (totalCount <= 0) {
+            counter.style.display = "none";
+            return;
+        }
+
+        const labelText = "Soldiers";
+        const label = counter.querySelector(".soldier-counter-label");
+        const value = counter.querySelector(".soldier-counter-value");
+
+        if (label) label.textContent = labelText;
+        if (value) value.textContent = `${selectedCount}/${totalCount}`;
+
+        counter.style.display = "flex";
     }
 
     setupLanguageSelector () {
@@ -4868,6 +4916,8 @@ export default class UIManager {
         if (show) {
             this.hideMenuSecondaryPanels = false;
             this.showMenuSecondaryPanels(false);
+        } else {
+            this.updateSoldierSelectionCounter(0, 0);
         }
         this.showLeaderboard(show);
         this.showToolbar(show);
