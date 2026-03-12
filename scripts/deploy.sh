@@ -51,9 +51,13 @@ fi
 
 log "Updating repository in ${APP_DIR}"
 cd "$APP_DIR"
+log "Resetting local repository state"
+git reset --hard HEAD
+git clean -fd
 git fetch --prune origin
-git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
+git checkout -f -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
 git reset --hard "origin/$DEPLOY_BRANCH"
+git clean -fd
 
 run_npm_ci client
 log "Building client bundle"
