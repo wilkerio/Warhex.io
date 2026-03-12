@@ -76,41 +76,54 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keygen -lf ~/.ssh/id_ed25519
 
+      - name: Normalize SSH settings
+        shell: bash
+        run: |
+          sanitize() {
+            printf '%s' "$1" | tr -d '\r\n\t '
+          }
+
+          {
+            echo "SSH_HOST_CLEAN=$(sanitize "${SSH_HOST}")"
+            echo "SSH_PORT_CLEAN=$(sanitize "${SSH_PORT:-22}")"
+            echo "SSH_USER_CLEAN=$(sanitize "${SSH_USER}")"
+          } >> "$GITHUB_ENV"
+
       - name: Trust Droplet host key
         shell: bash
         run: |
-          PORT="${SSH_PORT:-22}"
-          ssh-keyscan -p "$PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          PORT="${SSH_PORT_CLEAN:-22}"
+          ssh-keyscan -p "$PORT" -H "$SSH_HOST_CLEAN" >> ~/.ssh/known_hosts
 
       - name: Verify SSH connectivity
         shell: bash
         run: |
-          PORT="${SSH_PORT:-22}"
+          PORT="${SSH_PORT_CLEAN:-22}"
           ssh -i ~/.ssh/id_ed25519 \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=15 \
             -p "$PORT" \
-            "${SSH_USER}@${SSH_HOST}" "echo connected"
+            "${SSH_USER_CLEAN}@${SSH_HOST_CLEAN}" "echo connected"
 
       - name: Upload deploy script
         shell: bash
         run: |
-          PORT="${SSH_PORT:-22}"
+          PORT="${SSH_PORT_CLEAN:-22}"
           scp -i ~/.ssh/id_ed25519 \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -P "$PORT" \
-            scripts/deploy.sh "${SSH_USER}@${SSH_HOST}:/tmp/infinity-deploy.sh"
+            scripts/deploy.sh "${SSH_USER_CLEAN}@${SSH_HOST_CLEAN}:/tmp/infinity-deploy.sh"
 
       - name: Run remote deployment
         shell: bash
         run: |
-          PORT="${SSH_PORT:-22}"
+          PORT="${SSH_PORT_CLEAN:-22}"
           ssh -i ~/.ssh/id_ed25519 \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
-            -p "$PORT" "${SSH_USER}@${SSH_HOST}" \
+            -p "$PORT" "${SSH_USER_CLEAN}@${SSH_HOST_CLEAN}" \
             "chmod +x /tmp/infinity-deploy.sh && \
             APP_DIR='${APP_DIR:-/opt/infinity.io}' \
             DEPLOY_BRANCH='${DEPLOY_BRANCH:-main}' \
