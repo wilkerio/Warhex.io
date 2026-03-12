@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# GitHub Actions connects over a non-interactive SSH session, so Go's install
+# path is not guaranteed to be present in PATH.
+export PATH="/usr/local/go/bin:$PATH"
+
 APP_DIR="${APP_DIR:-/opt/infinity.io}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 SYSTEMD_SERVICES="${SYSTEMD_SERVICES:-}"
