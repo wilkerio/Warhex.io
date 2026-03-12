@@ -40,7 +40,7 @@ require_command git
 require_command npm
 require_command go
 
-if [ ! -d "$APP_DIR/.git" ]; then
+if ! git -C "$APP_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   printf 'APP_DIR does not contain a git repository: %s\n' "$APP_DIR" >&2
   exit 1
 fi
