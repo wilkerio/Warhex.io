@@ -72,7 +72,10 @@ export default class Toolbar {
         toolbarItem.addEventListener("click", () => {
             // Check if the current building count is below the limit
             if (buildingLimit.current < buildingLimit.limit) {
-                if (this.onSelectBuilding) {
+                const activeType = this.core.buildingManager?.selectedPlacementType;
+                if (activeType === item.type) {
+                    this.core.buildingManager?.removeBuildingToPlace?.();
+                } else if (this.onSelectBuilding) {
                     this.onSelectBuilding(itemClass);
                 }
                 this.core.uiManager.hideUpgrades();
@@ -268,7 +271,10 @@ export default class Toolbar {
             const buildingLimit = this.getBuildingLimit(item.type); // Use item.type instead of itemClass
 
             if (buildingLimit.current < buildingLimit.limit) {
-                if (this.onSelectBuilding) {
+                const activeType = this.core.buildingManager?.selectedPlacementType;
+                if (activeType === item.type) {
+                    this.core.buildingManager?.removeBuildingToPlace?.();
+                } else if (this.onSelectBuilding) {
                     this.onSelectBuilding(itemClass);
                 }
                 this.core.uiManager.hideUpgrades();
@@ -303,6 +309,21 @@ export default class Toolbar {
                     toolbarItem.classList.remove('disabled');
                 }
             }
+        }
+    }
+
+    setActiveBuildingType (buildingType) {
+        if (!this.container) return;
+
+        this.container.querySelectorAll(".toolbar-item-active").forEach((item) => {
+            item.classList.remove("toolbar-item-active");
+        });
+
+        if (buildingType === null || buildingType === undefined) return;
+
+        const activeItem = this.container.querySelector(`[data-building-type="${buildingType}"]`);
+        if (activeItem) {
+            activeItem.classList.add("toolbar-item-active");
         }
     }
 }

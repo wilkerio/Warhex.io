@@ -3391,6 +3391,18 @@ button:hover {
   background: rgba(30, 15, 60, 0.7);
 }
 
+.toolbar-item.toolbar-item-active {
+  transform: translateY(-3px);
+  background: rgba(54, 24, 110, 0.82);
+  border-color: rgba(215, 178, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(245, 213, 255, 0.7), 0 14px 32px rgba(175, 108, 255, 0.42);
+}
+
+.toolbar-item.toolbar-item-active:hover {
+  transform: translateY(-4px);
+  background: rgba(62, 28, 124, 0.88);
+}
+
 .toolbar-item canvas {
   width: 60px;
   height: 60px;

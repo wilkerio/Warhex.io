@@ -29,8 +29,10 @@ export class BuildingManager {
     constructor (core) {
         this.core = core;
         this.buildingToPlace = null; // Selected by toolbar
+        this.selectedPlacementType = null;
         this.selectedBuildings = []; // Clicked, or selected by selection circle
         this.lastSelectedBuilding = null;
+        this.placementHintShown = false;
 
         this.blockBuildingSelection = false;
 
@@ -472,6 +474,17 @@ export class BuildingManager {
 
         // Store the selected building and its shadow
         this.buildingToPlace = { building, buildingPreview };
+        this.selectedPlacementType = building.type;
+        this.core.toolbar?.setActiveBuildingType?.(building.type);
+
+        if (!this.placementHintShown) {
+            this.core.uiManager?.addChatMessage?.(
+                "System",
+                "Placement stays active. Click the same toolbar box again or right-click to cancel.",
+                "#60c1ff"
+            );
+            this.placementHintShown = true;
+        }
 
         this.updateBuildingPosition()
     }
@@ -634,20 +647,10 @@ export class BuildingManager {
 
             this.core.gameManager.subtractResources(cost);
 
-            // If Shift is pressed, re-select the building type and update the position for another placement
-            if (this.core.inputManager.shiftPressed) {
-                const buildingLimit = this.core.toolbar.getBuildingLimit(buildingType); // Use item.type instead of itemClass
-
-                if (buildingLimit.current < buildingLimit.limit) {
-
-                    // Re-select the building type and keep the selection
-                    this.reselectBuildingForPlacement();
-                } else {
-                    this.removeBuildingToPlace();
-
-                }
+            const buildingLimit = this.core.toolbar.getBuildingLimit(buildingType);
+            if (buildingLimit.current < buildingLimit.limit) {
+                this.reselectBuildingForPlacement();
             } else {
-                // Otherwise, remove the selected building and its preview
                 this.removeBuildingToPlace();
             }
         }
@@ -667,6 +670,8 @@ export class BuildingManager {
             this.core.renderer.removeFromQueue(building, QueueType.OVERLAY);
             this.buildingToPlace = null;
         }
+        this.selectedPlacementType = null;
+        this.core.toolbar?.setActiveBuildingType?.(null);
     }
 
     // Handle clicks on buildings
