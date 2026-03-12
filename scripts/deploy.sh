@@ -6,10 +6,14 @@ set -euo pipefail
 # path is not guaranteed to be present in PATH.
 export PATH="/usr/local/go/bin:$PATH"
 
-APP_DIR="${APP_DIR:-/opt/infinity.io}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
-SYSTEMD_SERVICES="${SYSTEMD_SERVICES:-}"
-DEPLOY_DISCORD_BOT="${DEPLOY_DISCORD_BOT:-false}"
+sanitize() {
+  printf '%s' "$1" | tr -d '\r\n\t'
+}
+
+APP_DIR="$(sanitize "${APP_DIR:-/opt/infinity.io}")"
+DEPLOY_BRANCH="$(sanitize "${DEPLOY_BRANCH:-main}")"
+DEPLOY_DISCORD_BOT="$(sanitize "${DEPLOY_DISCORD_BOT:-false}")"
+SYSTEMD_SERVICES="$(printf '%s' "${SYSTEMD_SERVICES:-}" | tr -d '\r')"
 
 log() {
   printf '[deploy] %s\n' "$1"
