@@ -110,7 +110,7 @@ func startRegenerationLoop() {
 	for range ticker.C {
 		State.RLock()
 		for _, player := range State.Players {
-			if !player.Base.Health.hasMaxHealth() {
+			if !player.Base.Health.hasMaxHealth() && !player.WasBaseDamagedWithin(15*time.Second) {
 				player.Base.Health.Increment(PLAYER_HEALTH_REGENERATION)
 				TriggerBaseHealthUpdateEvent(player.Base)
 			}
