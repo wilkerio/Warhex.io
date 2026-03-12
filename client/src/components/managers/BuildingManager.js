@@ -647,12 +647,7 @@ export class BuildingManager {
 
             this.core.gameManager.subtractResources(cost);
 
-            const buildingLimit = this.core.toolbar.getBuildingLimit(buildingType);
-            if (buildingLimit.current < buildingLimit.limit) {
-                this.reselectBuildingForPlacement();
-            } else {
-                this.removeBuildingToPlace();
-            }
+            this.reselectBuildingForPlacement();
         }
     }
 
