@@ -4450,3 +4450,7 @@ body.menu-active #global-settings-button p.settings-text {
     border-radius: 12px;
 }
 
+#shield {
+    display: none !important;
+}
+

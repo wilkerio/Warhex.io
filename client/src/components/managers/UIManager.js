@@ -4801,7 +4801,7 @@ export default class UIManager {
 
     showResource (show) {
         this.DOM.game.resources.container.style.display = show ? "flex" : "none";
-        this.showSpawnProtectionTimer(show);
+        this.showSpawnProtectionTimer(false);
     }
 
     showLeaderboard (show) {
@@ -4922,19 +4922,16 @@ export default class UIManager {
 
     updateResources () {
         const { power } = this.core.gameManager.resources;
-        const hasSpawnProtection = !!this.core.gameManager.player?.hasSpawnProtection;
-        const protectionTimeDisplay = hasSpawnProtection ? "Unlimited" : "Off";
 
         this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max} (+${power.generationRate}/s)</span>`;
-        this.DOM.game.resources.shield.innerHTML = `Protection: <span>${protectionTimeDisplay}</span>`;
 
 
         this._updateCost(); // Update the upgrade panel
     }
 
-    showSpawnProtectionTimer (show) {
+    showSpawnProtectionTimer () {
         if (!this.DOM.game.resources.shield) return;
-        this.DOM.game.resources.shield.style.display = show ? "flex" : "none";
+        this.DOM.game.resources.shield.style.display = "none";
     }
 
     showMetrics (show) {
