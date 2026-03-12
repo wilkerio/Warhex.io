@@ -83,6 +83,27 @@ export default class Network {
         return `${scheme}://${trimmed}`;
     }
 
+    normalizeResolvedServerAddress(address) {
+        if (!address || typeof address !== 'string') {
+            return address;
+        }
+
+        const trimmed = address.trim();
+        const pathMatch = trimmed.match(/(\/ffa\d+)$/i);
+        const pathSuffix = pathMatch ? pathMatch[1] : '/ffa1';
+
+        if (window.location.protocol !== 'https:') {
+            return trimmed;
+        }
+
+        const ipHostPattern = /^(?:wss?:\/\/|https?:\/\/)?(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:\/|$)/i;
+        if (ipHostPattern.test(trimmed)) {
+            return `${window.location.host}${pathSuffix}`;
+        }
+
+        return trimmed;
+    }
+
     async resolveProductionAddress() {
         const forcedWs = (window.__WARHEX_WS_URL__ || '').trim();
         if (forcedWs) {
@@ -95,7 +116,7 @@ export default class Network {
                 if (response.ok) {
                     const data = await response.json();
                     if (data && typeof data.server_address === 'string' && data.server_address.trim()) {
-                        return data.server_address.trim();
+                        return this.normalizeResolvedServerAddress(data.server_address);
                     }
                 }
             } catch (error) {
@@ -105,10 +126,10 @@ export default class Network {
 
         const fallback = (window.__WARHEX_GAME_WS_HOST__ || '').trim();
         if (fallback) {
-            return fallback;
+            return this.normalizeResolvedServerAddress(fallback);
         }
 
-        return this.buildDirectGameAddress();
+        return this.normalizeResolvedServerAddress(this.buildDirectGameAddress());
     }
 
     async connect() {
