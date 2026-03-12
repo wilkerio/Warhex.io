@@ -38,6 +38,8 @@ export default class NetworkManager {
         this._statsSyncTick = 0;
         this._lastPlaytimeTickAt = Date.now();
         this.spawnLeaveWatchers = new Map(); // playerID -> playerName
+        this.discordInviteUrl = "https://discord.gg/Q337spAqR7";
+        this.discordOnboardingSeenKey = "warhex_discord_onboarding_seen_v1";
 
         // Use async initialization for login status
         // this.initialize();
@@ -626,6 +628,7 @@ export default class NetworkManager {
                 this.core.uiManager.showGameUIElements(true);
                 this.core.camera.enableControls(true);
                 this.core.miniMap.minimize();
+                this.handleDiscordOnboardingNotice();
             }],
             [MessageTypes.RESOURCE_UPDATE, () => this.handleResourceUpdate(payload)],
             [MessageTypes.UNITS_POSITION_UPDATE, () => this.handleUnitsPositionUpdate(payload)],
@@ -948,6 +951,29 @@ export default class NetworkManager {
 
         this.core.gameManager.stats.time = Date.now();
         this.core.buildingManager.announceDefenseHotkeys();
+    }
+
+    handleDiscordOnboardingNotice () {
+        let alreadySeen = false;
+        try {
+            alreadySeen = localStorage.getItem(this.discordOnboardingSeenKey) === "1";
+        } catch (error) {
+            alreadySeen = false;
+        }
+
+        if (!alreadySeen) {
+            this.core.uiManager.showDiscordJoinPrompt(this.discordInviteUrl);
+            try {
+                localStorage.setItem(this.discordOnboardingSeenKey, "1");
+            } catch (error) {}
+            return;
+        }
+
+        this.core.uiManager.addChatMessage(
+            "System",
+            `Join our Discord community: ${this.discordInviteUrl}`,
+            "#60c1ff"
+        );
     }
 
     handleResourceUpdate (payload) {

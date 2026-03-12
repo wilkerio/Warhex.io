@@ -39,6 +39,7 @@ export default class UIManager {
         this.baseLayoutDialogElement = null;
         this.profilePanelElement = null;
         this.prePlaySkinPromptElement = null;
+        this.discordJoinPromptElement = null;
         this.x1StatusElement = null;
         this.x1StatusInterval = null;
         this.x1PromptTimeout = null;
@@ -4918,6 +4919,7 @@ export default class UIManager {
             this.showMenuSecondaryPanels(false);
         } else {
             this.updateSoldierSelectionCounter(0, 0);
+            this.hideDiscordJoinPrompt();
         }
         this.showLeaderboard(show);
         this.showToolbar(show);
@@ -4934,6 +4936,102 @@ export default class UIManager {
             this.ensureHudCollapseControls();
             this.applyHudCollapsedStates();
         }
+    }
+
+    showDiscordJoinPrompt (inviteUrl = "https://discord.gg/Q337spAqR7") {
+        this.hideDiscordJoinPrompt();
+
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.top = "20px";
+        panel.style.left = "50%";
+        panel.style.transform = "translateX(-50%)";
+        panel.style.width = "min(520px, calc(100vw - 24px))";
+        panel.style.zIndex = "22000";
+        panel.style.pointerEvents = "all";
+        panel.style.background = "linear-gradient(145deg, rgba(12,18,40,0.96), rgba(20,32,66,0.96))";
+        panel.style.border = "1px solid rgba(110, 200, 255, 0.72)";
+        panel.style.borderRadius = "12px";
+        panel.style.padding = "13px 14px";
+        panel.style.boxShadow = "0 10px 28px rgba(0,0,0,0.42), 0 0 18px rgba(90,180,255,0.24)";
+        panel.style.color = "#eaf6ff";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "Welcome to Warhex.io";
+        title.style.fontSize = "16px";
+        title.style.fontWeight = "900";
+        title.style.letterSpacing = "0.3px";
+        title.style.color = "#9fe8ff";
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = "Join our Discord community for updates, events, and support.";
+        subtitle.style.marginTop = "5px";
+        subtitle.style.fontSize = "13px";
+        subtitle.style.fontWeight = "600";
+        subtitle.style.color = "#ffffff";
+
+        const link = document.createElement("div");
+        link.textContent = inviteUrl;
+        link.style.marginTop = "6px";
+        link.style.fontSize = "12px";
+        link.style.color = "#7be0ff";
+        link.style.wordBreak = "break-all";
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "10px";
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.justifyContent = "flex-end";
+
+        const laterButton = document.createElement("button");
+        laterButton.type = "button";
+        laterButton.textContent = "Later";
+        laterButton.style.border = "1px solid rgba(190, 200, 230, 0.45)";
+        laterButton.style.background = "rgba(24, 28, 50, 0.65)";
+        laterButton.style.color = "#dbe9ff";
+        laterButton.style.fontSize = "12px";
+        laterButton.style.fontWeight = "700";
+        laterButton.style.padding = "8px 12px";
+        laterButton.style.borderRadius = "8px";
+        laterButton.style.cursor = "pointer";
+
+        const joinButton = document.createElement("button");
+        joinButton.type = "button";
+        joinButton.textContent = "Join Discord";
+        joinButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+        joinButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+        joinButton.style.color = "#e8ffef";
+        joinButton.style.fontSize = "12px";
+        joinButton.style.fontWeight = "800";
+        joinButton.style.padding = "8px 14px";
+        joinButton.style.borderRadius = "8px";
+        joinButton.style.cursor = "pointer";
+
+        laterButton.addEventListener("click", () => this.hideDiscordJoinPrompt());
+        joinButton.addEventListener("click", () => {
+            if (typeof window !== "undefined" && typeof window.open === "function") {
+                window.open(inviteUrl, "_blank", "noopener,noreferrer");
+            }
+            this.hideDiscordJoinPrompt();
+        });
+
+        actions.appendChild(laterButton);
+        actions.appendChild(joinButton);
+        panel.appendChild(title);
+        panel.appendChild(subtitle);
+        panel.appendChild(link);
+        panel.appendChild(actions);
+
+        document.body.appendChild(panel);
+        this.discordJoinPromptElement = panel;
+    }
+
+    hideDiscordJoinPrompt () {
+        if (this.discordJoinPromptElement && this.discordJoinPromptElement.parentNode) {
+            this.discordJoinPromptElement.parentNode.removeChild(this.discordJoinPromptElement);
+        }
+        this.discordJoinPromptElement = null;
     }
 
     showGameOverUIElements (show) {
