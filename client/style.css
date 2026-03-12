@@ -2217,6 +2217,8 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
 
 .leaderboard>p {
   display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
 }
 
@@ -2241,23 +2243,30 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
   font-size: 20px;
   color: #ffffffd7;
   font-weight: 700;
-   color: #b4a0ff;
+  color: #b4a0ff;
+  flex: 0 0 auto;
 }
 
 .leaderboard .name {
-  padding-left: 10px;
+  padding-left: 4px;
   font-size: 20px;
   color: #ffffffc7;
   font-weight: 700;
   cursor: pointer;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .leaderboard .score {
   margin-left: auto;
   font-size: 20px;
   color: #ffffff;
-   flex: 1;
-  text-align: center;
+  flex: 0 0 42px;
+  min-width: 42px;
+  text-align: right;
   font-weight: 700;
 }
 
