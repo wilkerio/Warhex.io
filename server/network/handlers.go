@@ -348,44 +348,10 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
+	// Portal building is disabled.
 	if buildingType == game.PORTAL {
-		// Portal can be placed anywhere inside map bounds.
-		padding := float32(game.GetBuildingSize(buildingType) + 8)
-		position = game.ClampPositionFloatToMap(position, padding)
-
-		const extraPortalBaseGap = float32(120)
-		portalSize := float32(game.GetBuildingSize(game.PORTAL))
-		playerForbiddenRadius := float32(game.PLAYER_MAX_BUILDING_RADIUS) + portalSize + extraPortalBaseGap
-		neutralForbiddenRadius := float32(game.NEUTRAL_BASE_MAX_BUILDING_RADIUS) + portalSize + extraPortalBaseGap
-
-		tooCloseToBase := func(basePos game.PositionInt, forbiddenRadius float32) bool {
-			dx := float64(position.X - float32(basePos.X))
-			dy := float64(position.Y - float32(basePos.Y))
-			return dx*dx+dy*dy <= float64(forbiddenRadius*forbiddenRadius)
-		}
-
-		game.State.RLock()
-		for _, p := range game.State.Players {
-			if p == nil || p.IsMarkedForRemoval() || p.Base == nil {
-				continue
-			}
-			if tooCloseToBase(p.Base.Position, playerForbiddenRadius) {
-				game.State.RUnlock()
-				SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
-				return
-			}
-		}
-		for _, n := range game.State.NeutralBases {
-			if n == nil || n.Base == nil {
-				continue
-			}
-			if tooCloseToBase(n.Base.Position, neutralForbiddenRadius) {
-				game.State.RUnlock()
-				SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
-				return
-			}
-		}
-		game.State.RUnlock()
+		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
+		return
 	}
 
 	basePosition := player.Base.Position
@@ -410,7 +376,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		// Barracks and walls sit on the same fixed outer ring.
 		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
 		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
-	case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.PORTAL, game.GENERATOR, game.HOUSE:
+	case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.GENERATOR, game.HOUSE:
 		// These must remain inside ring: building edge cannot cross max radius.
 		size := game.GetBuildingSize(buildingType)
 		minRadius += size
@@ -470,55 +436,10 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	// If neither the player nor the neutral base allow the placement, fail it
-	if buildingType != game.PORTAL && !isPlayerRadiusValid && !isNeutralBaseValid {
+	if !isPlayerRadiusValid && !isNeutralBaseValid {
 		log.Println("Building placement failed: position is not valid for either player or neutral base")
 		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
-	}
-
-	ownedPortalCount := 0
-	if buildingType == game.PORTAL {
-		player.Base.RLock()
-		for _, b := range player.Base.Buildings {
-			if b != nil && b.Type == game.PORTAL {
-				ownedPortalCount++
-			}
-		}
-		player.Base.RUnlock()
-
-		player.RLock()
-		capturedNeutralsForPortal := make([]*game.NeutralBase, 0, len(player.CapturedNeutralBases))
-		capturedNeutralsForPortal = append(capturedNeutralsForPortal, player.CapturedNeutralBases...)
-		player.RUnlock()
-
-		for _, neutral := range capturedNeutralsForPortal {
-			if neutral == nil || neutral.Base == nil {
-				continue
-			}
-			neutral.Base.RLock()
-			for _, b := range neutral.Base.Buildings {
-				if b != nil && b.Type == game.PORTAL {
-					ownedPortalCount++
-				}
-			}
-			neutral.Base.RUnlock()
-		}
-
-		if ownedPortalCount == 0 {
-			player.RLock()
-			nextPortalAllowedAt := player.NextPortalAllowedAt
-			player.RUnlock()
-
-			if !nextPortalAllowedAt.IsZero() && time.Now().Before(nextPortalAllowedAt) {
-				remaining := time.Until(nextPortalAllowedAt)
-				if remaining < 0 {
-					remaining = 0
-				}
-				cooldownSeconds := uint16(math.Ceil(remaining.Seconds()))
-				SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailPortalCooldown, cooldownSeconds)
-				return
-			}
-		}
 	}
 
 	// Subtract the cost from the power
@@ -528,11 +449,6 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
 	}
-	if buildingType == game.PORTAL && ownedPortalCount >= 1 {
-		// Portal pair package: first costs 2500, second is free.
-		costs = 0
-	}
-
 	ok = player.Resources.Power.Decrement(costs)
 	if !ok {
 		log.Println("Could not subtract costs for building:", buildingType)
@@ -1772,4 +1688,3 @@ func getPositionFloatFromPayload(payload []byte) game.PositionFloat {
 		Y: math.Float32frombits(y),
 	}
 }
-

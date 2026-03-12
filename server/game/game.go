@@ -54,8 +54,6 @@ func init() {
 	go startEntityUpdateLoop()
 	go startProtectionCheckLoop()
 	go startCommanderRegenerationLoop()
-	go startWildPortalLoop()
-	go startOwnedPortalLifecycleLoop()
 }
 
 type WildPortal struct {
@@ -1105,7 +1103,7 @@ func applyWildPortalTeleportForUnit(unit *Unit, wildPortals []*WildPortal) bool 
 	return true
 }
 
-func updateUnits(player *Player, duration time.Duration, players []*Player) {
+func updateUnits(player *Player, duration time.Duration, _ []*Player) {
 	// Lock the player to access units
 	player.RLock()
 	units := make([]*Unit, 0, len(player.Units))
@@ -1116,13 +1114,6 @@ func updateUnits(player *Player, duration time.Duration, players []*Player) {
 
 	// Slice to hold units that have been updated
 	updatedUnits := make([]*Unit, 0)
-	portalPairs := getPortalPairs(players)
-	State.RLock()
-	wildPortals := make([]*WildPortal, 0, len(State.WildPortals))
-	for _, portal := range State.WildPortals {
-		wildPortals = append(wildPortals, portal)
-	}
-	State.RUnlock()
 	mapRadius := float32(GetCurrentMapRadius())
 	for _, unit := range units {
 		if unit.IsMarkedForRemoval() {
@@ -1139,9 +1130,6 @@ func updateUnits(player *Player, duration time.Duration, players []*Player) {
 
 		// Update unit position
 		if unit.UpdatePosition(duration, units) {
-			applyPortalTeleportForUnit(unit, portalPairs)
-			applyWildPortalTeleportForUnit(unit, wildPortals)
-
 			if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
 				math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
 				unit.MarkForRemoval()
