@@ -13,6 +13,24 @@ const parseCsv = (value) => (value || '')
     .map((item) => item.trim())
     .filter(Boolean);
 
+const normalizeOrigin = (value) => {
+    if (!value || typeof value !== 'string') return null;
+    try {
+        return new URL(value).origin.toLowerCase();
+    } catch (error) {
+        return null;
+    }
+};
+
+const getHostnameFromOrigin = (value) => {
+    if (!value || typeof value !== 'string') return null;
+    try {
+        return new URL(value).hostname.toLowerCase();
+    } catch (error) {
+        return null;
+    }
+};
+
 const parsePorts = (value, fallback) => {
     const parsed = parseCsv(value)
         .map((item) => Number(item))
@@ -32,14 +50,40 @@ const config = {
     initialPorts: parsePorts(process.env.SERVER_PORTS, [9090, 9091])
 };
 
+const defaultAllowedOrigins = [
+    'https://warhex.io',
+    'https://www.warhex.io',
+    'https://api.warhex.io',
+    'http://warhex.io',
+    'http://www.warhex.io',
+    'http://api.warhex.io',
+    'http://127.0.0.1:3000',
+    'http://localhost:3000'
+];
+
+const allowedOrigins = new Set(
+    [...defaultAllowedOrigins, ...config.allowedOrigins]
+        .map(normalizeOrigin)
+        .filter(Boolean)
+);
+
+const isAllowedOrigin = (origin) => {
+    const normalizedOrigin = normalizeOrigin(origin);
+    if (!normalizedOrigin) return false;
+    if (allowedOrigins.has(normalizedOrigin)) return true;
+
+    const hostname = getHostnameFromOrigin(normalizedOrigin);
+    return hostname === 'warhex.io' || hostname === 'www.warhex.io' || hostname === 'api.warhex.io';
+};
+
 const app = express();
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || config.allowedOrigins.length === 0 || config.allowedOrigins.includes(origin)) {
+        if (!origin || isAllowedOrigin(origin)) {
             callback(null, true);
             return;
         }
-        callback(new Error('Not allowed by CORS'));
+        callback(null, false);
     }
 }));
 
