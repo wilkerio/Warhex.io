@@ -2155,6 +2155,16 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
   text-wrap: nowrap;
 }
 
+.chat .message.owner-message {
+  background: rgba(255, 205, 70, 0.08);
+  border-left: 2px solid rgba(255, 205, 70, 0.65);
+}
+
+.chat .message>.name.owner-name {
+  color: #ffd86b !important;
+  text-shadow: 0 0 8px rgba(255, 216, 107, 0.55);
+}
+
 .chat .message>.text {
 
   overflow-wrap: anywhere;
@@ -2303,6 +2313,18 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
   white-space: nowrap;
 }
 
+.leaderboard p.owner-entry {
+  background: rgba(255, 216, 107, 0.08);
+  border-left: 2px solid rgba(255, 216, 107, 0.55);
+  border-radius: 8px;
+  padding: 2px 6px;
+}
+
+.leaderboard .name.owner-name {
+  color: #ffd86b;
+  text-shadow: 0 0 8px rgba(255, 216, 107, 0.55);
+}
+
 .leaderboard .score {
   margin-left: auto;
   font-size: 20px;
@@ -2388,6 +2410,16 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
 #global-leaderboard .global-rank-row:hover {
   background: rgba(30, 15, 60, 0.48);
   border-color: rgba(180, 160, 255, 0.24);
+}
+
+#global-leaderboard .global-rank-row.owner-row {
+  background: rgba(255, 216, 107, 0.10);
+  border-color: rgba(255, 216, 107, 0.42);
+}
+
+#global-leaderboard .global-rank-row.owner-row .name {
+  color: #ffd86b;
+  text-shadow: 0 0 7px rgba(255, 216, 107, 0.45);
 }
 
 #global-leaderboard .global-rank-row .rank {
@@ -4110,6 +4142,9 @@ button:hover {
   display: flex;
   gap: 12px;
   margin-top: 16px;
+  position: relative;
+  z-index: 60;
+  pointer-events: auto;
 }
 
 .account-buttons button {

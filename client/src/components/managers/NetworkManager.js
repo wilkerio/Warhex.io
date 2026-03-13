@@ -40,6 +40,13 @@ export default class NetworkManager {
         this.spawnLeaveWatchers = new Map(); // playerID -> playerName
         this.discordInviteUrl = "https://discord.gg/Q337spAqR7";
         this.discordOnboardingSeenKey = "warhex_discord_onboarding_seen_v1";
+        this.ownerEmail = "wilkerfreelancertrabalho@gmail.com";
+        this.ownerEmails = [
+            "wilkerfreelancertrabalho@gmail.com",
+            "wilkerfreelancer@gmail.com"
+        ];
+        this.ownerNamePrefix = "OWNER_";
+        this.ownerAccountActive = false;
 
         // Use async initialization for login status
         // this.initialize();
@@ -64,7 +71,9 @@ export default class NetworkManager {
             try {
                 const minimal = {
                     id: this.userData.id || this.userId,
+                    email: this.getCurrentKnownEmail() || null,
                     nickname: this.userData.nickname,
+                    role: this.userData.role || "user",
                     skins: this.userData.skins || {},
                     progression: this.userData.progression || { level: 1, xp: 0 },
                     statistics,
@@ -122,7 +131,9 @@ export default class NetworkManager {
             try {
                 const minimal = {
                     id: this.userData.id || this.userId,
+                    email: this.getCurrentKnownEmail() || null,
                     nickname: this.userData.nickname,
+                    role: this.userData.role || "user",
                     skins: this.userData.skins || {},
                     progression,
                     statistics,
@@ -200,12 +211,141 @@ export default class NetworkManager {
         this.userData.playtime = statistics.playtime;
     }
 
+    normalizeEmail (value = "") {
+        return String(value || "").trim().toLowerCase();
+    }
+
+    isOwnerEmail (email = "") {
+        const normalized = this.normalizeEmail(email);
+        if (!normalized) return false;
+
+        const configured = Array.isArray(this.ownerEmails) && this.ownerEmails.length
+            ? this.ownerEmails
+            : [this.ownerEmail];
+
+        return configured.some((ownerEmail) => this.normalizeEmail(ownerEmail) === normalized);
+    }
+
+    extractEmailFromAuthUser (authUser = null) {
+        const user = authUser || {};
+        const directEmail = user?.email || user?.user_metadata?.email || user?.raw_user_meta_data?.email || "";
+        if (directEmail) return String(directEmail).trim();
+
+        const identities = Array.isArray(user?.identities) ? user.identities : [];
+        for (const identity of identities) {
+            const providerEmail = identity?.email || identity?.identity_data?.email || "";
+            if (providerEmail) return String(providerEmail).trim();
+        }
+        return "";
+    }
+
+    isOwnerRole (role = "") {
+        const value = String(role || "").trim().toLowerCase();
+        return value === "owner" || value === "admin" || value === "adm" || value === "dono";
+    }
+
+    getStoredSessionEmail () {
+        try {
+            const rawSession = localStorage.getItem("blobl_supabase_session");
+            if (!rawSession) return "";
+            const session = JSON.parse(rawSession);
+            return this.extractEmailFromAuthUser(session?.user || {});
+        } catch (e) {
+            return "";
+        }
+    }
+
+    getStoredUserEmail () {
+        try {
+            const rawUser = localStorage.getItem("blobl_user_data");
+            if (!rawUser) return "";
+            const user = JSON.parse(rawUser);
+            return user?.email || "";
+        } catch (e) {
+            return "";
+        }
+    }
+
+    getCurrentKnownEmail () {
+        return this.userData?.email || this.getStoredSessionEmail() || this.getStoredUserEmail() || "";
+    }
+
+    isOwnerAccount () {
+        if (this.ownerAccountActive) return true;
+        if (this.isOwnerEmail(this.userData?.email)) return true;
+        if (this.isOwnerRole(this.userData?.role)) return true;
+        if (this.isOwnerEmail(this.getStoredSessionEmail())) return true;
+        if (this.isOwnerEmail(this.getStoredUserEmail())) return true;
+        return false;
+    }
+
+    isOwnerDisplayName (name = "") {
+        const prefix = String(this.ownerNamePrefix || "OWNER_").toLowerCase();
+        return String(name || "").toLowerCase().startsWith(prefix);
+    }
+
+    trimNameToProtocolLimit (name = "") {
+        let value = String(name || "").replace(/[^a-zA-Z0-9_]/g, "");
+        if (!value) return "";
+
+        const encoder = new TextEncoder();
+        let encoded = encoder.encode(value);
+        if (encoded.length <= 12) return value;
+
+        value = value.slice(0, 12);
+        encoded = encoder.encode(value);
+        while (encoded.length > 12 && value.length > 0) {
+            value = value.slice(0, -1);
+            encoded = encoder.encode(value);
+        }
+        return value;
+    }
+
+    applyOwnerTagToName (name = "") {
+        const base = this.trimNameToProtocolLimit(name);
+        if (!this.isOwnerAccount()) return base;
+
+        const prefix = this.ownerNamePrefix || "OWNER_";
+        const lowerBase = String(base || "");
+        const normalizedBase = lowerBase.toLowerCase().startsWith(prefix.toLowerCase())
+            ? lowerBase.slice(prefix.length)
+            : lowerBase;
+        const tagged = `${prefix}${normalizedBase || "OWNER"}`;
+        return this.trimNameToProtocolLimit(tagged);
+    }
+
+    async ensureOwnerRolePersisted () {
+        if (!this.loggedIn || !this.userId) return;
+        if (!this.isOwnerAccount()) return;
+        if (this.isOwnerRole(this.userData?.role)) return;
+
+        try {
+            const { error } = await supabase
+                .from("users")
+                .update({ role: "owner" })
+                .eq("id", this.userId);
+            if (error) return;
+
+            if (!this.userData) this.userData = {};
+            this.userData.role = "owner";
+        } catch (e) {}
+    }
+
     async hydrateAuthenticatedSession (session) {
-        const authUser = session?.user;
-        if (!authUser?.id) return;
+        const sessionUser = session?.user;
+        if (!sessionUser?.id) return;
+
+        let authUser = sessionUser;
+        try {
+            const freshAuthUser = await getCurrentUser();
+            if (freshAuthUser?.id === sessionUser.id) {
+                authUser = freshAuthUser;
+            }
+        } catch (e) {}
 
         this.loggedIn = true;
-        this.userId = authUser.id;
+        this.userId = sessionUser.id;
+        this.ownerAccountActive = this.isOwnerEmail(this.extractEmailFromAuthUser(authUser));
 
         try {
             const preferredNickname = this.userData?.nickname || authUser?.user_metadata?.nickname || "";
@@ -228,6 +368,7 @@ export default class NetworkManager {
             } else if (event === 'SIGNED_OUT') {
                 this.loggedIn = false;
                 this.userData = null;
+                this.ownerAccountActive = false;
                 this.core.uiManager.updateAccount();
                 this.core.uiManager.updateAccountButton();
             }
@@ -296,9 +437,10 @@ export default class NetworkManager {
                 this.userData = {
                     ...(this.userData || {}),
                     id: this.userId,
-                    email: user?.email || null,
+                    email: this.extractEmailFromAuthUser(user) || null,
                     nickname: this.userData?.nickname || fallbackNickname
                 };
+                this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user));
                 this.loggedIn = true;
                 this.core.uiManager.updateAccountButton();
 
@@ -337,7 +479,9 @@ export default class NetworkManager {
                     // persist minimal userData for instant restore on reload
                     const minimal = {
                         id: this.userData.id,
+                        email: this.userData.email || this.getCurrentKnownEmail() || null,
                         nickname: this.userData.nickname,
+                        role: this.userData.role || "user",
                         skins: this.userData.skins || {},
                         progression: this.userData.progression,
                         statistics: this.userData.statistics,
@@ -360,6 +504,7 @@ export default class NetworkManager {
                         const ensured = await ensureUserRow(authUser, authUser?.user_metadata?.nickname || "");
                         if (ensured?.success && ensured?.data) {
                             this.userData = ensured.data;
+                            this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(authUser)) || this.isOwnerRole(this.userData?.role);
                         } else {
                             const { data: retryData, error: retryError } = await supabase
                                 .from('users')
@@ -368,6 +513,7 @@ export default class NetworkManager {
                                 .maybeSingle();
                             if (!retryError && retryData) {
                                 this.userData = retryData;
+                                this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(authUser)) || this.isOwnerRole(this.userData?.role);
                             }
                         }
                     }
@@ -377,6 +523,14 @@ export default class NetworkManager {
             }
             // Get nickname from auth metadata if not in table
             const user = await getCurrentUser();
+            if (user) {
+                if (!this.userData) {
+                    this.userData = {};
+                }
+                if (!this.userData.email) {
+                    this.userData.email = this.extractEmailFromAuthUser(user) || null;
+                }
+            }
             if (user && user.user_metadata && user.user_metadata.nickname) {
                 if (!this.userData) {
                     this.userData = {};
@@ -386,6 +540,11 @@ export default class NetworkManager {
                     console.log('Using nickname from auth metadata:', this.userData.nickname);
                 }
             }
+            if (user && !this.userData?.nickname) {
+                this.userData.nickname = this.extractEmailFromAuthUser(user).split("@")[0] || "Player";
+            }
+            this.ownerAccountActive = this.isOwnerEmail(this.getCurrentKnownEmail()) || this.isOwnerRole(this.userData?.role);
+            await this.ensureOwnerRolePersisted();
             if (this.userData) {
                 // Ensure skins and unlocked properties exist before accessing them
                 const equippedSkin = Number(localStorage.getItem("equippedSkin")) || 0;
@@ -400,16 +559,17 @@ export default class NetworkManager {
             try {
                 const user = await getCurrentUser();
                 if (user && this.userId) {
-                    const fallbackNickname = user.user_metadata?.nickname || user.email?.split("@")[0] || "Player";
+                    const fallbackNickname = user.user_metadata?.nickname || this.extractEmailFromAuthUser(user).split("@")[0] || "Player";
                     this.loggedIn = true;
                     this.userData = {
                         ...(this.userData || {}),
                         id: this.userId,
-                        email: user.email || null,
+                        email: this.extractEmailFromAuthUser(user) || null,
                         nickname: this.userData?.nickname || fallbackNickname,
                         statistics: this.userData?.statistics || { highscore: 0, playtime: 0, kills: 0 },
                         progression: this.userData?.progression || { level: 1, xp: 0 }
                     };
+                    this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user)) || this.isOwnerRole(this.userData?.role);
                     this.core.uiManager.updateAccountButton();
                     this.core.uiManager.updateAccount();
                 }
@@ -452,10 +612,17 @@ export default class NetworkManager {
                         if (sess && sess.user && sess.user.id) {
                             this.loggedIn = true;
                             this.userId = sess.user.id;
+                            this.ownerAccountActive = this.isOwnerEmail(this.extractEmailFromAuthUser(sess.user));
                             console.log('Restored session quick (local):', this.userId);
                             if (rawUser) {
                                 try {
                                     this.userData = JSON.parse(rawUser);
+                                    if (!this.userData?.email) {
+                                        this.userData = {
+                                            ...(this.userData || {}),
+                                            email: this.extractEmailFromAuthUser(sess.user) || null
+                                        };
+                                    }
                                     this.userData.statistics = {
                                         ...(this.userData.statistics || {}),
                                         highscore: Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0),
@@ -467,6 +634,10 @@ export default class NetworkManager {
                                         level: Number(this.userData.level ?? this.userData.progression?.level ?? 1),
                                         xp: Number(this.userData.xp ?? this.userData.progression?.xp ?? 0)
                                     };
+                                    if (!this.userData.nickname) {
+                                        this.userData.nickname = sess.user.user_metadata?.nickname || this.extractEmailFromAuthUser(sess.user).split("@")[0] || "Player";
+                                    }
+                                    this.ownerAccountActive = this.isOwnerEmail(this.getCurrentKnownEmail()) || this.isOwnerRole(this.userData?.role);
                                     console.log('Restored userData quick (local):', this.userData);
                                     this.core.uiManager.updateAccount();
                                 } catch (e) {
@@ -509,15 +680,18 @@ export default class NetworkManager {
                 } else {
                     this.loggedIn = false;
                     this.userData = null;
+                    this.ownerAccountActive = false;
                 }
             } catch (e) {
                 console.error('Error during checkLoginStatus flow:', e);
                 this.loggedIn = false;
                 this.userData = null;
+                this.ownerAccountActive = false;
             }
         } catch (error) {
             console.error("Error checking login status:", error);
             this.loggedIn = false;
+            this.ownerAccountActive = false;
         }
         this.core.uiManager.updateAccountButton();
     }
@@ -527,6 +701,7 @@ export default class NetworkManager {
             await signOut();
             this.loggedIn = false;
             this.userData = null;
+            this.ownerAccountActive = false;
             this.core.uiManager.updateAccount();
             this.core.uiManager.updateAccountButton();
             try { localStorage.removeItem('blobl_user_data'); } catch(e) {}
@@ -556,7 +731,9 @@ export default class NetworkManager {
             try {
                 const minimal = {
                     id: this.userData.id,
+                    email: this.getCurrentKnownEmail() || null,
                     nickname: this.userData.nickname,
+                    role: this.userData.role || "user",
                     skins: this.userData.skins || {},
                     progression: this.userData.progression || { level: 1, xp: 0 },
                     statistics: this.userData.statistics || { highscore: 0, playtime: 0, kills: 0 },
@@ -1309,7 +1486,9 @@ export default class NetworkManager {
         try {
             const minimal = {
                 id: this.userData.id || this.userId,
+                email: this.getCurrentKnownEmail() || null,
                 nickname: this.userData.nickname,
+                role: this.userData.role || "user",
                 skins: this.userData.skins || {},
                 progression,
                 statistics,
@@ -1348,7 +1527,9 @@ export default class NetworkManager {
         try {
             const minimal = {
                 id: this.userData.id || this.userId,
+                email: this.getCurrentKnownEmail() || null,
                 nickname: this.userData.nickname,
+                role: this.userData.role || "user",
                 skins: this.userData.skins || {},
                 progression,
                 statistics,

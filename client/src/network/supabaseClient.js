@@ -192,6 +192,18 @@ function deriveNicknameFromAuthUser(authUser, preferredNickname = "") {
         .replace(/[^a-zA-Z0-9_]/g, "")
         .slice(0, 20);
 
+    const resolveAuthEmail = (user) => {
+        const directEmail = user?.email || user?.user_metadata?.email || user?.raw_user_meta_data?.email || "";
+        if (directEmail) return String(directEmail).trim();
+
+        const identities = Array.isArray(user?.identities) ? user.identities : [];
+        for (const identity of identities) {
+            const providerEmail = identity?.email || identity?.identity_data?.email || "";
+            if (providerEmail) return String(providerEmail).trim();
+        }
+        return "";
+    };
+
     const candidates = [
         preferredNickname,
         authUser?.user_metadata?.nickname,
@@ -199,7 +211,7 @@ function deriveNicknameFromAuthUser(authUser, preferredNickname = "") {
         authUser?.user_metadata?.user_name,
         authUser?.user_metadata?.full_name,
         authUser?.user_metadata?.name,
-        (authUser?.email || "").split("@")[0],
+        resolveAuthEmail(authUser).split("@")[0],
         "Player"
     ];
 
@@ -208,6 +220,66 @@ function deriveNicknameFromAuthUser(authUser, preferredNickname = "") {
         if (value.length >= 3) return value;
     }
     return "Player";
+}
+
+function resolveAuthEmail(authUser) {
+    const directEmail = authUser?.email || authUser?.user_metadata?.email || authUser?.raw_user_meta_data?.email || "";
+    if (directEmail) return String(directEmail).trim();
+
+    const identities = Array.isArray(authUser?.identities) ? authUser.identities : [];
+    for (const identity of identities) {
+        const providerEmail = identity?.email || identity?.identity_data?.email || "";
+        if (providerEmail) return String(providerEmail).trim();
+    }
+    return "";
+}
+
+function resolveDiscordProfile(authUser) {
+    const identities = Array.isArray(authUser?.identities) ? authUser.identities : [];
+    const discordIdentity = identities.find((identity) => String(identity?.provider || "").toLowerCase() === "discord");
+
+    const appProvider = String(authUser?.app_metadata?.provider || "").toLowerCase();
+    const appProviders = Array.isArray(authUser?.app_metadata?.providers) ? authUser.app_metadata.providers.map((p) => String(p || "").toLowerCase()) : [];
+    let pendingProvider = "";
+    try {
+        pendingProvider = String(localStorage.getItem("warhex_oauth_pending_provider") || "").toLowerCase();
+    } catch (e) {}
+    const hasDiscord = Boolean(discordIdentity) || appProvider === "discord" || appProviders.includes("discord") || pendingProvider === "discord";
+    if (!hasDiscord) return null;
+
+    const identityData = discordIdentity?.identity_data || {};
+    const metadata = authUser?.user_metadata || {};
+    const rawMeta = authUser?.raw_user_meta_data || {};
+
+    const discordId = String(
+        identityData?.provider_id
+        || identityData?.sub
+        || discordIdentity?.id
+        || metadata?.provider_id
+        || rawMeta?.provider_id
+        || ""
+    ).trim();
+    const username = String(
+        identityData?.username
+        || identityData?.preferred_username
+        || metadata?.preferred_username
+        || metadata?.user_name
+        || metadata?.name
+        || metadata?.full_name
+        || ""
+    ).trim();
+    const globalName = String(identityData?.global_name || metadata?.global_name || "").trim();
+    const avatarUrl = String(identityData?.avatar_url || metadata?.avatar_url || rawMeta?.avatar_url || "").trim();
+    const email = resolveAuthEmail(authUser);
+
+    return {
+        id: discordId || null,
+        username: username || globalName || null,
+        global_name: globalName || null,
+        avatar_url: avatarUrl || null,
+        email: email || null,
+        linked_at: new Date().toISOString()
+    };
 }
 
 function normalizeUserRow(row = {}) {
@@ -347,7 +419,9 @@ export async function ensureUserRow(authUser, preferredNickname = "") {
         if (!userId) return { success: false, error: "missing_user_id", data: null };
 
         const nickname = deriveNicknameFromAuthUser(authUser, preferredNickname);
-        const resolvedEmail = authUser?.email || authUser?.user_metadata?.email || `${userId}@oauth.local`;
+        const resolvedEmail = resolveAuthEmail(authUser) || `${userId}@oauth.local`;
+        const discordProfile = resolveDiscordProfile(authUser);
+        const discordPayload = discordProfile ? { discord: discordProfile } : {};
         const usernameBase = `${nickname}_${String(userId).slice(0, 6)}`.replace(/[^a-zA-Z0-9_]/g, "");
         const payloadCandidates = [
             // Rich payload (for newer schemas)
@@ -356,6 +430,7 @@ export async function ensureUserRow(authUser, preferredNickname = "") {
                 email: resolvedEmail,
                 nickname,
                 username: usernameBase.slice(0, 20),
+                ...discordPayload,
                 highscore: 0,
                 total_kills: 0,
                 playtime: 0,
@@ -372,6 +447,7 @@ export async function ensureUserRow(authUser, preferredNickname = "") {
                 id: userId,
                 email: resolvedEmail,
                 nickname,
+                ...discordPayload,
                 highscore: 0,
                 total_kills: 0,
                 playtime: 0,
@@ -382,7 +458,8 @@ export async function ensureUserRow(authUser, preferredNickname = "") {
             {
                 id: userId,
                 email: resolvedEmail,
-                nickname
+                nickname,
+                ...discordPayload
             },
             // Absolute fallback if email column is absent/not writable
             {
@@ -878,6 +955,8 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
                 || "Player";
             return {
                 name: String(rawName),
+                email: typeof row?.email === "string" ? row.email : "",
+                role: typeof row?.role === "string" ? row.role : "",
                 highscore: Math.max(0, Number(row?.highscore ?? stats?.highscore ?? stats?.score ?? 0)),
                 playtime: Math.max(0, Number(row?.playtime ?? stats?.playtime ?? stats?.time_played ?? 0)),
                 kills: Math.max(0, Number(row?.total_kills ?? stats?.kills ?? stats?.total_kills ?? 0))
@@ -902,8 +981,8 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
         leaderboardCache.key = cacheKey;
         leaderboardCache.inFlight = (async () => {
         const queryAttempts = [
-            () => supabase.from("users").select("nickname, username, email, highscore, playtime, total_kills, statistics").limit(200),
-            () => supabase.from("users").select("nickname, username, email, statistics").limit(200),
+            () => supabase.from("users").select("nickname, username, email, role, highscore, playtime, total_kills, statistics").limit(200),
+            () => supabase.from("users").select("nickname, username, email, role, statistics").limit(200),
             () => supabase.from("users").select("*").limit(200)
         ];
 
@@ -939,8 +1018,8 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
         try {
             const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
             const urls = [
-                `${supabaseUrl}/rest/v1/users?select=nickname,username,email,highscore,playtime,total_kills,statistics&limit=200`,
-                `${supabaseUrl}/rest/v1/users?select=nickname,username,email,statistics&limit=200`,
+                `${supabaseUrl}/rest/v1/users?select=nickname,username,email,role,highscore,playtime,total_kills,statistics&limit=200`,
+                `${supabaseUrl}/rest/v1/users?select=nickname,username,email,role,statistics&limit=200`,
                 `${supabaseUrl}/rest/v1/users?select=*&limit=200`
             ];
 

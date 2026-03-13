@@ -1868,6 +1868,14 @@ export default class UIManager {
             leaderboardData.forEach((entry, index) => {
                 const row = document.createElement("div");
                 row.className = "global-rank-row";
+                const isOwnerRow = Boolean(
+                    this.core?.networkManager?.isOwnerDisplayName?.(entry.name)
+                    || this.core?.networkManager?.isOwnerEmail?.(entry.email)
+                    || this.core?.networkManager?.isOwnerRole?.(entry.role)
+                );
+                if (isOwnerRow) {
+                    row.classList.add("owner-row");
+                }
                 row.innerHTML = `
                     <span class="rank">${index + 1}</span>
                     <span class="name" title="${entry.name}">${entry.name}</span>
@@ -1939,14 +1947,7 @@ export default class UIManager {
         if (accountButton && !accountButton.dataset.boundLoginClick) {
             accountButton.dataset.boundLoginClick = "1";
             accountButton.addEventListener("click", () => {
-                const buttonText = (accountButton.textContent || "").trim().toLowerCase();
-                const logoutLikeLabel = this.isLogoutLikeLabel(buttonText);
-                const shouldLogout = Boolean(this.core.networkManager.loggedIn) || logoutLikeLabel;
-                if (shouldLogout) {
-                    this.core.networkManager.logout();
-                } else {
-                    this.showSigninDialog(true);
-                }
+                this.handleAccountButtonClick(accountButton);
             });
         }
 
@@ -1956,15 +1957,14 @@ export default class UIManager {
             document.addEventListener("click", (event) => {
                 const target = event.target;
                 if (!(target instanceof HTMLElement)) return;
-                if (target.id !== "account-button") return;
-
-                const buttonText = (target.textContent || "").trim().toLowerCase();
-                const logoutLikeLabel = this.isLogoutLikeLabel(buttonText);
-                const shouldLogout = Boolean(this.core?.networkManager?.loggedIn) || logoutLikeLabel;
-                if (shouldLogout) {
-                    this.core.networkManager.logout();
-                } else {
-                    this.showSigninDialog(true);
+                const accountBtn = target.closest("#account-button");
+                if (accountBtn instanceof HTMLElement) {
+                    this.handleAccountButtonClick(accountBtn);
+                    return;
+                }
+                const signupBtn = target.closest("#signup-button");
+                if (signupBtn instanceof HTMLElement) {
+                    this.showSignupDialog(true);
                 }
             });
         }
@@ -2073,6 +2073,7 @@ export default class UIManager {
                         this.core.networkManager.loggedIn = true;
                         this.core.networkManager.userId = sessionUserId;
                     }
+                    try { localStorage.removeItem("warhex_oauth_pending_provider"); } catch (e) {}
                     this.showSigninDialog(false);
                     await this.core.networkManager.checkLoginStatus();
                     this.updateAccount();
@@ -2097,7 +2098,7 @@ export default class UIManager {
         const logoutLikeLabel = this.isLogoutLikeLabel(buttonText);
         const shouldLogout = Boolean(this.core?.networkManager?.loggedIn) || logoutLikeLabel;
         if (shouldLogout) {
-            this.core.networkManager.logout();
+            this.core?.networkManager?.logout?.();
         } else {
             this.showSigninDialog(true);
         }
@@ -2145,6 +2146,26 @@ export default class UIManager {
 
     async promptOAuthNicknameChoice (provider = "Discord") {
         const user = await getCurrentUser();
+        const ownerEmail = this.core?.networkManager?.extractEmailFromAuthUser?.(user)
+            || user?.email
+            || user?.user_metadata?.email
+            || this.core?.networkManager?.getCurrentKnownEmail?.()
+            || "";
+        const isOwnerAccount = Boolean(
+            this.core?.networkManager?.isOwnerAccount?.()
+            || this.core?.networkManager?.isOwnerEmail?.(ownerEmail)
+            || this.core?.networkManager?.isOwnerRole?.(this.core?.networkManager?.userData?.role)
+        );
+        if (isOwnerAccount) {
+            const baseOwnerName = this.normalizeNicknameForAccount(
+                this.core?.networkManager?.userData?.nickname
+                || this.resolveOAuthNicknameFromUser(user)
+                || "Owner"
+            );
+            const ownerName = this.core?.networkManager?.applyOwnerTagToName?.(baseOwnerName) || baseOwnerName;
+            return ownerName || "OWNER";
+        }
+
         const oauthNickname = this.resolveOAuthNicknameFromUser(user);
         const currentNickname = this.core?.networkManager?.userData?.nickname || "";
         const defaultNickname = currentNickname || oauthNickname || "Player";
@@ -2214,7 +2235,16 @@ export default class UIManager {
             try { localStorage.removeItem("warhex_oauth_pending_provider"); } catch (e) {}
 
             const providerLabel = pendingProvider === "google" ? "Google" : "Discord";
-            const selectedNickname = await this.promptOAuthNicknameChoice(providerLabel);
+            const existingNickname = this.normalizeNicknameForAccount(this.core?.networkManager?.userData?.nickname || "");
+            const isOwnerAccount = Boolean(this.core?.networkManager?.isOwnerAccount?.());
+            let selectedNickname = null;
+
+            // Do not ask nickname again if account already has one.
+            if (existingNickname.length >= 3 || isOwnerAccount) {
+                selectedNickname = null;
+            } else {
+                selectedNickname = await this.promptOAuthNicknameChoice(providerLabel);
+            }
             if (selectedNickname) {
                 await updateAuthNickname(selectedNickname);
                 try {
@@ -2303,12 +2333,13 @@ export default class UIManager {
         // Update player name input based on login status
         const isLoggedIn = Boolean(networkManager?.loggedIn);
         if (isLoggedIn && userData.nickname) {
+            const displayName = this.core?.networkManager?.applyOwnerTagToName?.(userData.nickname) || userData.nickname;
             // Hide input and show nickname
-            this.DOM.menu.playerNameInput.value = userData.nickname;
-            localStorage.setItem("playerName", userData.nickname);
+            this.DOM.menu.playerNameInput.value = displayName;
+            localStorage.setItem("playerName", displayName);
             this.DOM.menu.playerNameInput.style.display = 'none';
             this.DOM.menu.loggedInNickname.style.display = 'block';
-            this.DOM.menu.loggedInNickname.textContent = `Playing as: ${userData.nickname}`;
+            this.DOM.menu.loggedInNickname.textContent = `Playing as: ${displayName}`;
         } else {
             // Show input and hide nickname
             this.DOM.menu.playerNameInput.style.display = 'block';
@@ -4120,6 +4151,10 @@ export default class UIManager {
         usernameSpan.classList.add("name");
         usernameSpan.textContent = username;
         usernameSpan.style.color = color;
+        if (this.core?.networkManager?.isOwnerDisplayName?.(username)) {
+            messageDiv.classList.add("owner-message");
+            usernameSpan.classList.add("owner-name");
+        }
         if (player) {
             usernameSpan.style.cursor = "pointer";
             // Add click event listener to usernameSpan
@@ -4778,32 +4813,37 @@ export default class UIManager {
     extractPlayerName () {
         const isLoggedIn = this.core.networkManager.loggedIn;
         const userData = this.core.networkManager.userData;
+        let baseName = "";
 
         if (isLoggedIn && userData && userData.nickname) {
-            return userData.nickname;
+            baseName = userData.nickname;
         }
 
-        if (isLoggedIn) {
+        if (!baseName && isLoggedIn) {
             try {
                 const cachedUser = localStorage.getItem('blobl_user_data');
                 if (cachedUser) {
                     const parsedUser = JSON.parse(cachedUser);
                     if (parsedUser && parsedUser.nickname) {
-                        return parsedUser.nickname;
+                        baseName = parsedUser.nickname;
                     }
                 }
             } catch (e) {}
         }
 
-        let playerName = this.normalizePlayerName(this.DOM.menu.playerNameInput.value);
-        if (!playerName) {
-            playerName = this.generateGuestNickname();
+        if (!baseName) {
+            baseName = this.normalizePlayerName(this.DOM.menu.playerNameInput.value);
+        }
+
+        if (!baseName) {
+            baseName = this.generateGuestNickname();
             if (this.DOM?.menu?.playerNameInput) {
-                this.DOM.menu.playerNameInput.value = playerName;
-                this.DOM.menu.playerNameInput.placeholder = playerName;
+                this.DOM.menu.playerNameInput.value = baseName;
+                this.DOM.menu.playerNameInput.placeholder = baseName;
             }
         }
 
+        const playerName = this.core?.networkManager?.applyOwnerTagToName?.(baseName) || this.normalizePlayerName(baseName);
         return playerName;
     }
 

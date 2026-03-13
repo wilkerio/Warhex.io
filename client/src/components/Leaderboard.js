@@ -174,6 +174,10 @@ export default class Leaderboard {
             const nameSpan = document.createElement('span');
             nameSpan.classList.add('name');
             nameSpan.textContent = player.name;
+            if (this.core?.networkManager?.isOwnerDisplayName?.(player.name)) {
+                playerContainer.classList.add("owner-entry");
+                nameSpan.classList.add("owner-name");
+            }
 
             const onNameClick = () => {
                 this.core.camera.setPosition(this.core.gameManager.getPlayerById(player.id).position, true);
