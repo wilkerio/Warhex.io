@@ -7,7 +7,8 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        // Callback exchange is handled explicitly in consumeOAuthCallbackSession().
+        detectSessionInUrl: false,
         // Prevent Browser LockManager timeouts in environments with duplicated init/reload.
         multiTab: false
     }
@@ -388,6 +389,16 @@ export async function consumeOAuthCallbackSession() {
         if (!code || typeof supabase?.auth?.exchangeCodeForSession !== "function") {
             return { consumed: false, session: null, error: null };
         }
+
+        // If session already exists, avoid exchanging the same OAuth code again.
+        try {
+            const { data: existingSessionData } = await supabase.auth.getSession();
+            if (existingSessionData?.session?.user?.id) {
+                cleanupOAuthParamsFromCurrentUrl();
+                storeOAuthLastError("");
+                return { consumed: true, session: existingSessionData.session, error: null };
+            }
+        } catch (e) {}
 
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         cleanupOAuthParamsFromCurrentUrl();
