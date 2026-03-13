@@ -57,20 +57,21 @@ export default class InputManager {
         document.addEventListener("keydown", (event) => {
             const key = event.key.toLowerCase();
             const ui = this.core.uiManager;
-            const keySelectArmy = ui?.getHudKeybind?.("selectArmy", "q") || "q";
-            const keySelectCommander = ui?.getHudKeybind?.("selectCommander", "c") || "c";
-            const keySelectAll = ui?.getHudKeybind?.("selectAllUnits", "e") || "e";
-            const keyToggleMap = ui?.getHudKeybind?.("toggleMap", "m") || "m";
-            const keyToggleGroupTroops = ui?.getHudKeybind?.("toggleGroupTroops", "z") || "z";
-            const keySelectSoldiersOnly = ui?.getHudKeybind?.("selectSoldiersOnly", "x") || "x";
-            const keySelectTanksOnly = ui?.getHudKeybind?.("selectTanksOnly", "v") || "v";
-            const keySelectSiegeOnly = ui?.getHudKeybind?.("selectSiegeOnly", "b") || "b";
+            const bindKey = (action, fallback) => String(ui?.getHudKeybind?.(action, fallback) || fallback).toLowerCase();
+            const keySelectArmy = bindKey("selectArmy", "q");
+            const keySelectCommander = bindKey("selectCommander", "c");
+            const keySelectAll = bindKey("selectAllUnits", "e");
+            const keyToggleMap = bindKey("toggleMap", "m");
+            const keyToggleGroupTroops = bindKey("toggleGroupTroops", "z");
+            const keySelectSoldiersOnly = bindKey("selectSoldiersOnly", "x");
+            const keySelectTanksOnly = bindKey("selectTanksOnly", "v");
+            const keySelectSiegeOnly = bindKey("selectSiegeOnly", "b");
             const upgradeHotkeys = [
-                ui?.getHudKeybind?.("upgrade1", "q") || "q",
-                ui?.getHudKeybind?.("upgrade2", "e") || "e",
-                ui?.getHudKeybind?.("upgrade3", "t") || "t",
-                ui?.getHudKeybind?.("upgradeDestroy", "r") || "r",
-                ui?.getHudKeybind?.("upgradeBarracksToggle", "f") || "f"
+                bindKey("upgrade1", "q"),
+                bindKey("upgrade2", "e"),
+                bindKey("upgrade3", "t"),
+                bindKey("upgradeDestroy", "r"),
+                bindKey("upgradeBarracksToggle", "f")
             ];
             this.activeKeys.add(key); // Add key to active keys
             if (event.key === "Shift") {
@@ -82,9 +83,10 @@ export default class InputManager {
                 this.handleNumberKeyPress(parseInt(event.key, 10));
             }
 
-            this.handleUpgradeKeyPress(key);
-            const upgradePanelOpen = this.core.uiManager?.DOM?.game?.upgrades?.container?.style?.display !== "none";
-            if (upgradePanelOpen && upgradeHotkeys.includes(key)) {
+            const upgradesContainer = this.core.uiManager?.DOM?.game?.upgrades?.container;
+            const upgradePanelOpenBeforeAction = upgradesContainer?.style?.display !== "none";
+            if (upgradePanelOpenBeforeAction && upgradeHotkeys.includes(key)) {
+                this.handleUpgradeKeyPress(key);
                 return;
             }
             const isTabKey = event.key === "Tab";
@@ -354,11 +356,12 @@ export default class InputManager {
             return;
         }
         const ui = this.core.uiManager;
-        const keyUpgrade1 = ui?.getHudKeybind?.("upgrade1", "q") || "q";
-        const keyUpgrade2 = ui?.getHudKeybind?.("upgrade2", "e") || "e";
-        const keyUpgrade3 = ui?.getHudKeybind?.("upgrade3", "t") || "t";
-        const keyUpgradeDestroy = ui?.getHudKeybind?.("upgradeDestroy", "r") || "r";
-        const keyUpgradeBarracks = ui?.getHudKeybind?.("upgradeBarracksToggle", "f") || "f";
+        const bindKey = (action, fallback) => String(ui?.getHudKeybind?.(action, fallback) || fallback).toLowerCase();
+        const keyUpgrade1 = bindKey("upgrade1", "q");
+        const keyUpgrade2 = bindKey("upgrade2", "e");
+        const keyUpgrade3 = bindKey("upgrade3", "t");
+        const keyUpgradeDestroy = bindKey("upgradeDestroy", "r");
+        const keyUpgradeBarracks = bindKey("upgradeBarracksToggle", "f");
 
         const upgradeListElement = this.core.uiManager.DOM.game.upgrades.list; // Get the upgrade list element
 
