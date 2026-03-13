@@ -104,11 +104,12 @@ const (
 	PLAYER_CORE_ELIMINATION_PERCENT = 35
 
 	// Player timeout and protection settings
-	PLAYER_TIMEOUT                 = 10 // Minutes
-	PLAYER_SPAWN_PROTECTION_TIME   = 2  // Minutes
-	PLAYER_SPAWN_PROTECTION_RADIUS = 306 + 145
-	PORTAL_LIFETIME_SECONDS        = 30
-	PORTAL_COOLDOWN_SECONDS        = 300
+	PLAYER_TIMEOUT                        = 10 // Minutes
+	PLAYER_INACTIVITY_WARNING_DELAY       = 1  // Minutes before showing AFK warning
+	PLAYER_SPAWN_PROTECTION_TIME          = 2  // Minutes
+	PLAYER_SPAWN_PROTECTION_RADIUS        = 306 + 145
+	PORTAL_LIFETIME_SECONDS               = 30
+	PORTAL_COOLDOWN_SECONDS               = 300
 
 	// Player health regeneration settings
 	PLAYER_HEALTH_REGENERATION           = 30

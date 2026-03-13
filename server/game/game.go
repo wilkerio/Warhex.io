@@ -142,12 +142,13 @@ func startInactivityCheckLoop() {
 				continue
 			}
 
-			// Send warning after 10 seconds
-			if time.Since(player.GetLastActivity()) > 10*time.Second && time.Since(player.LastActivityWarningSent) > 10*time.Second {
-				player.LastActivityWarningSent = time.Now()
-				// Send warning message to player
-				TriggerPlayerInactiveWarningEvent(player)
-			}
+				// Show AFK warning after configured delay.
+				if time.Since(player.GetLastActivity()) > PLAYER_INACTIVITY_WARNING_DELAY*time.Minute &&
+					time.Since(player.LastActivityWarningSent) > 10*time.Second {
+					player.LastActivityWarningSent = time.Now()
+					// Send warning message to player
+					TriggerPlayerInactiveWarningEvent(player)
+				}
 		}
 		State.RUnlock()
 	}

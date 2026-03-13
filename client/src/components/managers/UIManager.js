@@ -31,7 +31,7 @@ export default class UIManager {
         this.selectedUpgradeTab = 0;
         this.upgradePanelOpen = false;
         this.inactivityTimerInterval = null;
-        this.inactivityTimeout = 600; // 10 minutes in seconds
+        this.inactivityTimeout = 540; // Warning starts after 1 minute; 9 minutes remain until 10-minute kick.
         this.x1PromptElement = null;
         this.x1SendPromptElement = null;
         this.enemyCoreActionsElement = null;
@@ -6526,18 +6526,26 @@ export default class UIManager {
     }
 
     showInactivityWarning() {
+        const warning = this.DOM?.game?.inactivityWarning;
+        if (!warning?.container || !warning?.timer) return;
+
+        // Server may resend warning events; keep the same countdown running.
+        if (warning.container.style.display === 'flex' && this.inactivityTimerInterval) {
+            return;
+        }
+
         if (this.inactivityTimerInterval) {
             clearInterval(this.inactivityTimerInterval);
             this.inactivityTimerInterval = null;
         }
 
-        this.DOM.game.inactivityWarning.container.style.display = 'flex';
+        warning.container.style.display = 'flex';
         let timeLeft = this.inactivityTimeout;
 
         const updateTimer = () => {
             const minutes = Math.floor(timeLeft / 60);
             const seconds = Math.max(0, timeLeft % 60);
-            this.DOM.game.inactivityWarning.timer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            warning.timer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
             if (timeLeft <= 0) {
                 clearInterval(this.inactivityTimerInterval);
                 this.inactivityTimerInterval = null;
