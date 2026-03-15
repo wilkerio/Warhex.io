@@ -107,16 +107,15 @@ func projectVertices(vertices []PositionFloat, axis PositionFloat) (min, max flo
 	return
 }
 
-func InitCirclePolygon(size int) Polygon {
+func InitCirclePolygonWithOffset(size int, offset float64) Polygon {
 	numSides := 16
 	angleStep := (2 * math.Pi) / float64(numSides)
-	offset := 2 // Offset as defined in the JavaScript code
 	points := make([]PositionFloat, numSides)
 
 	for i := 0; i < numSides; i++ {
 		angle := angleStep * float64(i)
-		x := float32((float64(size) + float64(offset)) * math.Cos(angle))
-		y := float32((float64(size) + float64(offset)) * math.Sin(angle))
+		x := float32((float64(size) + offset) * math.Cos(angle))
+		y := float32((float64(size) + offset) * math.Sin(angle))
 		points[i] = PositionFloat{X: x, Y: y}
 	}
 
@@ -124,6 +123,11 @@ func InitCirclePolygon(size int) Polygon {
 		Vertices: points,
 		Rotation: 0, // Initial rotation can be set to 0
 	}
+}
+
+func InitCirclePolygon(size int) Polygon {
+	// Keep historical +2 collision envelope for circular buildings by default.
+	return InitCirclePolygonWithOffset(size, 2)
 }
 
 func InitHexagon(size int) Polygon {

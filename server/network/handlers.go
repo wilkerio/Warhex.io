@@ -333,12 +333,17 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	if !player.CanPerformBuildingAction() {
+	rawBuildingType := payload[0]
+	isDefenseAction := (rawBuildingType & 0x80) != 0
+	placementRotationStep := uint8((rawBuildingType >> 4) & 0x07)
+	buildingType := game.BuildingType(rawBuildingType & 0x0F)
+
+	// Keep anti-script for normal gameplay, but skip it for explicit defend/remount placements.
+	if !isDefenseAction && !player.CanPerformBuildingAction() {
 		game.TriggerKickEvent(player, game.KICK_REASON_SCRIPTING)
 		return
 	}
 
-	buildingType := game.BuildingType(payload[0])
 	position := getPositionFloatFromPayload(payload[1:])
 	base := player.Base
 
@@ -464,7 +469,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	// Check for collision
-	if !base.CheckBuildingCollision(buildingType, position) {
+	if !base.CheckBuildingCollision(buildingType, position, placementRotationStep) {
 		log.Println("Building intersects with existing building")
 		// Restore resources if collision detected
 		player.Resources.Power.Increment(costs)
@@ -473,7 +478,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	// Place the building
-	building, ok := base.AddBuilding(buildingType, position)
+	building, ok := base.AddBuilding(buildingType, position, placementRotationStep)
 	if !ok {
 		log.Println("Failed to place building")
 		// Restore resources if building placement failed

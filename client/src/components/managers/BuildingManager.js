@@ -30,9 +30,11 @@ export class BuildingManager {
         this.core = core;
         this.buildingToPlace = null; // Selected by toolbar
         this.selectedPlacementType = null;
+        this.placementRotationStep = 0;
         this.selectedBuildings = []; // Clicked, or selected by selection circle
         this.lastSelectedBuilding = null;
         this.placementHintShown = false;
+        this.placementRotateHintShown = false;
 
         this.blockBuildingSelection = false;
 
@@ -52,9 +54,10 @@ export class BuildingManager {
         this.defenseRemountActive = false;
         this.defenseRemountTimer = null;
         this.defensePlacedWalls = [];
-        // Place multiple defense walls per cycle while staying within server anti-spam limits.
-        this.defensePlacementBurstSize = 2;
-        this.defensePlacementIntervalMs = 220;
+        // Batch-defense: place/remount many slots per cycle for fast rebuilds.
+        this.defensePlacementBurstSize = 30;
+        this.defenseRemountBurstSize = 30;
+        this.defensePlacementIntervalMs = 180;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -96,6 +99,38 @@ export class BuildingManager {
 
     hasSelectedOwnedUnits () {
         return Boolean(this.core.unitManager?.hasSelectedUnits?.());
+    }
+
+    canRotatePlacementType (buildingType) {
+        return buildingType === BuildingTypes.GENERATOR || buildingType === BuildingTypes.HOUSE;
+    }
+
+    getPlacementRotationModulo (buildingType) {
+        if (buildingType === BuildingTypes.GENERATOR) return 6;
+        if (buildingType === BuildingTypes.HOUSE) return 5;
+        return 1;
+    }
+
+    rotateCurrentPlacement (direction = 1) {
+        const placed = this.buildingToPlace?.building;
+        if (!placed) return false;
+        const buildingType = placed.type;
+        if (!this.canRotatePlacementType(buildingType)) return false;
+        const modulo = this.getPlacementRotationModulo(buildingType);
+        const delta = direction >= 0 ? 1 : -1;
+        this.placementRotationStep = (this.placementRotationStep + delta + modulo) % modulo;
+        if (typeof placed.setPlacementRotationStep === "function") {
+            placed.setPlacementRotationStep(this.placementRotationStep);
+        }
+        this.updateBuildingPosition();
+        return true;
+    }
+
+    getCurrentPlacementRotationStep () {
+        const placed = this.buildingToPlace?.building;
+        if (!placed) return 0;
+        if (!this.canRotatePlacementType(placed.type)) return 0;
+        return this.placementRotationStep;
     }
 
     isPortalTooCloseToAnyBase (position, portalSize) {
@@ -486,6 +521,10 @@ export class BuildingManager {
 
         // Create a new instance of the selected building class
         const building = new buildingClass(this.core.gameManager.player.color, this.core.gameManager.player.position);
+        this.placementRotationStep = 0;
+        if (typeof building.setPlacementRotationStep === "function") {
+            building.setPlacementRotationStep(0);
+        }
 
         // Create a preview for the building
         const buildingPreview = new BuildingPreview(building);
@@ -505,6 +544,14 @@ export class BuildingManager {
                 "#60c1ff"
             );
             this.placementHintShown = true;
+        }
+        if (this.canRotatePlacementType(building.type) && !this.placementRotateHintShown) {
+            this.core.uiManager?.addChatMessage?.(
+                "System",
+                "Press R while placing to rotate this building and fit corners.",
+                "#60c1ff"
+            );
+            this.placementRotateHintShown = true;
         }
 
         this.updateBuildingPosition()
@@ -621,8 +668,11 @@ export class BuildingManager {
                 x: closestBase.position.x + directionX * 1.5,
                 y: closestBase.position.y + directionY * 1.5
             };
-
-            this.buildingToPlace.building.setTargetPoint(invertedPosition);
+            if (typeof this.buildingToPlace.building.applyPlacementTargetFromBase === "function") {
+                this.buildingToPlace.building.applyPlacementTargetFromBase(closestBase.position, 1.5);
+            } else {
+                this.buildingToPlace.building.setTargetPoint(invertedPosition);
+            }
 
             const allBuildings = closestBase.buildings;
             let allUnits = [];
@@ -664,7 +714,8 @@ export class BuildingManager {
                 return
             }
 
-            this.core.networkManager.placeBuilding(buildingType, position);
+            const placementRotationStep = this.getCurrentPlacementRotationStep();
+            this.core.networkManager.placeBuilding(buildingType, position, false, placementRotationStep);
 
             // Client prediction
             this.core.gameManager.player.setBuildingCache(this.buildingToPlace.building);
@@ -678,8 +729,17 @@ export class BuildingManager {
 
     // Helper method to re-select the building type for continued placement
     reselectBuildingForPlacement () {
+        const previousRotationStep = this.placementRotationStep;
         const buildingType = this.buildingToPlace.building.constructor;
         this.handleBuildingSelectionForPlacement(buildingType);
+        if (this.buildingToPlace?.building && this.canRotatePlacementType(this.buildingToPlace.building.type)) {
+            const modulo = this.getPlacementRotationModulo(this.buildingToPlace.building.type);
+            this.placementRotationStep = previousRotationStep % modulo;
+            if (typeof this.buildingToPlace.building.setPlacementRotationStep === "function") {
+                this.buildingToPlace.building.setPlacementRotationStep(this.placementRotationStep);
+            }
+            this.updateBuildingPosition();
+        }
     }
 
     // Ensure the selected building is properly removed
@@ -690,6 +750,7 @@ export class BuildingManager {
             this.core.renderer.removeFromQueue(building, QueueType.OVERLAY);
             this.buildingToPlace = null;
         }
+        this.placementRotationStep = 0;
         this.selectedPlacementType = null;
         this.core.toolbar?.setActiveBuildingType?.(null);
     }
@@ -949,6 +1010,7 @@ export class BuildingManager {
             .filter(b => b && !b.removeFlag && b.type !== BuildingTypes.WALL)
             .map(b => ({
                 type: b.type,
+                rotationStep: Number.isFinite(Number(b.placementRotationStep)) ? Number(b.placementRotationStep) : 0,
                 position: {
                     x: Math.round(b.position.x * 10) / 10,
                     y: Math.round(b.position.y * 10) / 10
@@ -1084,20 +1146,24 @@ export class BuildingManager {
             if (this.defenseRemountActive) return;
             this.stopDefensePlacement();
             this.defenseRemountActive = true;
-            this.remountOneDefenseSlot();
+            this.remountDefenseSlotsBurst();
             this.defenseRemountTimer = setInterval(() => {
                 if (!this.defenseRemountActive) return;
-                this.remountOneDefenseSlot();
-            }, 140);
+                this.remountDefenseSlotsBurst();
+            }, 120);
         }
     }
 
     placeDefenseWallBurst () {
         if (!this.defensePlacementActive || !this.defenseProfile) return 0;
+        const player = this.core.gameManager.player;
+        if (!player) return 0;
+
         const burst = Math.max(1, Number(this.defensePlacementBurstSize) || 1);
+        const pendingPredictedWalls = [];
         let placed = 0;
         for (let i = 0; i < burst; i++) {
-            if (!this.placeOneDefenseWall()) break;
+            if (!this.placeOneDefenseWall(pendingPredictedWalls)) break;
             placed++;
         }
         return placed;
@@ -1114,7 +1180,7 @@ export class BuildingManager {
         }
     }
 
-    placeOneDefenseWall () {
+    placeOneDefenseWall (pendingPredictedWalls = null) {
         if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return false;
 
         const player = this.core.gameManager.player;
@@ -1126,7 +1192,11 @@ export class BuildingManager {
         if (this.core.gameManager.resources.power.current < cost) return false;
 
         const positionToleranceSq = 14 * 14;
-        const currentBuildings = (player.buildings || []).filter(b => b && !b.removeFlag);
+        const baseBuildings = (player.buildings || []).filter(b => b && !b.removeFlag);
+        const pendingWalls = Array.isArray(pendingPredictedWalls)
+            ? pendingPredictedWalls.filter(b => b && !b.removeFlag)
+            : [];
+        const currentBuildings = [...baseBuildings, ...pendingWalls];
         this.syncDefensePlacedWallsWithCurrentState(player, positionToleranceSq);
         const currentWalls = currentBuildings.filter(b => b.type === BuildingTypes.WALL);
         let selectedPosition = null;
@@ -1147,7 +1217,7 @@ export class BuildingManager {
             if (hasDefenseWallThere) continue;
 
             const candidate = { x: entry.position.x, y: entry.position.y };
-            if (!this.canAutoPlaceBuilding(player, candidate, [], [], wallType, wallSize, { ignoreUnits: true })) {
+            if (!this.canAutoPlaceBuilding(player, candidate, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
                 continue;
             }
             selectedPosition = candidate;
@@ -1159,13 +1229,16 @@ export class BuildingManager {
         const ok = this.core.gameManager.increaseBuildingLimit(wallType);
         if (!ok) return false;
 
-        this.core.networkManager.placeBuilding(wallType, selectedPosition);
+        this.core.networkManager.placeBuilding(wallType, selectedPosition, true);
         const predicted = this.prepareAutoPlacementBuilding(
             new Wall(player.color, selectedPosition),
             player,
             selectedPosition
         );
         player.setBuildingCache(predicted);
+        if (Array.isArray(pendingPredictedWalls)) {
+            pendingPredictedWalls.push(predicted);
+        }
         this.core.gameManager.subtractResources(cost);
         this.defensePlacedWalls.push(selectedPosition);
         if (this.defensePlacedWalls.length > 240) {
@@ -1174,10 +1247,10 @@ export class BuildingManager {
         return true;
     }
 
-    remountOneDefenseSlot () {
-        if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return;
+    remountDefenseSlotsBurst () {
+        if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return 0;
         const player = this.core.gameManager.player;
-        if (!player) return;
+        if (!player) return 0;
 
         const slotToleranceSq = 18 * 18;
         const wallMatchToleranceSq = 40 * 40;
@@ -1207,52 +1280,66 @@ export class BuildingManager {
             return dx * dx + dy * dy <= slotToleranceSq;
         });
 
-        // First pass: if there is a wall in a saved slot, sell it first.
+        // First pass: remove all matching walls in one batch.
+        const slotsWithWalls = [];
+        const wallIDsToRemove = new Set();
         for (const entry of this.defenseProfile.entries) {
             if (isOriginalBuildingPresent(entry)) continue;
             if (hasOtherBuildingInSlot(entry)) continue;
             const matchingWalls = findWallsInSavedSlot(entry);
             if (matchingWalls.length === 0) continue;
-            this.defensePlacedWalls = this.defensePlacedWalls.filter(w => {
-                const dx = w.x - entry.position.x;
-                const dy = w.y - entry.position.y;
-                return dx * dx + dy * dy > wallMatchToleranceSq;
+            slotsWithWalls.push(entry.position);
+            for (const wall of matchingWalls) {
+                wallIDsToRemove.add(wall.id);
+            }
+        }
+        if (wallIDsToRemove.size > 0) {
+            this.defensePlacedWalls = this.defensePlacedWalls.filter(saved => {
+                return !slotsWithWalls.some(position => {
+                    const dx = saved.x - position.x;
+                    const dy = saved.y - position.y;
+                    return dx * dx + dy * dy <= wallMatchToleranceSq;
+                });
             });
-            const wallIDs = [...new Set(matchingWalls.map(w => w.id))];
-            this.core.networkManager.removeBuildings(wallIDs);
-            return;
+            this.core.networkManager.removeBuildings([...wallIDsToRemove]);
+            return 0;
         }
 
-        // Second pass: rebuild on the first free saved slot.
-        let targetEntry = null;
+        // Second pass: rebuild many free slots in a burst.
+        const burst = Math.max(1, Number(this.defenseRemountBurstSize) || 1);
+        let placed = 0;
         for (const entry of this.defenseProfile.entries) {
+            if (placed >= burst) break;
             if (isOriginalBuildingPresent(entry)) continue;
             if (hasOtherBuildingInSlot(entry)) continue;
-            targetEntry = entry;
-            break;
+
+            const type = entry.type;
+            const rotationStep = Number.isFinite(Number(entry.rotationStep)) ? Number(entry.rotationStep) : 0;
+            const cost = this.getPlacementCost(type);
+            if (this.core.gameManager.resources.power.current < cost) {
+                continue;
+            }
+
+            const ok = this.core.gameManager.increaseBuildingLimit(type);
+            if (!ok) continue;
+
+            const BuildingClass = BuildingManager.getBuildingClassByType(type);
+            if (!BuildingClass) continue;
+
+            const position = { x: entry.position.x, y: entry.position.y };
+            this.core.networkManager.placeBuilding(type, position, true, rotationStep);
+            const predicted = new BuildingClass(player.color, position);
+            if (typeof predicted.setPlacementRotationStep === "function") {
+                predicted.setPlacementRotationStep(rotationStep);
+            }
+            this.prepareAutoPlacementBuilding(predicted, player, position);
+            player.setBuildingCache(predicted);
+            currentBuildings.push(predicted);
+            this.core.gameManager.subtractResources(cost);
+            placed++;
         }
 
-        if (!targetEntry) return;
-
-        const type = targetEntry.type;
-        const cost = this.getPlacementCost(type);
-        if (this.core.gameManager.resources.power.current < cost) return;
-
-        const ok = this.core.gameManager.increaseBuildingLimit(type);
-        if (!ok) return;
-
-        const BuildingClass = BuildingManager.getBuildingClassByType(type);
-        if (!BuildingClass) return;
-
-        const position = { x: targetEntry.position.x, y: targetEntry.position.y };
-        this.core.networkManager.placeBuilding(type, position);
-        const predicted = this.prepareAutoPlacementBuilding(
-            new BuildingClass(player.color, position),
-            player,
-            position
-        );
-        player.setBuildingCache(predicted);
-        this.core.gameManager.subtractResources(cost);
+        return placed;
     }
 
     exportCurrentBaseLayout (layoutName, snapshotDataUrl = null) {
@@ -1265,6 +1352,7 @@ export class BuildingManager {
             .map(building => ({
                 type: building.type,
                 variant: building.variant ?? 0,
+                rotationStep: Number.isFinite(Number(building.placementRotationStep)) ? Number(building.placementRotationStep) : 0,
                 dx: Math.round((building.position.x - basePos.x) * 10) / 10,
                 dy: Math.round((building.position.y - basePos.y) * 10) / 10,
             }))
@@ -1343,6 +1431,7 @@ export class BuildingManager {
 
             const item = queue[index++];
             const type = item.type;
+            const rotationStep = Number.isFinite(Number(item.rotationStep)) ? Number(item.rotationStep) : 0;
             const details = getBuildingDetails(type);
             const size = details?.size || 32;
             const position = {
@@ -1374,12 +1463,12 @@ export class BuildingManager {
                 return;
             }
 
-            this.core.networkManager.placeBuilding(type, position);
-            const predicted = this.prepareAutoPlacementBuilding(
-                new BuildingClass(livePlayer.color, position),
-                livePlayer,
-                position
-            );
+            this.core.networkManager.placeBuilding(type, position, false, rotationStep);
+            const predicted = new BuildingClass(livePlayer.color, position);
+            if (typeof predicted.setPlacementRotationStep === "function") {
+                predicted.setPlacementRotationStep(rotationStep);
+            }
+            this.prepareAutoPlacementBuilding(predicted, livePlayer, position);
             livePlayer.setBuildingCache(predicted);
             this.core.gameManager.subtractResources(cost);
             pendingBuildings.push(predicted);
@@ -2193,6 +2282,10 @@ export class BuildingManager {
 
     setAutoPlacementTargetPoint (building, base, position) {
         if (!building || !base || !position || typeof building.setTargetPoint !== "function") return;
+        if (typeof building.applyPlacementTargetFromBase === "function") {
+            building.applyPlacementTargetFromBase(base.position, 1.5);
+            return;
+        }
         const dx = position.x - base.position.x;
         const dy = position.y - base.position.y;
         building.setTargetPoint({

@@ -214,17 +214,20 @@ export default class Player extends Renderable {
     }
 
     addBuilding (building) {
-        // Calculate the direction vector from the player to the building
-        const directionX = building.position.x - this.position.x;
-        const directionY = building.position.y - this.position.y;
+        if (typeof building.applyPlacementTargetFromBase === "function") {
+            building.applyPlacementTargetFromBase(this.position, 1.5);
+        } else {
+            // Calculate the direction vector from the player to the building
+            const directionX = building.position.x - this.position.x;
+            const directionY = building.position.y - this.position.y;
 
-        // Calculate the inverted position by reversing the direction and scaling it
-        const invertedPosition = {
-            x: this.position.x + directionX * 1.5,
-            y: this.position.y + directionY * 1.5
-        };
-
-        building.setTargetPoint(invertedPosition);
+            // Calculate the inverted position by reversing the direction and scaling it
+            const invertedPosition = {
+                x: this.position.x + directionX * 1.5,
+                y: this.position.y + directionY * 1.5
+            };
+            building.setTargetPoint(invertedPosition);
+        }
 
         if (this.isClient) { //? Needs to be set before the building is added
             //? Needs to be initialized after targetPoint set!

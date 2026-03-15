@@ -242,21 +242,28 @@ function decodeNeutralBaseCaptured (payload) {
     let offset = 2; // Start after neutralID and playerID
     while (offset < dataView.byteLength) {
         // Check if there is enough data to read a building
-        if (offset + 11 > dataView.byteLength) {
-            break; // Not enough data to read the building (1 ID + 1 Type + 1 Variant + 4 X + 4 Y)
+        if (offset + 12 > dataView.byteLength) {
+            break; // Not enough data to read the building (1 ID + 1 Type + 1 Variant + 1 Rot + 4 X + 4 Y)
         }
 
         const buildingID = dataView.getUint8(offset);
         const buildingType = dataView.getUint8(offset + 1);
         const buildingVariant = dataView.getUint8(offset + 2);
-        const positionX = dataView.getFloat32(offset + 3);
-        const positionY = dataView.getFloat32(offset + 7);
+        const rotationStep = dataView.getUint8(offset + 3);
+        const positionX = dataView.getFloat32(offset + 4);
+        const positionY = dataView.getFloat32(offset + 8);
 
         // Add building information to the array
-        buildings.push({ id: buildingID, type: buildingType, variant: buildingVariant, position: { x: positionX, y: positionY } });
+        buildings.push({
+            id: buildingID,
+            type: buildingType,
+            variant: buildingVariant,
+            rotationStep,
+            position: { x: positionX, y: positionY }
+        });
 
         // Move offset to the next building 
-        offset += 11;
+        offset += 12;
     }
 
     return { neutralID, playerID, buildings };
@@ -547,8 +554,9 @@ function decodeBuildingPlaced (payload) {
     const ownerID = dataView.getUint8(1);
     const buildingID = dataView.getUint8(2);
     const buildingType = dataView.getUint8(3);
+    const rotationStep = dataView.getUint8(4);
 
-    let offset = 4; // Start reading position data after building type
+    let offset = 5; // Start reading position data after building type and rotation
     const position = {
         x: dataView.getFloat32(offset),
         y: dataView.getFloat32(offset + 4)
@@ -561,7 +569,7 @@ function decodeBuildingPlaced (payload) {
         unitSpawningActive = dataView.getUint8(offset) === 1; // 1 for active, 0 for inactive
     }
 
-    return { isPlayer, ownerID, buildingID, buildingType, position, unitSpawningActive };
+    return { isPlayer, ownerID, buildingID, buildingType, rotationStep, position, unitSpawningActive };
 }
 
 
@@ -657,6 +665,7 @@ function decodeInitialGameState (payload) {
             const buildingId = dataView.getUint8(offset++);
             const buildingType = dataView.getUint8(offset++);
             const buildingVariant = dataView.getUint8(offset++);
+            const rotationStep = dataView.getUint8(offset++);
 
             const buildingX = dataView.getFloat32(offset);
             const buildingY = dataView.getFloat32(offset + 4);
@@ -672,6 +681,7 @@ function decodeInitialGameState (payload) {
                 id: buildingId,
                 type: buildingType,
                 variant: buildingVariant,
+                rotationStep,
                 position: { x: buildingX, y: buildingY },
                 unitSpawningActive // Add to building data if it's a barrack
             });

@@ -7,15 +7,16 @@ import (
 )
 
 type Building struct {
-	Owner      Owner // Specifies the owner of the building, which can be a player or a neutral base
-	ID         ID
-	Type       BuildingType
-	Variant    BuildingVariant
-	Position   PositionFloat
-	PlacedAt   time.Time
-	Polygon    Polygon
-	Health     Health
-	RemoveFlag bool // Flag to mark unit for removal
+	Owner                 Owner // Specifies the owner of the building, which can be a player or a neutral base
+	ID                    ID
+	Type                  BuildingType
+	Variant               BuildingVariant
+	PlacementRotationStep uint8
+	Position              PositionFloat
+	PlacedAt              time.Time
+	Polygon               Polygon
+	Health                Health
+	RemoveFlag            bool // Flag to mark unit for removal
 	sync.RWMutex
 }
 
@@ -83,64 +84,64 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 			Cost:    200,
 		},
 	},
-		SIMPLE_TURRET: {
-			BASIC_BUILDING: {
-				Variant: BASIC_BUILDING,
-				Health:  Health{Current: 20, Max: 20},
-				Damage:  20,
-				Next:    []BuildingVariant{RAPID_TURRET, HEAVY_TURRET, RANGED_TURRET},
-				Cost:    25,
-			},
-			RAPID_TURRET: {
-				Variant: RAPID_TURRET,
-				Health:  Health{Current: 20, Max: 20},
-				Damage:  20,
-				Next:    []BuildingVariant{GATLING_TURRET},
-				Cost:    60,
-			},
-				GATLING_TURRET: {
-					Variant: GATLING_TURRET,
-					Health:  Health{Current: 20, Max: 20},
-					Damage:  15,
-					Next:    nil,
-					Cost:    100,
-				},
-			HEAVY_TURRET: {
-				Variant: HEAVY_TURRET,
-				Health:  Health{Current: 30, Max: 30},
-				Damage:  30,
-				Next:    nil,
-				Cost:    60,
-			},
-				RAGE_TURRET: {
-					Variant: RAGE_TURRET,
-					Health:  Health{Current: 30, Max: 30},
-					Damage:  18,
-					Next:    nil,
-					Cost:    180,
-				},
-				RANGED_TURRET: {
-					Variant: RANGED_TURRET,
-					Health:  Health{Current: 20, Max: 20},
-					Damage:  30,
-					Next:    []BuildingVariant{TWIN_TURRET},
-					Cost:    60,
-				},
-				TWIN_TURRET: {
-					Variant: TWIN_TURRET,
-					Health:  Health{Current: 26, Max: 26},
-					Damage:  24,
-					Next:    []BuildingVariant{SPOTTER_TURRET},
-					Cost:    80,
-				},
-				SPOTTER_TURRET: {
-					Variant: SPOTTER_TURRET,
-					Health:  Health{Current: 30, Max: 30},
-					Damage:  30,
-					Next:    []BuildingVariant{RAGE_TURRET},
-					Cost:    100,
-				},
+	SIMPLE_TURRET: {
+		BASIC_BUILDING: {
+			Variant: BASIC_BUILDING,
+			Health:  Health{Current: 20, Max: 20},
+			Damage:  20,
+			Next:    []BuildingVariant{RAPID_TURRET, HEAVY_TURRET, RANGED_TURRET},
+			Cost:    25,
 		},
+		RAPID_TURRET: {
+			Variant: RAPID_TURRET,
+			Health:  Health{Current: 20, Max: 20},
+			Damage:  20,
+			Next:    []BuildingVariant{GATLING_TURRET},
+			Cost:    60,
+		},
+		GATLING_TURRET: {
+			Variant: GATLING_TURRET,
+			Health:  Health{Current: 20, Max: 20},
+			Damage:  15,
+			Next:    nil,
+			Cost:    100,
+		},
+		HEAVY_TURRET: {
+			Variant: HEAVY_TURRET,
+			Health:  Health{Current: 30, Max: 30},
+			Damage:  30,
+			Next:    nil,
+			Cost:    60,
+		},
+		RAGE_TURRET: {
+			Variant: RAGE_TURRET,
+			Health:  Health{Current: 30, Max: 30},
+			Damage:  18,
+			Next:    nil,
+			Cost:    180,
+		},
+		RANGED_TURRET: {
+			Variant: RANGED_TURRET,
+			Health:  Health{Current: 20, Max: 20},
+			Damage:  30,
+			Next:    []BuildingVariant{TWIN_TURRET},
+			Cost:    60,
+		},
+		TWIN_TURRET: {
+			Variant: TWIN_TURRET,
+			Health:  Health{Current: 26, Max: 26},
+			Damage:  24,
+			Next:    []BuildingVariant{SPOTTER_TURRET},
+			Cost:    80,
+		},
+		SPOTTER_TURRET: {
+			Variant: SPOTTER_TURRET,
+			Health:  Health{Current: 30, Max: 30},
+			Damage:  30,
+			Next:    []BuildingVariant{RAGE_TURRET},
+			Cost:    100,
+		},
+	},
 	SNIPER_TURRET: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,
@@ -381,6 +382,13 @@ var unitSpawningConfig = map[BuildingType]map[BuildingVariant]UnitSpawning{
 	},
 }
 
+var wallPolygon = func() Polygon {
+	// Wall collision must match the client wall footprint (no hidden +2 offset).
+	polygon := InitCirclePolygonWithOffset(GetBuildingSize(WALL), 0)
+	polygon.rotationOffset = math.Pi / 2
+	return polygon
+}()
+
 var buildingPolygons = map[BuildingType]Polygon{
 	BARRACKS:      GeneratePolygon(ShapeRectangle, GetBuildingSize(BARRACKS), math.Pi),
 	PORTAL:        GeneratePolygon(ShapeCircle, GetBuildingSize(PORTAL), math.Pi/2),
@@ -389,7 +397,7 @@ var buildingPolygons = map[BuildingType]Polygon{
 	SIMPLE_TURRET: GeneratePolygon(ShapeCircle, GetBuildingSize(SIMPLE_TURRET), math.Pi/2),
 	SNIPER_TURRET: GeneratePolygon(ShapeCircle, GetBuildingSize(SNIPER_TURRET), math.Pi/2),
 	ARMORY:        GeneratePolygon(ShapeCircle, GetBuildingSize(ARMORY), math.Pi/2),
-	WALL:          GeneratePolygon(ShapeCircle, GetBuildingSize(WALL), math.Pi/2),
+	WALL:          wallPolygon,
 }
 
 func GetBuildingPolygon(buildingType BuildingType) (Polygon, bool) {

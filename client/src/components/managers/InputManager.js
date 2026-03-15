@@ -105,6 +105,15 @@ export default class InputManager {
                 }
                 return;
             }
+            if (key === "r") {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
+                    const rotated = this.core.buildingManager?.rotateCurrentPlacement?.(1);
+                    if (rotated) {
+                        event.preventDefault();
+                        return;
+                    }
+                }
+            }
             if (key === keyToggleMap || isTabKey) {
                 if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) {
                     return;

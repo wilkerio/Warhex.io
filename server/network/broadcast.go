@@ -377,6 +377,7 @@ func broadcastNeutralBaseCaptured(neutral *game.NeutralBase) {
 			buffer.WriteByte(byte(building.ID))
 			buffer.WriteByte(byte(building.Type))
 			buffer.WriteByte(byte(building.Variant))
+			buffer.WriteByte(byte(building.PlacementRotationStep))
 
 			// Write building positions
 			binary.Write(buffer, binary.BigEndian, building.Position.X)
@@ -411,6 +412,7 @@ func broadcastBuildingPlaced(base *game.Base, buildingID game.ID) {
 	}
 	buffer.WriteByte(byte(building.ID))
 	buffer.WriteByte(byte(building.Type))
+	buffer.WriteByte(byte(building.PlacementRotationStep))
 	binary.Write(buffer, binary.BigEndian, building.Position.X)
 	binary.Write(buffer, binary.BigEndian, building.Position.Y)
 

@@ -81,13 +81,20 @@ export default class Message {
         return new Message(MessageTypes.CLIENT_REQUEST_SKIN_DATA, payload);
     }
 
-    static createPlaceBuildingMessage (buildingType, position) {
+    static createPlaceBuildingMessage (buildingType, position, isDefenseAction = false, placementRotationStep = 0) {
         // Create a buffer to hold the payload
         // 1 byte for buildingType, 4 bytes for x (float32), and 4 bytes for y (float32)
         const payload = new Uint8Array(1 + 4 + 4);
 
-        // Set the buildingType in the first byte
-        payload[0] = buildingType;
+        // Byte layout:
+        // bit7 = defend/remount action
+        // bits4..6 = placement rotation step (0..7)
+        // bits0..3 = building type (0..15)
+        const encodedBuildingType =
+            (buildingType & 0x0F) |
+            ((placementRotationStep & 0x07) << 4) |
+            (isDefenseAction ? 0x80 : 0);
+        payload[0] = encodedBuildingType;
 
         // Create a DataView for writing float32 values into the buffer
         const dataView = new DataView(payload.buffer);

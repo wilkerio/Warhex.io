@@ -170,6 +170,29 @@ func (b *Base) canAddBuilding(buildingType BuildingType) bool {
 	return limit.Current < limit.Max
 }
 
+func normalizePlacementRotationStep(buildingType BuildingType, rotationStep uint8) uint8 {
+	switch buildingType {
+	case GENERATOR:
+		return rotationStep % 6
+	case HOUSE:
+		return rotationStep % 5
+	default:
+		return 0
+	}
+}
+
+func getPlacementRotationOffset(buildingType BuildingType, rotationStep uint8) float64 {
+	step := normalizePlacementRotationStep(buildingType, rotationStep)
+	switch buildingType {
+	case GENERATOR:
+		return float64(step) * ((math.Pi * 2) / 6)
+	case HOUSE:
+		return float64(step) * ((math.Pi * 2) / 5)
+	default:
+		return 0
+	}
+}
+
 func (b *Base) incrementBuildingLimit(buildingType BuildingType) bool {
 	limit := b.BuildingLimits[buildingType]
 	if limit.Current < limit.Max {
@@ -190,7 +213,7 @@ func (b *Base) decrementBuildingLimit(buildingType BuildingType) bool {
 	return false
 }
 
-func (b *Base) AddBuilding(buildingType BuildingType, position PositionFloat) (*Building, bool) {
+func (b *Base) AddBuilding(buildingType BuildingType, position PositionFloat, rotationStep uint8) (*Building, bool) {
 
 	var player *Player
 	var owner Owner
@@ -227,21 +250,22 @@ func (b *Base) AddBuilding(buildingType BuildingType, position PositionFloat) (*
 
 	dx := float64(position.X - float32(b.Position.X))
 	dy := float64(position.Y - float32(b.Position.Y))
-	rotationAngle := math.Atan2(dy, dx)
+	rotationAngle := math.Atan2(dy, dx) + getPlacementRotationOffset(buildingType, rotationStep)
 
 	// Apply the rotation to the polygon
 	polygon.SetRotation(rotationAngle)
 
 	// Create the building
 	building := &Building{
-		Owner:    owner,
-		ID:       buildingID,
-		Type:     buildingType,
-		Variant:  BASIC_BUILDING, // Default variant value
-		Position: position,
-		PlacedAt: time.Now(),
-		Polygon:  polygon,
-		Health:   GetInitialHealth(buildingType, BASIC_BUILDING),
+		Owner:                 owner,
+		ID:                    buildingID,
+		Type:                  buildingType,
+		Variant:               BASIC_BUILDING, // Default variant value
+		PlacementRotationStep: normalizePlacementRotationStep(buildingType, rotationStep),
+		Position:              position,
+		PlacedAt:              time.Now(),
+		Polygon:               polygon,
+		Health:                GetInitialHealth(buildingType, BASIC_BUILDING),
 	}
 
 	b.Lock()
@@ -376,7 +400,7 @@ func (b *Base) RemoveBuilding(buildingID ID) bool {
 	return true // Building was successfully removed
 }
 
-func (b *Base) CheckBuildingCollision(buildingType BuildingType, position PositionFloat) bool {
+func (b *Base) CheckBuildingCollision(buildingType BuildingType, position PositionFloat, rotationStep uint8) bool {
 	polygon, ok := GetBuildingPolygon(buildingType)
 	if !ok {
 		log.Println("Polygon type not found for building:", buildingType)
@@ -387,7 +411,7 @@ func (b *Base) CheckBuildingCollision(buildingType BuildingType, position Positi
 
 	dx := float64(position.X - float32(b.Position.X))
 	dy := float64(position.Y - float32(b.Position.Y))
-	rotationAngle := math.Atan2(dy, dx)
+	rotationAngle := math.Atan2(dy, dx) + getPlacementRotationOffset(buildingType, rotationStep)
 
 	// Apply the rotation to the polygon
 	polygon.SetRotation(rotationAngle)

@@ -1012,6 +1012,9 @@ export default class NetworkManager {
                     return;
                 }
                 const newBuilding = new BuildingClass(owner.color, building.position, building.variant, building.id);
+                if (typeof newBuilding.setPlacementRotationStep === "function") {
+                    newBuilding.setPlacementRotationStep(building.rotationStep || 0);
+                }
                 owner.addBuilding(newBuilding);
 
                 if (building.type === BuildingTypes.BARRACKS) {
@@ -1369,6 +1372,9 @@ export default class NetworkManager {
                 }
                 // Create a new building if no cached building is found
                 const newBuilding = new BuildingClass(player.color, building.position, building.variant, building.id);
+                if (typeof newBuilding.setPlacementRotationStep === "function") {
+                    newBuilding.setPlacementRotationStep(building.rotationStep || 0);
+                }
                 neutral.addBuilding(newBuilding);
 
                 if (player.isClient) {
@@ -1588,7 +1594,7 @@ export default class NetworkManager {
     }
 
     handleBuildingPlaced (payload) {
-        const { isPlayer, ownerID, buildingID, buildingType, position, unitSpawningActive } = payload;
+        const { isPlayer, ownerID, buildingID, buildingType, rotationStep, position, unitSpawningActive } = payload;
         let base = null;
         let player = null;
         let isClient = false;
@@ -1643,6 +1649,10 @@ export default class NetworkManager {
             building = new BuildingClass(player.color, position, 0, buildingID);
         }
 
+        if (typeof building?.setPlacementRotationStep === "function") {
+            building.setPlacementRotationStep(rotationStep || 0);
+        }
+
         if (building.type === BuildingTypes.BARRACKS) {
             building.activated = unitSpawningActive;
             if (building.activated && isClient) {
@@ -1664,6 +1674,7 @@ export default class NetworkManager {
     handleBuildingPlacementFailed (payload) {
         const { buildingType, reason, cooldownSeconds } = payload;
         this.core.gameManager.decreaseBuildingLimit(buildingType);
+        this.core.gameManager.player?.clearBuildingCache?.();
 
         if (buildingType === BuildingTypes.PORTAL && reason === BuildingPlacementFailReasons.PORTAL_COOLDOWN) {
             this.core.gameManager.portalCooldownEndsAt = Date.now() + cooldownSeconds * 1000;
@@ -1927,8 +1938,13 @@ export default class NetworkManager {
         this.sendMessage(message);
     }
 
-    placeBuilding (buildingType, position) {
-        const message = Message.createPlaceBuildingMessage(buildingType, position);
+    placeBuilding (buildingType, position, isDefenseAction = false, placementRotationStep = 0) {
+        const message = Message.createPlaceBuildingMessage(
+            buildingType,
+            position,
+            isDefenseAction,
+            placementRotationStep
+        );
         this.sendMessage(message);
     }
 

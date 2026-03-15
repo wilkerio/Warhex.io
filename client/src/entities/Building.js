@@ -1,6 +1,6 @@
 import Renderable from "../components/Renderable.js";
 import ThemeManager from "../components/managers/ThemeManager.js";
-import { getBuildingDetails } from "../network/constants.js";
+import { BuildingTypes, getBuildingDetails } from "../network/constants.js";
 
 export const SelectionState = {
    NOT_SELECTED: 0,
@@ -23,6 +23,7 @@ export default class Building extends Renderable {
         this.variant = variant; // Store the current upgrade
         this.purchasedUpgrades = new Set();
         this.yOffset = 0;
+        this.placementRotationStep = 0;
 
         this.selectionState = SelectionState.NOT_SELECTED;
 
@@ -73,6 +74,35 @@ export default class Building extends Renderable {
         this.variant = buildingVariant;
         this.details = getBuildingDetails(this.type, buildingVariant);
         this.purchasedUpgrades.add(buildingVariant);
+    }
+
+    setPlacementRotationStep (step = 0) {
+        const numeric = Number.isFinite(Number(step)) ? Number(step) : 0;
+        this.placementRotationStep = Math.max(0, Math.floor(numeric));
+    }
+
+    getPlacementRotationAngle () {
+        switch (this.type) {
+        case BuildingTypes.GENERATOR:
+            return (this.placementRotationStep % 6) * ((Math.PI * 2) / 6);
+        case BuildingTypes.HOUSE:
+            return (this.placementRotationStep % 5) * ((Math.PI * 2) / 5);
+        default:
+            return 0;
+        }
+    }
+
+    applyPlacementTargetFromBase (basePosition, targetScale = 1.5) {
+        if (!basePosition) return;
+        const dx = this.position.x - basePosition.x;
+        const dy = this.position.y - basePosition.y;
+        const baseAngle = Math.atan2(dy, dx);
+        const angle = baseAngle + this.getPlacementRotationAngle();
+        const distance = Math.sqrt(dx * dx + dy * dy) * targetScale;
+        this.setTargetPoint({
+            x: basePosition.x + Math.cos(angle) * distance,
+            y: basePosition.y + Math.sin(angle) * distance
+        });
     }
 
     // Utility Methods

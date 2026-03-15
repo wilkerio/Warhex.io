@@ -90,7 +90,7 @@ func PrepareRockData(buffer *bytes.Buffer, rocks []game.Rock) {
 	// Iterate through each rock and write its data
 	for _, rock := range rocks {
 		// Write the position (center of the polygon)
-		writeBasePosition(buffer, game.FloatToInt(rock.Polygon.Center)) 
+		writeBasePosition(buffer, game.FloatToInt(rock.Polygon.Center))
 
 		// Write the size (random size between 40 and 80)
 		buffer.WriteByte(byte(rock.Size)) // Write the size (since it is an integer between 40 and 80)
@@ -172,6 +172,7 @@ func writeBuildingData(buffer *bytes.Buffer, building *game.Building, player *ga
 	buffer.WriteByte(byte(building.ID))
 	buffer.WriteByte(byte(building.Type))
 	buffer.WriteByte(byte(building.Variant))
+	buffer.WriteByte(byte(building.PlacementRotationStep))
 
 	writePosition(buffer, building.Position)
 
