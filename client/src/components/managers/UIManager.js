@@ -5186,6 +5186,21 @@ export default class UIManager {
         this.DOM.settings.button.style.display = "none";
     }
 
+    isGameplayInputBlocked () {
+        const settingsPanel = this.DOM?.settings?.panel;
+        if (!settingsPanel) {
+            return Boolean(this.menuOpen);
+        }
+
+        const inlineDisplay = settingsPanel.style?.display;
+        const computedDisplay = typeof window !== "undefined" && window.getComputedStyle
+            ? window.getComputedStyle(settingsPanel).display
+            : "none";
+        const settingsOpen = inlineDisplay === "flex" || computedDisplay !== "none";
+
+        return Boolean(this.menuOpen || settingsOpen);
+    }
+
     showGameSettingsPanel (show) {
         this.DOM.settings.panel.style.display = show ? "flex" : "none";
     }

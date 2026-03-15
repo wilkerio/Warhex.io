@@ -57,6 +57,7 @@ export default class InputManager {
         document.addEventListener("keydown", (event) => {
             const key = event.key.toLowerCase();
             const ui = this.core.uiManager;
+            const gameplayInputBlocked = Boolean(ui?.isGameplayInputBlocked?.());
             const bindKey = (action, fallback) => String(ui?.getHudKeybind?.(action, fallback) || fallback).toLowerCase();
             const keySelectArmy = bindKey("selectArmy", "q");
             const keySelectCommander = bindKey("selectCommander", "c");
@@ -97,7 +98,7 @@ export default class InputManager {
                 (activeTag === "input" || activeTag === "textarea" || activeTag === "select" || activeElement.isContentEditable)
             );
             if (key === keyToggleMap || isTabKey) {
-                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen || isFormFocused) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) {
                     return;
                 }
                 if (isTabKey) {
@@ -116,43 +117,43 @@ export default class InputManager {
                 }
             }
             if(event.key == 'g'){
-                if (this.core.uiManager.isChatInputFocused) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
                     return
                 }
                 this.core.unitManager.selectAllUnits();
             }
             if (key === keyToggleGroupTroops) {
-                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
                     return;
                 }
                 this.core.uiManager?.DOM?.game?.unitControls?.groupUnitsButton?.click?.();
             }
             if (key === keySelectArmy) {
-                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
                     return;
                 }
                 this.core.unitManager.selectArmyCombatUnits();
             }
             if (key === keySelectSoldiersOnly) {
-                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) return;
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
                 this.core.unitManager.selectOnlySoldiers();
             }
             if (key === keySelectTanksOnly) {
-                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) return;
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
                 this.core.unitManager.selectOnlyTanks();
             }
             if (key === keySelectSiegeOnly) {
-                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) return;
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
                 this.core.unitManager.selectOnlySiege();
             }
             if (key === keySelectAll) {
-                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
                     return;
                 }
                 this.core.unitManager.selectAllUnits();
             }
             if (key === keySelectCommander) {
-                if (this.core.uiManager.isChatInputFocused || this.core.uiManager.menuOpen) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
                     return;
                 }
                 if (event.repeat) return;
@@ -201,6 +202,10 @@ export default class InputManager {
     // Creates the selection circle and notifies listeners
     createSelectionCircle (mousePosition, button = 0) {
         if (button !== 0) {
+            return;
+        }
+
+        if (this.core.uiManager?.isGameplayInputBlocked?.()) {
             return;
         }
 
@@ -321,14 +326,17 @@ export default class InputManager {
     }
 
     onCanvasContextMenu (event) {
+        if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
         this.invokeRightClickHandlers(this.core.eventManager.mousePosition);
     }
 
     onCanvasMouseClick (event) {
+        if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
         this.invokeLeftClickHandlers(this.core.eventManager.mousePosition);
     }
 
     onMouseDown (event) {
+        if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
         this.invokeMouseDownHandlers(this.core.eventManager.mousePosition, event.button);
     }
 
@@ -337,6 +345,7 @@ export default class InputManager {
     }
 
     onMouseUp (event) {
+        if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
         this.invokeMouseUpHandlers(this.core.eventManager.mousePosition, event.button);
     }
 

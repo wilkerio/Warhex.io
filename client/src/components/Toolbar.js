@@ -70,6 +70,10 @@ export default class Toolbar {
         });
 
         toolbarItem.addEventListener("click", () => {
+            if (this.core?.uiManager?.isGameplayInputBlocked?.()) {
+                return;
+            }
+
             // Check if the current building count is below the limit
             if (buildingLimit.current < buildingLimit.limit) {
                 const activeType = this.core.buildingManager?.selectedPlacementType;
