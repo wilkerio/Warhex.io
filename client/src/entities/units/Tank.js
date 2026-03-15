@@ -7,7 +7,7 @@ const getHudShapeMode = (unitKey) => {
         if (mode === "square") mode = "triangle";
         return mode === "triangle" ? "triangle" : "round";
     } catch {
-        return "round";
+        return "triangle";
     }
 };
 

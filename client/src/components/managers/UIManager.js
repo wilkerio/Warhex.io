@@ -395,9 +395,9 @@ export default class UIManager {
                 upgradeBarracksToggle: "f"
             },
             unitShapes: {
-                soldier: "round",
-                tank: "round",
-                siege: "round"
+                soldier: "triangle",
+                tank: "triangle",
+                siege: "triangle"
             },
             unitStyles: {
                 soldierModel: "model1",
@@ -651,7 +651,7 @@ export default class UIManager {
         if (!overlay) return;
         overlay.querySelectorAll("[data-shape-key]").forEach((select) => {
             const key = select.dataset.shapeKey;
-            select.value = this.hudConfig?.unitShapes?.[key] || "round";
+            select.value = this.hudConfig?.unitShapes?.[key] || "triangle";
         });
 
         const models = ["model1", "model2", "model3", "model4", "model5"];
@@ -1101,9 +1101,9 @@ export default class UIManager {
         setVal("#hud-key-upgrade-3", this.hudConfig?.keybinds?.upgrade3 || "t");
         setVal("#hud-key-upgrade-destroy", this.hudConfig?.keybinds?.upgradeDestroy || "r");
         setVal("#hud-key-upgrade-barracks", this.hudConfig?.keybinds?.upgradeBarracksToggle || "f");
-        setVal("#hud-shape-soldier", this.hudConfig?.unitShapes?.soldier || "round");
-        setVal("#hud-shape-tank", this.hudConfig?.unitShapes?.tank || "round");
-        setVal("#hud-shape-siege", this.hudConfig?.unitShapes?.siege || "round");
+        setVal("#hud-shape-soldier", this.hudConfig?.unitShapes?.soldier || "triangle");
+        setVal("#hud-shape-tank", this.hudConfig?.unitShapes?.tank || "triangle");
+        setVal("#hud-shape-siege", this.hudConfig?.unitShapes?.siege || "triangle");
         const toggleBtn = wrap.querySelector("#hud-customize-toggle");
         if (toggleBtn) toggleBtn.textContent = this.hudCustomizeMode ? "Disable HUD Edit" : "Enable HUD Edit";
     }
