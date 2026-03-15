@@ -6402,58 +6402,172 @@ export default class UIManager {
         list.style.display = "grid";
         list.style.gap = "10px";
         list.style.paddingRight = "4px";
+        let renderRequestId = 0;
+
+        const ensureLoadBaseLoadingStyles = () => {
+            if (document.getElementById("warhex-load-base-loading-style")) return;
+            const styleElement = document.createElement("style");
+            styleElement.id = "warhex-load-base-loading-style";
+            styleElement.textContent = `
+                @keyframes warhexLoadBaseShimmer {
+                    0% { background-position: 200% 0; }
+                    100% { background-position: -200% 0; }
+                }
+                .warhex-load-base-skeleton {
+                    background: linear-gradient(
+                        90deg,
+                        rgba(35, 63, 108, 0.28) 0%,
+                        rgba(110, 181, 255, 0.34) 50%,
+                        rgba(35, 63, 108, 0.28) 100%
+                    );
+                    background-size: 240% 100%;
+                    animation: warhexLoadBaseShimmer 1.25s linear infinite;
+                }
+                .warhex-load-base-preview-loading {
+                    background: linear-gradient(
+                        90deg,
+                        rgba(12, 31, 66, 0.35) 0%,
+                        rgba(54, 127, 216, 0.42) 50%,
+                        rgba(12, 31, 66, 0.35) 100%
+                    );
+                    background-size: 220% 100%;
+                    animation: warhexLoadBaseShimmer 1.2s linear infinite;
+                }
+            `;
+            document.head.appendChild(styleElement);
+        };
+        ensureLoadBaseLoadingStyles();
+
+        const renderLoadingRows = (message = "Loading layouts...") => {
+            list.innerHTML = "";
+
+            const header = document.createElement("div");
+            header.textContent = message;
+            header.style.fontSize = "12px";
+            header.style.fontWeight = "700";
+            header.style.opacity = "0.86";
+            header.style.marginBottom = "2px";
+            list.appendChild(header);
+
+            for (let i = 0; i < 3; i++) {
+                const item = document.createElement("div");
+                item.style.display = "grid";
+                item.style.gridTemplateColumns = "180px 1fr auto";
+                item.style.gap = "10px";
+                item.style.alignItems = "center";
+                item.style.padding = "10px";
+                item.style.border = "1px solid rgba(120, 180, 255, 0.3)";
+                item.style.borderRadius = "10px";
+                item.style.background = "rgba(10, 22, 48, 0.45)";
+
+                const previewSkeleton = document.createElement("div");
+                previewSkeleton.className = "warhex-load-base-skeleton";
+                previewSkeleton.style.width = "180px";
+                previewSkeleton.style.height = "100px";
+                previewSkeleton.style.borderRadius = "8px";
+                previewSkeleton.style.border = "1px solid rgba(120, 180, 255, 0.25)";
+
+                const info = document.createElement("div");
+                info.style.display = "grid";
+                info.style.gap = "8px";
+
+                const titleLine = document.createElement("div");
+                titleLine.className = "warhex-load-base-skeleton";
+                titleLine.style.height = "18px";
+                titleLine.style.width = "60%";
+                titleLine.style.borderRadius = "6px";
+
+                const metaLine = document.createElement("div");
+                metaLine.className = "warhex-load-base-skeleton";
+                metaLine.style.height = "12px";
+                metaLine.style.width = "90%";
+                metaLine.style.borderRadius = "6px";
+
+                info.appendChild(titleLine);
+                info.appendChild(metaLine);
+
+                const actionSkeleton = document.createElement("div");
+                actionSkeleton.className = "warhex-load-base-skeleton";
+                actionSkeleton.style.width = "64px";
+                actionSkeleton.style.height = "36px";
+                actionSkeleton.style.borderRadius = "9px";
+
+                item.appendChild(previewSkeleton);
+                item.appendChild(info);
+                item.appendChild(actionSkeleton);
+                list.appendChild(item);
+            }
+        };
+
+        const withUiTimeout = (promise, ms = 9000, timeoutMessage = "public_layouts_timeout") => {
+            let timeoutId = null;
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => {
+                    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), ms);
+                })
+            ]).finally(() => {
+                if (timeoutId) clearTimeout(timeoutId);
+            });
+        };
 
         const normalizeLayout = (layout) => ({
-            id: layout.id,
-            name: layout.name || "Unnamed Base",
-            snapshot: this.normalizeBaseLayoutSnapshot(layout.snapshot),
-            createdAt: layout.createdAt || layout.created_at || null,
-            authorName: layout.author_name || "",
-            buildings: Array.isArray(layout.buildings)
+            id: (layout && typeof layout === "object") ? layout.id : null,
+            name: ((layout && typeof layout === "object") ? layout.name : "") || "Unnamed Base",
+            snapshot: this.normalizeBaseLayoutSnapshot((layout && typeof layout === "object") ? layout.snapshot : null),
+            createdAt: (layout && typeof layout === "object") ? (layout.createdAt || layout.created_at || null) : null,
+            authorName: (layout && typeof layout === "object") ? (layout.author_name || "") : "",
+            buildings: Array.isArray(layout?.buildings)
                 ? layout.buildings
                 : (Array.isArray(layout?.layout_json?.buildings) ? layout.layout_json.buildings : [])
         });
 
         const renderLayouts = async (queryText = "") => {
-            list.innerHTML = "";
-            const query = (queryText || "").trim();
-            let filtered = [];
+            const requestId = ++renderRequestId;
+            try {
+                list.innerHTML = "";
+                const query = (queryText || "").trim();
+                let filtered = [];
 
-            if (activeSource === "public") {
-                const response = await fetchPublicBaseLayouts(query, 40);
-                if (!response.success) {
-                    const errorInfo = document.createElement("div");
-                    errorInfo.textContent = "Could not load public bases.";
-                    errorInfo.style.padding = "14px";
-                    errorInfo.style.border = "1px dashed rgba(255, 140, 140, 0.45)";
-                    errorInfo.style.borderRadius = "10px";
-                    errorInfo.style.opacity = "0.9";
-                    list.appendChild(errorInfo);
+                if (activeSource === "public") {
+                    renderLoadingRows("Loading public layouts...");
+                    const response = await withUiTimeout(fetchPublicBaseLayouts(query, 40), 9000);
+                    if (requestId !== renderRequestId) return;
+
+                    const responseRows = Array.isArray(response?.data)
+                        ? response.data.filter((row) => row && typeof row === "object")
+                        : [];
+                    if (!response?.success && responseRows.length === 0) {
+                        const errorMessage = String(response?.error?.message || response?.error || "public_layouts_failed");
+                        throw new Error(errorMessage);
+                    }
+
+                    publicLayouts = responseRows.map(normalizeLayout);
+                    filtered = publicLayouts;
+                } else {
+                    const q = query.toLowerCase();
+                    filtered = !q
+                        ? localLayouts.map(normalizeLayout)
+                        : localLayouts.map(normalizeLayout).filter(layout => layout.name.toLowerCase().includes(q));
+                }
+
+                // Replace loading skeleton/content from previous render before drawing final rows.
+                list.innerHTML = "";
+
+                if (filtered.length === 0) {
+                    const empty = document.createElement("div");
+                    empty.textContent = (activeSource === "local" ? localLayouts.length : publicLayouts.length) === 0
+                        ? "No saved layouts yet."
+                        : "No layouts match your search.";
+                    empty.style.padding = "14px";
+                    empty.style.border = "1px dashed rgba(120, 180, 255, 0.45)";
+                    empty.style.borderRadius = "10px";
+                    empty.style.opacity = "0.9";
+                    list.appendChild(empty);
                     return;
                 }
-                publicLayouts = (response.data || []).map(normalizeLayout);
-                filtered = publicLayouts;
-            } else {
-                const q = query.toLowerCase();
-                filtered = !q
-                    ? localLayouts.map(normalizeLayout)
-                    : localLayouts.map(normalizeLayout).filter(layout => layout.name.toLowerCase().includes(q));
-            }
 
-            if (filtered.length === 0) {
-                const empty = document.createElement("div");
-                empty.textContent = (activeSource === "local" ? localLayouts.length : publicLayouts.length) === 0
-                    ? "No saved layouts yet."
-                    : "No layouts match your search.";
-                empty.style.padding = "14px";
-                empty.style.border = "1px dashed rgba(120, 180, 255, 0.45)";
-                empty.style.borderRadius = "10px";
-                empty.style.opacity = "0.9";
-                list.appendChild(empty);
-                return;
-            }
-
-            filtered.forEach((layout) => {
+                filtered.forEach((layout) => {
                 const item = document.createElement("div");
                 item.style.display = "grid";
                 item.style.gridTemplateColumns = "180px 1fr auto";
@@ -6492,6 +6606,8 @@ export default class UIManager {
                 img.style.display = "none";
                 img.onerror = () => {
                     img.style.display = "none";
+                    noPreviewLabel.classList.remove("warhex-load-base-preview-loading");
+                    noPreviewLabel.textContent = "No preview";
                     if (!preview.contains(noPreviewLabel)) preview.appendChild(noPreviewLabel);
                 };
 
@@ -6500,6 +6616,7 @@ export default class UIManager {
                     if (!normalizedSnapshot) return false;
                     img.src = normalizedSnapshot;
                     img.style.display = "block";
+                    noPreviewLabel.classList.remove("warhex-load-base-preview-loading");
                     if (preview.contains(noPreviewLabel)) preview.removeChild(noPreviewLabel);
                     if (!preview.contains(img)) preview.appendChild(img);
                     layout.snapshot = normalizedSnapshot;
@@ -6573,10 +6690,29 @@ export default class UIManager {
                 actions.appendChild(loadBtn);
 
                 if (activeSource === "public" && !layout.snapshot && layout.id) {
+                    noPreviewLabel.textContent = "Loading preview...";
+                    noPreviewLabel.classList.add("warhex-load-base-preview-loading");
+                    const previewTimeout = setTimeout(() => {
+                        noPreviewLabel.classList.remove("warhex-load-base-preview-loading");
+                        noPreviewLabel.textContent = "No preview";
+                    }, 5000);
                     fetchPublicBaseLayoutByIdSafe(layout.id).then((detailResult) => {
-                        if (!detailResult?.success || !detailResult?.data) return;
-                        applySnapshotToPreview(detailResult.data.snapshot);
-                    }).catch(() => {});
+                        clearTimeout(previewTimeout);
+                        if (!detailResult?.success || !detailResult?.data) {
+                            noPreviewLabel.classList.remove("warhex-load-base-preview-loading");
+                            noPreviewLabel.textContent = "No preview";
+                            return;
+                        }
+                        const didApply = applySnapshotToPreview(detailResult.data.snapshot);
+                        if (!didApply) {
+                            noPreviewLabel.classList.remove("warhex-load-base-preview-loading");
+                            noPreviewLabel.textContent = "No preview";
+                        }
+                    }).catch(() => {
+                        clearTimeout(previewTimeout);
+                        noPreviewLabel.classList.remove("warhex-load-base-preview-loading");
+                        noPreviewLabel.textContent = "No preview";
+                    });
                 }
 
                 if (activeSource === "local") {
@@ -6661,7 +6797,21 @@ export default class UIManager {
                 item.appendChild(info);
                 item.appendChild(actions);
                 list.appendChild(item);
-            });
+                });
+            } catch (error) {
+                if (requestId !== renderRequestId) return;
+                list.innerHTML = "";
+                const isTimeout = String(error?.message || "").toLowerCase().includes("timeout");
+                const errorInfo = document.createElement("div");
+                errorInfo.textContent = isTimeout
+                    ? "Public base loading timed out. Please try again."
+                    : "Could not load public bases.";
+                errorInfo.style.padding = "14px";
+                errorInfo.style.border = "1px dashed rgba(255, 140, 140, 0.45)";
+                errorInfo.style.borderRadius = "10px";
+                errorInfo.style.opacity = "0.9";
+                list.appendChild(errorInfo);
+            }
         };
 
         searchInput.addEventListener("input", async () => {
