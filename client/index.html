@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="google-adsense-account" content="ca-pub-6027531833118718">
     <title>Warhex.io - Free Multiplayer Strategy .io Game in Your Browser</title>
     <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport' />
     <meta name="description"
@@ -90,9 +91,33 @@
             }
         }
     </script>
+    <script>
+        (function () {
+            const host = String(window.location?.hostname || "").toLowerCase();
+            const isCrazyHost = host === "crazygames.com" || host.endsWith(".crazygames.com");
+            let refHost = "";
+            try {
+                refHost = new URL(document.referrer || "").hostname.toLowerCase();
+            } catch (e) { }
+            const isCrazyReferrer = refHost === "crazygames.com" || refHost.endsWith(".crazygames.com");
+            const isEmbedded = window.self !== window.top;
+            const isCrazyGamesEnvironment = isCrazyHost || (isEmbedded && isCrazyReferrer);
+
+            window.__WARHEX_CRAZYGAMES_ENV__ = isCrazyGamesEnvironment;
+            window.__WARHEX_DISABLE_EXTERNAL_ADS__ = isCrazyGamesEnvironment;
+        })();
+    </script>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-LSJ1RTH753"></script>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6027531833118718"
-        crossorigin="anonymous"></script>
+    <script>
+        (function () {
+            if (window.__WARHEX_DISABLE_EXTERNAL_ADS__) return;
+            const adScript = document.createElement("script");
+            adScript.async = true;
+            adScript.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6027531833118718";
+            adScript.crossOrigin = "anonymous";
+            document.head.appendChild(adScript);
+        })();
+    </script>
     <script>
         window.dataLayer = window.dataLayer || [];
         function gtag () { dataLayer.push(arguments); }

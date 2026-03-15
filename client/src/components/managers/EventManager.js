@@ -42,6 +42,7 @@ export default class EventManager {
         document.addEventListener("visibilitychange", () => {
             if (document.hidden) {
                 this.core.inputManager.clearActiveKeys();
+                this.core.setGameplayActive(false);
             } else {
                 this.core.networkManager.sendResyncRequest();
                 
@@ -51,6 +52,10 @@ export default class EventManager {
                     console.log('Page visible again, reloading skin...');
                     player.skinLoadAttempts = 0; // Reset attempts
                     player._loadSkin(player.skinID);
+                }
+
+                if (!this.core.uiManager?.menuOpen) {
+                    this.core.setGameplayActive(true);
                 }
             }
         });

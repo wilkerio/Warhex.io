@@ -25,8 +25,10 @@ import Soldier from "../entities/units/Soldier.js";
 import ExitPromptManager from "./managers/ExitPromptManager.js";
 
 export default class Core {
-    constructor (loadBalancerAddress, requiredServerVersion) {
+    constructor (loadBalancerAddress, requiredServerVersion, platform = null) {
         this.requiredServerVersion = requiredServerVersion;
+        this.platform = platform;
+        this._gameplayActive = false;
         SkinCache.initializeFromLocalStorage();
         this.initializeProperties();
         this.initializeManagers(loadBalancerAddress);
@@ -157,7 +159,20 @@ export default class Core {
     }
 
     handlePlayButtonPress (playerName, equippedSkin) {
+        this.setGameplayActive(true);
         this.networkManager.joinGame(playerName, equippedSkin)
+    }
+
+    setGameplayActive (active) {
+        const nextActive = Boolean(active);
+        if (nextActive === this._gameplayActive) return;
+
+        this._gameplayActive = nextActive;
+        if (nextActive) {
+            this.platform?.gameplayStart?.();
+        } else {
+            this.platform?.gameplayStop?.();
+        }
     }
 
     initializeProperties () {

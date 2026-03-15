@@ -1,4 +1,5 @@
 import Core from "./components/Core.js";
+import CrazyGamesBridge from "./integrations/CrazyGamesBridge.js";
 
 function isIPv4Address(hostname) {
     return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname);
@@ -29,4 +30,15 @@ function getLoadBalancerAddress() {
     return `${window.location.protocol}//api.${hostname}`;
 }
 
-new Core(getLoadBalancerAddress(), 6);
+async function bootstrap() {
+    const platformBridge = new CrazyGamesBridge();
+    window.__WARHEX_PLATFORM__ = platformBridge;
+    window.__WARHEX_CRAZYGAMES_ENV__ = platformBridge.isCrazyGamesEnvironment();
+
+    await platformBridge.init();
+    new Core(getLoadBalancerAddress(), 6, platformBridge);
+}
+
+bootstrap().catch((error) => {
+    console.error("Failed to bootstrap game:", error);
+});

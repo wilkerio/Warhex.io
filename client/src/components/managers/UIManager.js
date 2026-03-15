@@ -78,6 +78,7 @@ export default class UIManager {
         this.skinPersistTimeout = null;
 
         this.initializeUIElements();
+        this.applyPlatformRestrictions();
         this.ensureSoldierSelectionCounter();
         this.embedPlayControlsIntoAccountCard();
         this.loadHudConfig();
@@ -115,6 +116,32 @@ export default class UIManager {
         const normalized = String(value).trim().toLowerCase();
         const logoutLocalized = this.t("menu.logout").toLowerCase();
         return normalized === "logout" || normalized === "sair" || normalized === "cerrar sesion" || normalized === logoutLocalized;
+    }
+
+    isExternalAuthDisabled () {
+        return Boolean(this.core?.platform?.shouldDisableExternalAuth?.());
+    }
+
+    applyPlatformRestrictions () {
+        if (!this.isExternalAuthDisabled()) return;
+
+        const hide = (element) => {
+            if (!element) return;
+            element.style.display = "none";
+            element.setAttribute("aria-hidden", "true");
+        };
+
+        hide(this.DOM?.account?.accountButton);
+        hide(this.DOM?.account?.signupButton);
+        hide(this.DOM?.account?.loginDialog);
+        hide(this.DOM?.account?.signupDialog);
+        hide(this.DOM?.account?.signinDialog);
+
+        const accountButtons = document.querySelector(".account-buttons");
+        if (accountButtons) {
+            accountButtons.style.display = "none";
+            accountButtons.setAttribute("aria-hidden", "true");
+        }
     }
 
     ensureSoldierSelectionCounter () {
@@ -1996,6 +2023,8 @@ export default class UIManager {
     }
 
     addLoginDialogButtonListener () {
+        if (this.isExternalAuthDisabled()) return;
+
         const accountButton = this.DOM.account.accountButton || document.getElementById("account-button");
         const signupButton = this.DOM.account.signupButton || document.getElementById("signup-button");
         const guestButton = this.DOM.account.guestButton || document.getElementById("guest-button");
@@ -2158,6 +2187,8 @@ export default class UIManager {
     }
 
     handleAccountButtonClick (buttonElement = null) {
+        if (this.isExternalAuthDisabled()) return;
+
         const accountButton = buttonElement || this.DOM.account.accountButton || document.getElementById("account-button");
         const buttonText = (accountButton?.textContent || "").trim().toLowerCase();
         const logoutLikeLabel = this.isLogoutLikeLabel(buttonText);
@@ -2481,6 +2512,19 @@ export default class UIManager {
     }
 
     updateAccountButton () {
+        if (this.isExternalAuthDisabled()) {
+            const accountButtonsContainer = document.querySelector(".account-buttons");
+            if (accountButtonsContainer) {
+                accountButtonsContainer.style.display = "none";
+                accountButtonsContainer.setAttribute("aria-hidden", "true");
+            }
+            if (this.DOM?.account?.accountButton) this.DOM.account.accountButton.style.display = "none";
+            if (this.DOM?.account?.signupButton) this.DOM.account.signupButton.style.display = "none";
+            const myProfileButton = document.getElementById("my-profile-button");
+            if (myProfileButton) myProfileButton.style.display = "none";
+            return;
+        }
+
         const ensureMyProfileButton = () => {
             const accountButtonsContainer = document.querySelector(".account-buttons");
             if (!accountButtonsContainer) return null;
@@ -5082,6 +5126,7 @@ export default class UIManager {
             this.ensureHudCollapseControls();
             this.applyHudCollapsedStates();
         }
+        this.core.setGameplayActive(show);
     }
 
     maybeShowOAuthError () {
