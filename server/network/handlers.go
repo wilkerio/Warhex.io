@@ -370,10 +370,17 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	maxRadiusNeutralByType := maxRadiusNeutralBase
 
 	switch buildingType {
-	case game.BARRACKS, game.WALL:
+	case game.BARRACKS:
 		minRadius = game.PLAYER_MAX_BUILDING_RADIUS
 		minRadiusNeutralBase = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
-		// Barracks and walls sit on the same fixed outer ring.
+		// Barracks sit on a fixed outer ring.
+		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
+		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
+	case game.WALL:
+		// Walls can be placed from inner ring up to barracks outer ring.
+		size := game.GetBuildingSize(buildingType)
+		minRadius += size
+		minRadiusNeutralBase += size
 		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
 		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
 	case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.GENERATOR, game.HOUSE:
@@ -391,7 +398,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	tolerance := 4
-	if buildingType == game.BARRACKS || buildingType == game.WALL {
+	if buildingType == game.BARRACKS {
 		// Extra buffer for fixed outer-ring placement.
 		tolerance = 12
 	}
@@ -399,8 +406,8 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	// Validation for building placement
 	isPlayerRadiusValid := false
 
-	if buildingType == game.BARRACKS || buildingType == game.WALL {
-		// Walls and barracks must stay on the fixed border ring.
+	if buildingType == game.BARRACKS {
+		// Barracks must stay on the fixed border ring.
 		isPlayerRadiusValid = uint16(math.Floor(distance)) >= uint16(maxRadiusByType-tolerance) &&
 			uint16(math.Ceil(distance)) <= uint16(maxRadiusByType+tolerance)
 	} else {

@@ -499,7 +499,7 @@ export class Renderer {
         context.save();
 
         context.lineWidth = 8; // Make links easier to see
-        context.setLineDash([24, 20]); // Slightly denser dash pattern
+        context.setLineDash([18, 12]); // Keep short links visible even when bases are near.
 
         // Draw each stored connection line
         for (const x of this.connectionLines) {
@@ -524,8 +524,11 @@ export class Renderer {
         for (let i = 0; i < this.visiblePlayers.length; i++) {
             const player = this.visiblePlayers[i];
             const pos = player.getWorldPosition(this.camera); // Get the world position of the player
-            // Keep center clean, but do not erase too much of the connection line.
-            const radius = player.buildingRadius.min + 18;
+            // Keep center clean, but preserve enough of nearby links (especially around local base).
+            const coreRadius = Number(player?.coreRadius?.max) || Number(player?.buildingRadius?.min) || 110;
+            const radius = player?.isClient
+                ? Math.max(22, coreRadius * 0.34)
+                : Math.max(30, coreRadius * 0.48);
 
             // Draw a circular area to clear
             context.beginPath(); // Start a new path

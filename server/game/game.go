@@ -442,30 +442,57 @@ func startResourceUpdateLoop() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		State.RLock()
-		for _, player := range State.Players {
-			generatingPower := player.GetGenerating().Power
-			player.Resources.Power.Increment(generatingPower)
+		for range ticker.C {
+			State.RLock()
+			for _, player := range State.Players {
+				generatingPower := player.GetGenerating().Power
+				player.Resources.Power.Increment(generatingPower)
 
 			numNeutralBases := len(player.CapturedNeutralBases)
 
 			// Calculate score increment while ensuring it doesn't go negative or overflow
 			scoreIncrement := int32(generatingPower) - 1 + int32(numNeutralBases)*10 // Calculate as int32 to prevent overflow
 
-			// Ensure the score increment is non-negative
-			if scoreIncrement < 0 {
-				scoreIncrement = 0 // Prevent negative score increments
+				// Ensure the score increment is non-negative
+				if scoreIncrement < 0 {
+					scoreIncrement = 0 // Prevent negative score increments
+				}
+
+				// Do not increase passive rank score while commander is inside own base area.
+				if !isCommanderInsideOwnBaseArea(player) {
+					player.IncrementScore(uint32(scoreIncrement)) // Cast back to uint32
+				}
+
+				// Trigger resource update event
+				TriggerResourceUpdateEvent(player)
 			}
-
-			// Increment the player's score safely
-			player.IncrementScore(uint32(scoreIncrement)) // Cast back to uint32
-
-			// Trigger resource update event
-			TriggerResourceUpdateEvent(player)
+			State.RUnlock()
 		}
-		State.RUnlock()
+}
+
+func isCommanderInsideOwnBaseArea(player *Player) bool {
+	if player == nil || player.Base == nil {
+		return false
 	}
+
+	basePosition := IntToFloat(player.Base.Position)
+	baseRadius := float32(PLAYER_MAX_BUILDING_RADIUS + 34)
+	foundCommander := false
+
+	for _, unit := range player.Units {
+		if unit == nil || unit.IsMarkedForRemoval() || unit.Type != COMMANDER {
+			continue
+		}
+		foundCommander = true
+		allowedRadius := baseRadius - float32(unit.Size)
+		if allowedRadius < 0 {
+			allowedRadius = 0
+		}
+		return unit.IsWithinRadius(basePosition, allowedRadius)
+	}
+
+	// If commander is not present, treat as inside base to avoid passive score gain.
+	return !foundCommander
 }
 
 func startUnitSpawnLoop() {

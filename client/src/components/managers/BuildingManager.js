@@ -541,20 +541,22 @@ export class BuildingManager {
             const dx = mousePosition.x - closestBase.position.x;
             const dy = mousePosition.y - closestBase.position.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
+            const buildingType = this.buildingToPlace.building.type;
+            const enforceRadiusLimit = true;
 
             // Calculate min/max placement radius based on building type.
             let minRadius = closestBase.buildingRadius.min;
             let maxRadius = closestBase.buildingRadius.max;
-            switch (this.buildingToPlace.building.type) {
+            switch (buildingType) {
                 case BuildingTypes.BARRACKS:
                     // Barracks fixed slightly outside the ring.
                     minRadius = closestBase.buildingRadius.max + 34;
                     maxRadius = minRadius;
                     break;
                 case BuildingTypes.WALL:
-                    // Keep walls on the same outer alignment used by barracks.
-                    minRadius = closestBase.buildingRadius.max + 34;
-                    maxRadius = minRadius;
+                    // Walls can be placed from inner ring up to the same outer radius used by barracks.
+                    minRadius += this.buildingToPlace.building.size;
+                    maxRadius = closestBase.buildingRadius.max + 34;
                     break;
                 case BuildingTypes.SIMPLE_TURRET:
                 case BuildingTypes.SNIPER_TURRET:
@@ -571,17 +573,19 @@ export class BuildingManager {
                     minRadius += this.buildingToPlace.building.size;
             }
 
-            // Check if the distance is greater than the building radius or less than the inner radius
-            if (distance > maxRadius) {
-                // Normalize the distance and set the position to the edge of the building radius
-                const angle = Math.atan2(dy, dx);
-                mousePosition.x = closestBase.position.x + maxRadius * Math.cos(angle);
-                mousePosition.y = closestBase.position.y + maxRadius * Math.sin(angle);
-            } else if (distance < minRadius) {
-                // Normalize the distance and set the position to the edge of the inner radius
-                const angle = Math.atan2(dy, dx);
-                mousePosition.x = closestBase.position.x + minRadius * Math.cos(angle);
-                mousePosition.y = closestBase.position.y + minRadius * Math.sin(angle);
+            if (enforceRadiusLimit) {
+                // Check if the distance is greater than the building radius or less than the inner radius
+                if (distance > maxRadius) {
+                    // Normalize the distance and set the position to the edge of the building radius
+                    const angle = Math.atan2(dy, dx);
+                    mousePosition.x = closestBase.position.x + maxRadius * Math.cos(angle);
+                    mousePosition.y = closestBase.position.y + maxRadius * Math.sin(angle);
+                } else if (distance < minRadius) {
+                    // Normalize the distance and set the position to the edge of the inner radius
+                    const angle = Math.atan2(dy, dx);
+                    mousePosition.x = closestBase.position.x + minRadius * Math.cos(angle);
+                    mousePosition.y = closestBase.position.y + minRadius * Math.sin(angle);
+                }
             }
 
             // Set the position of the selected building
@@ -1721,8 +1725,8 @@ export class BuildingManager {
                 maxRadius = minRadius;
                 break;
             case BuildingTypes.WALL:
-                minRadius = base.buildingRadius.max + 34;
-                maxRadius = minRadius;
+                minRadius += buildingSize;
+                maxRadius = base.buildingRadius.max + 34;
                 break;
             case BuildingTypes.SIMPLE_TURRET:
             case BuildingTypes.SNIPER_TURRET:
@@ -2101,12 +2105,13 @@ export class BuildingManager {
 
     canAutoPlaceBuilding (base, position, allUnits, pendingBuildings, buildingType, buildingSize, options = {}) {
         const ignoreUnits = Boolean(options.ignoreUnits);
+        const ignoreRadius = Boolean(options.ignoreRadius);
         const { minRadius, maxRadius } = this.getPlacementRadiusRangeForType(base, buildingType, buildingSize);
         const dx = position.x - base.position.x;
         const dy = position.y - base.position.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         const radiusTolerance = buildingType === BuildingTypes.BARRACKS ? 12 : 4;
-        if (distance < (minRadius - radiusTolerance) || distance > (maxRadius + radiusTolerance)) {
+        if (!ignoreRadius && (distance < (minRadius - radiusTolerance) || distance > (maxRadius + radiusTolerance))) {
             return false;
         }
 

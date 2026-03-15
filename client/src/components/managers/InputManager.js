@@ -97,6 +97,14 @@ export default class InputManager {
                 activeElement &&
                 (activeTag === "input" || activeTag === "textarea" || activeTag === "select" || activeElement.isContentEditable)
             );
+            const isEnterKey = event.key === "Enter";
+            if (isEnterKey && !ui?.isChatInputFocused) {
+                if (!gameplayInputBlocked && !isFormFocused && !event.repeat) {
+                    event.preventDefault();
+                    ui?.focusChatInput?.();
+                }
+                return;
+            }
             if (key === keyToggleMap || isTabKey) {
                 if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) {
                     return;

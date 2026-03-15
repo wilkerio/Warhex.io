@@ -1,7 +1,7 @@
 import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
-import { signUp, signIn, signInWithDiscord, signInWithGoogle, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings } from "../../network/supabaseClient.js";
+import { signUp, signIn, signInWithDiscord, signInWithGoogle, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchPublicBaseLayoutById, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -37,6 +37,7 @@ export default class UIManager {
         this.enemyCoreActionsElement = null;
         this.relocatePromptElement = null;
         this.baseLayoutDialogElement = null;
+        this.baseLayoutDialogCleanup = null;
         this.profilePanelElement = null;
         this.prePlaySkinPromptElement = null;
         this.discordJoinPromptElement = null;
@@ -658,16 +659,34 @@ export default class UIManager {
             const el = typeof selector === "string" ? document.querySelector(selector) : selector;
             if (!el) return;
 
-            const hasCustomPosition = cfg?.x != null || cfg?.y != null;
+            const viewportWidth = Math.max(320, Number(window?.innerWidth) || document.documentElement.clientWidth || 1920);
+            const viewportHeight = Math.max(240, Number(window?.innerHeight) || document.documentElement.clientHeight || 1080);
+            const parseNumber = (value) => {
+                if (value === null || value === undefined || value === "") return null;
+                const parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : null;
+            };
+
+            const rawX = parseNumber(cfg?.x);
+            const rawY = parseNumber(cfg?.y);
+            const rawWidth = parseNumber(cfg?.width);
+            const rawHeight = parseNumber(cfg?.height);
+
+            const hasCustomPosition = rawX != null || rawY != null;
+            const clampedX = rawX == null ? null : Math.max(0, Math.min(viewportWidth - 80, rawX));
+            const clampedY = rawY == null ? null : Math.max(0, Math.min(viewportHeight - 60, rawY));
+            const clampedWidth = rawWidth == null ? null : Math.max(160, Math.min(viewportWidth - 8, rawWidth));
+            const clampedHeight = rawHeight == null ? null : Math.max(80, Math.min(viewportHeight - 8, rawHeight));
+
             el.style.position = "fixed";
-            el.style.left = cfg?.x != null ? `${cfg.x}px` : "";
-            el.style.top = cfg?.y != null ? `${cfg.y}px` : "";
-            el.style.right = cfg?.x != null ? "auto" : (fallback.right ?? "");
-            el.style.bottom = cfg?.y != null ? "auto" : (fallback.bottom ?? "");
-            el.style.width = cfg?.width ? `${cfg.width}px` : "";
-            el.style.maxWidth = cfg?.width ? `${cfg.width}px` : "";
-            el.style.height = cfg?.height ? `${cfg.height}px` : "";
-            el.style.maxHeight = cfg?.height ? `${cfg.height}px` : "";
+            el.style.left = clampedX != null ? `${clampedX}px` : (fallback.left ?? "");
+            el.style.top = clampedY != null ? `${clampedY}px` : (fallback.top ?? "");
+            el.style.right = clampedX != null ? "auto" : (fallback.right ?? "");
+            el.style.bottom = clampedY != null ? "auto" : (fallback.bottom ?? "");
+            el.style.width = clampedWidth != null ? `${clampedWidth}px` : "";
+            el.style.maxWidth = clampedWidth != null ? `${clampedWidth}px` : "";
+            el.style.height = clampedHeight != null ? `${clampedHeight}px` : "";
+            el.style.maxHeight = clampedHeight != null ? `${clampedHeight}px` : "";
             if (options.clearTransformOnCustom) {
                 el.style.transform = hasCustomPosition ? "none" : "";
             }
@@ -1843,7 +1862,16 @@ export default class UIManager {
     async _populateGlobalLeaderboard () {
         try {
             const leaderboard = document.getElementById("global-leaderboard");
-            if (!leaderboard) return;
+            if (!leaderboard) {
+                if (!this._globalRankElementRetryScheduled) {
+                    this._globalRankElementRetryScheduled = true;
+                    setTimeout(() => {
+                        this._globalRankElementRetryScheduled = false;
+                        this._populateGlobalLeaderboard();
+                    }, 450);
+                }
+                return;
+            }
             if (this._globalRankLoading) return;
             this._globalRankLoading = true;
 
@@ -4557,6 +4585,17 @@ export default class UIManager {
         });
     }
 
+    focusChatInput () {
+        const input = this.DOM?.chat?.input;
+        if (!input || typeof input.focus !== "function") return false;
+        input.focus();
+        const textLength = typeof input.value === "string" ? input.value.length : 0;
+        if (typeof input.setSelectionRange === "function") {
+            input.setSelectionRange(textLength, textLength);
+        }
+        return true;
+    }
+
     disableChatButtonElementForSeconds (seconds) {
         if (!this.DOM.chat.button) return;
 
@@ -4918,6 +4957,9 @@ export default class UIManager {
         if (globalRank) {
             globalRank.style.display = show ? "flex" : "none";
         }
+        if (show) {
+            this._populateGlobalLeaderboard();
+        }
 
         const legalLinks = document.getElementById("legal-links-corner");
         if (legalLinks) {
@@ -5199,8 +5241,9 @@ export default class UIManager {
 
     isGameplayInputBlocked () {
         const settingsPanel = this.DOM?.settings?.panel;
+        const baseLayoutDialogOpen = Boolean(this.baseLayoutDialogElement && this.baseLayoutDialogElement.parentNode);
         if (!settingsPanel) {
-            return Boolean(this.menuOpen);
+            return Boolean(this.menuOpen || baseLayoutDialogOpen);
         }
 
         const inlineDisplay = settingsPanel.style?.display;
@@ -5209,7 +5252,7 @@ export default class UIManager {
             : "none";
         const settingsOpen = inlineDisplay === "flex" || computedDisplay !== "none";
 
-        return Boolean(this.menuOpen || settingsOpen);
+        return Boolean(this.menuOpen || settingsOpen || baseLayoutDialogOpen);
     }
 
     showGameSettingsPanel (show) {
@@ -5856,58 +5899,159 @@ export default class UIManager {
         }
     }
 
-    captureCurrentBaseSnapshot () {
+    getCurrentBaseCaptureBounds (player) {
+        const buildings = (player?.buildings || []).filter(b => b && !b.removeFlag);
+
+        let minX = player?.position?.x || 0;
+        let maxX = player?.position?.x || 0;
+        let minY = player?.position?.y || 0;
+        let maxY = player?.position?.y || 0;
+
+        // Estimate a safe capture bounds around all current base buildings.
+        for (const building of buildings) {
+            const details = getBuildingDetails(building.type, building.variant ?? 0);
+            const half = (details?.size || 30) + 10;
+            minX = Math.min(minX, building.position.x - half);
+            maxX = Math.max(maxX, building.position.x + half);
+            minY = Math.min(minY, building.position.y - half);
+            maxY = Math.max(maxY, building.position.y + half);
+        }
+
+        // Include base rings (defense/protection circles) so snapshots don't cut them off.
+        const baseRingRadius = Math.max(
+            player?.buildingRadius?.max || 0,
+            player?.spawnProtectionRadius || 0
+        );
+        if (baseRingRadius > 0) {
+            minX = Math.min(minX, player.position.x - baseRingRadius);
+            maxX = Math.max(maxX, player.position.x + baseRingRadius);
+            minY = Math.min(minY, player.position.y - baseRingRadius);
+            maxY = Math.max(maxY, player.position.y + baseRingRadius);
+        }
+
+        // Include the core and some visual breathing room.
+        const extraMarginWorld = 90;
+        minX -= extraMarginWorld;
+        maxX += extraMarginWorld;
+        minY -= extraMarginWorld;
+        maxY += extraMarginWorld;
+
+        return { minX, maxX, minY, maxY };
+    }
+
+    normalizeBaseLayoutSnapshot (snapshot) {
+        if (typeof snapshot !== "string") return null;
+        const value = snapshot.trim();
+        if (!value) return null;
+        if (
+            value.startsWith("data:image/")
+            || value.startsWith("http://")
+            || value.startsWith("https://")
+            || value.startsWith("blob:")
+        ) {
+            return value;
+        }
+
+        const compact = value.replace(/\s+/g, "");
+        const looksLikeBase64 = compact.length > 120 && /^[A-Za-z0-9+/=]+$/.test(compact);
+        if (looksLikeBase64) {
+            return `data:image/jpeg;base64,${compact}`;
+        }
+        return null;
+    }
+
+    captureCurrentBaseSnapshot (options = {}) {
+        const forceCenter = Boolean(options?.forceCenter);
+        const restoreViewAfterCapture = Boolean(options?.restoreViewAfterCapture);
         const canvas = this.core?.canvas;
         const player = this.core?.gameManager?.player;
         const camera = this.core?.camera;
         if (!canvas) return null;
 
+        let previousCameraState = null;
         try {
             if (!player || !camera) {
                 return canvas.toDataURL("image/jpeg", 0.75);
             }
 
+            const bounds = this.getCurrentBaseCaptureBounds(player);
+
+            if (forceCenter) {
+                previousCameraState = {
+                    x: camera.x,
+                    y: camera.y,
+                    zoom: camera.zoom,
+                    targetZoom: camera.targetZoom,
+                    targetPosition: {
+                        x: camera?.targetPosition?.x,
+                        y: camera?.targetPosition?.y
+                    }
+                };
+
+                const worldWidth = Math.max(220, bounds.maxX - bounds.minX);
+                const worldHeight = Math.max(220, bounds.maxY - bounds.minY);
+                const desiredZoomUnclamped = Math.min(
+                    (canvas.width * 0.8) / worldWidth,
+                    (canvas.height * 0.8) / worldHeight
+                );
+                const minZoom = Number.isFinite(camera.minZoom) ? camera.minZoom : 0.02;
+                const maxZoom = Number.isFinite(camera.maxZoom) ? camera.maxZoom : 50;
+                const desiredZoom = Math.max(
+                    minZoom,
+                    Math.min(
+                        maxZoom,
+                        Number.isFinite(desiredZoomUnclamped) && desiredZoomUnclamped > 0
+                            ? desiredZoomUnclamped
+                            : (Number.isFinite(camera.zoom) ? camera.zoom : 0.75)
+                    )
+                );
+
+                const currentX = Number.isFinite(camera.x) ? camera.x : 0;
+                const currentY = Number.isFinite(camera.y) ? camera.y : 0;
+                const playerX = Number.isFinite(player?.position?.x) ? player.position.x : currentX;
+                const playerY = Number.isFinite(player?.position?.y) ? player.position.y : currentY;
+
+                const beforeSetPosX = currentX;
+                const beforeSetPosY = currentY;
+                if (typeof camera.setPosition === "function") {
+                    camera.setPosition(player.position, false);
+                }
+
+                let targetCamX = Number.isFinite(camera?.targetPosition?.x) ? camera.targetPosition.x : camera.x;
+                let targetCamY = Number.isFinite(camera?.targetPosition?.y) ? camera.targetPosition.y : camera.y;
+                const nativeCenteringWorked =
+                    Number.isFinite(targetCamX) && Number.isFinite(targetCamY)
+                    && (Math.abs(targetCamX - beforeSetPosX) > 0.0001 || Math.abs(targetCamY - beforeSetPosY) > 0.0001);
+
+                if (!nativeCenteringWorked) {
+                    targetCamX = Math.abs(playerX - currentX) <= Math.abs((playerX / 2) - currentX) ? playerX : (playerX / 2);
+                    targetCamY = Math.abs(playerY - currentY) <= Math.abs((playerY / 2) - currentY) ? playerY : (playerY / 2);
+                }
+
+                camera.zoom = desiredZoom;
+                camera.targetZoom = desiredZoom;
+                camera.x = targetCamX;
+                camera.y = targetCamY;
+                if (camera.targetPosition) {
+                    camera.targetPosition.x = targetCamX;
+                    camera.targetPosition.y = targetCamY;
+                }
+
+                // Force one immediate render so the snapshot always matches the centered camera.
+                if (typeof this.core?.renderer?.render === "function") {
+                    this.core.renderer.render(16.67);
+                }
+            }
+
             const zoom = camera.zoom || 1;
-            const buildings = (player.buildings || []).filter(b => b && !b.removeFlag);
+            const { minX, maxX, minY, maxY } = bounds;
 
-            let minX = player.position.x;
-            let maxX = player.position.x;
-            let minY = player.position.y;
-            let maxY = player.position.y;
-
-            // Estimate a safe capture bounds around all current base buildings.
-            for (const building of buildings) {
-                const details = getBuildingDetails(building.type, building.variant ?? 0);
-                const half = (details?.size || 30) + 10;
-                minX = Math.min(minX, building.position.x - half);
-                maxX = Math.max(maxX, building.position.x + half);
-                minY = Math.min(minY, building.position.y - half);
-                maxY = Math.max(maxY, building.position.y + half);
-            }
-
-            // Include base rings (defense/protection circles) so snapshots don't cut them off.
-            const baseRingRadius = Math.max(
-                player?.buildingRadius?.max || 0,
-                player?.spawnProtectionRadius || 0
-            );
-            if (baseRingRadius > 0) {
-                minX = Math.min(minX, player.position.x - baseRingRadius);
-                maxX = Math.max(maxX, player.position.x + baseRingRadius);
-                minY = Math.min(minY, player.position.y - baseRingRadius);
-                maxY = Math.max(maxY, player.position.y + baseRingRadius);
-            }
-
-            // Include the core and some visual breathing room.
-            const extraMarginWorld = 90;
-            minX -= extraMarginWorld;
-            maxX += extraMarginWorld;
-            minY -= extraMarginWorld;
-            maxY += extraMarginWorld;
-
-            const screenLeft = (minX - camera.x) * zoom + canvas.width / 2;
-            const screenRight = (maxX - camera.x) * zoom + canvas.width / 2;
-            const screenTop = (minY - camera.y) * zoom + canvas.height / 2;
-            const screenBottom = (maxY - camera.y) * zoom + canvas.height / 2;
+            const cameraWorldX = (Number.isFinite(camera.x) ? camera.x : 0) * 2;
+            const cameraWorldY = (Number.isFinite(camera.y) ? camera.y : 0) * 2;
+            const screenLeft = (minX - cameraWorldX) * zoom + canvas.width / 2;
+            const screenRight = (maxX - cameraWorldX) * zoom + canvas.width / 2;
+            const screenTop = (minY - cameraWorldY) * zoom + canvas.height / 2;
+            const screenBottom = (maxY - cameraWorldY) * zoom + canvas.height / 2;
 
             const neededWidth = Math.max(180, Math.round(screenRight - screenLeft));
             const neededHeight = Math.max(180, Math.round(screenBottom - screenTop));
@@ -5937,10 +6081,32 @@ export default class UIManager {
         } catch (error) {
             console.error("Could not capture base snapshot:", error);
             return null;
+        } finally {
+            if (forceCenter && restoreViewAfterCapture && previousCameraState && camera) {
+                camera.x = previousCameraState.x;
+                camera.y = previousCameraState.y;
+                camera.zoom = previousCameraState.zoom;
+                camera.targetZoom = previousCameraState.targetZoom;
+                if (camera.targetPosition && previousCameraState.targetPosition) {
+                    camera.targetPosition.x = previousCameraState.targetPosition.x;
+                    camera.targetPosition.y = previousCameraState.targetPosition.y;
+                }
+                if (typeof this.core?.renderer?.render === "function") {
+                    this.core.renderer.render(16.67);
+                }
+            }
         }
     }
 
     hideBaseLayoutDialog () {
+        if (typeof this.baseLayoutDialogCleanup === "function") {
+            try {
+                this.baseLayoutDialogCleanup();
+            } catch (error) {
+                console.error("Could not cleanup base layout dialog listeners:", error);
+            }
+        }
+        this.baseLayoutDialogCleanup = null;
         if (this.baseLayoutDialogElement && this.baseLayoutDialogElement.parentNode) {
             this.baseLayoutDialogElement.parentNode.removeChild(this.baseLayoutDialogElement);
         }
@@ -5950,7 +6116,6 @@ export default class UIManager {
     showSaveBaseLayoutDialog () {
         this.hideBaseLayoutDialog();
 
-        const snapshot = this.captureCurrentBaseSnapshot();
         const overlay = document.createElement("div");
         overlay.style.position = "fixed";
         overlay.style.inset = "0";
@@ -5978,7 +6143,7 @@ export default class UIManager {
         title.style.color = "#9fe8ff";
 
         const subtitle = document.createElement("div");
-        subtitle.textContent = "Name your base layout and save it for later use.";
+        subtitle.textContent = "Name your base. Save will auto center and capture preview.";
         subtitle.style.marginTop = "6px";
         subtitle.style.fontSize = "14px";
         subtitle.style.opacity = "0.92";
@@ -6018,23 +6183,6 @@ export default class UIManager {
         publishRow.appendChild(publishCheckbox);
         publishRow.appendChild(publishText);
 
-        let previewElement = null;
-        if (snapshot) {
-            const preview = document.createElement("img");
-            preview.src = snapshot;
-            preview.alt = "Base snapshot";
-            preview.style.display = "block";
-            preview.style.width = "100%";
-            preview.style.maxHeight = "260px";
-            preview.style.objectFit = "contain";
-            preview.style.objectPosition = "center";
-            preview.style.background = "rgba(4, 12, 28, 0.7)";
-            preview.style.marginTop = "12px";
-            preview.style.borderRadius = "10px";
-            preview.style.border = "1px solid rgba(120, 180, 255, 0.45)";
-            previewElement = preview;
-        }
-
         const actions = document.createElement("div");
         actions.style.marginTop = "14px";
         actions.style.display = "flex";
@@ -6060,36 +6208,76 @@ export default class UIManager {
         save.style.borderRadius = "10px";
         save.style.cursor = "pointer";
         save.style.fontWeight = "800";
-        save.addEventListener("click", () => {
+        const withTimeout = (promise, ms = 12000) => Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                setTimeout(() => reject(new Error("publish_timeout")), ms);
+            })
+        ]);
+        save.addEventListener("click", async () => {
+            if (save.disabled) return;
+            const wasPublishing = publishCheckbox.checked;
+            const originalButtonText = save.textContent;
+            save.disabled = true;
+            save.textContent = wasPublishing ? "Saving + Publishing..." : "Saving...";
+
+            // Always center + capture on Save, as requested.
+            const snapshot = this.captureCurrentBaseSnapshot({ forceCenter: true })
+                || this.captureCurrentBaseSnapshot({ forceCenter: false });
+
             const layout = this.core.buildingManager.exportCurrentBaseLayout(input.value, snapshot);
             if (!layout) {
                 this.addChatMessage("System", "Could not save base right now.", "#ffcc66");
+                save.disabled = false;
+                save.textContent = originalButtonText;
                 return;
             }
             const existing = this.getSavedBaseLayouts().slice(0, 29);
             this.setSavedBaseLayouts([layout, ...existing]);
             this.addChatMessage("System", `Base "${layout.name}" saved.`, "#60c1ff");
 
-            if (publishCheckbox.checked) {
-                const userId = this.core.networkManager?.userId || null;
-                const authorName = this.core.gameManager?.player?.name || this.core.networkManager?.userData?.nickname || "Guest";
-                publishBaseLayout({
-                    userId,
-                    authorName,
-                    name: layout.name,
-                    snapshot: layout.snapshot,
-                    buildings: layout.buildings,
-                    isPublic: true
-                }).then(result => {
-                    if (result.success) {
-                        this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
-                    } else {
-                        this.addChatMessage("System", "Could not publish base (check DB table/config).", "#ffcc66");
-                    }
-                });
+            if (wasPublishing) {
+                const userId = this.core.networkManager?.userId || this.core.networkManager?.userData?.id || null;
+                const authorName = this.core.networkManager?.userData?.nickname || this.core.gameManager?.player?.name || "Guest";
+                let result = null;
+                try {
+                    result = await withTimeout(publishBaseLayout({
+                        userId,
+                        authorName,
+                        name: layout.name,
+                        snapshot: layout.snapshot,
+                        buildings: layout.buildings,
+                        isPublic: true
+                    }), 12000);
+                } catch (error) {
+                    const timeout = String(error?.message || "").toLowerCase().includes("publish_timeout");
+                    this.addChatMessage(
+                        "System",
+                        timeout ? "Publish timed out. Try again." : "Could not publish base (network error).",
+                        "#ffcc66"
+                    );
+                    save.disabled = false;
+                    save.textContent = originalButtonText;
+                    return;
+                }
+                if (result?.success) {
+                    this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
+                } else {
+                    const reason = String(result?.error?.message || result?.error?.details || result?.error || "").trim();
+                    this.addChatMessage(
+                        "System",
+                        reason ? `Could not publish base: ${reason}` : "Could not publish base (check DB table/config).",
+                        "#ffcc66"
+                    );
+                    save.disabled = false;
+                    save.textContent = originalButtonText;
+                    return;
+                }
             }
 
             this.hideBaseLayoutDialog();
+            save.disabled = false;
+            save.textContent = originalButtonText;
         });
 
         actions.appendChild(cancel);
@@ -6098,13 +6286,12 @@ export default class UIManager {
         card.appendChild(subtitle);
         card.appendChild(input);
         card.appendChild(publishRow);
-        if (previewElement) {
-            card.appendChild(previewElement);
-        }
         card.appendChild(actions);
         overlay.appendChild(card);
         document.body.appendChild(overlay);
         this.baseLayoutDialogElement = overlay;
+        this.baseLayoutDialogCleanup = null;
+
         input.focus();
         input.select();
     }
@@ -6211,7 +6398,7 @@ export default class UIManager {
         const normalizeLayout = (layout) => ({
             id: layout.id,
             name: layout.name || "Unnamed Base",
-            snapshot: layout.snapshot || null,
+            snapshot: this.normalizeBaseLayoutSnapshot(layout.snapshot),
             createdAt: layout.createdAt || layout.created_at || null,
             authorName: layout.author_name || "",
             buildings: Array.isArray(layout.buildings)
@@ -6277,16 +6464,42 @@ export default class UIManager {
                 preview.style.border = "1px solid rgba(120, 180, 255, 0.35)";
                 preview.style.background = "rgba(4, 12, 28, 0.7)";
 
-                if (layout.snapshot) {
-                    const img = document.createElement("img");
-                    img.src = layout.snapshot;
-                    img.alt = layout.name || "Base";
-                    img.style.width = "100%";
-                    img.style.height = "100%";
-                    img.style.objectFit = "contain";
-                    img.style.objectPosition = "center";
-                    img.style.background = "rgba(4, 12, 28, 0.7)";
-                    preview.appendChild(img);
+                const noPreviewLabel = document.createElement("div");
+                noPreviewLabel.textContent = "No preview";
+                noPreviewLabel.style.width = "100%";
+                noPreviewLabel.style.height = "100%";
+                noPreviewLabel.style.display = "grid";
+                noPreviewLabel.style.placeItems = "center";
+                noPreviewLabel.style.fontSize = "12px";
+                noPreviewLabel.style.opacity = "0.65";
+                noPreviewLabel.style.letterSpacing = "0.03em";
+
+                const img = document.createElement("img");
+                img.alt = layout.name || "Base";
+                img.style.width = "100%";
+                img.style.height = "100%";
+                img.style.objectFit = "contain";
+                img.style.objectPosition = "center";
+                img.style.background = "rgba(4, 12, 28, 0.7)";
+                img.style.display = "none";
+                img.onerror = () => {
+                    img.style.display = "none";
+                    if (!preview.contains(noPreviewLabel)) preview.appendChild(noPreviewLabel);
+                };
+
+                const applySnapshotToPreview = (snapshotValue) => {
+                    const normalizedSnapshot = this.normalizeBaseLayoutSnapshot(snapshotValue);
+                    if (!normalizedSnapshot) return false;
+                    img.src = normalizedSnapshot;
+                    img.style.display = "block";
+                    if (preview.contains(noPreviewLabel)) preview.removeChild(noPreviewLabel);
+                    if (!preview.contains(img)) preview.appendChild(img);
+                    layout.snapshot = normalizedSnapshot;
+                    return true;
+                };
+
+                if (!applySnapshotToPreview(layout.snapshot)) {
+                    preview.appendChild(noPreviewLabel);
                 }
 
                 const info = document.createElement("div");
@@ -6318,12 +6531,46 @@ export default class UIManager {
                 loadBtn.style.borderRadius = "9px";
                 loadBtn.style.cursor = "pointer";
                 loadBtn.style.fontWeight = "800";
-                loadBtn.addEventListener("click", () => {
-                    this.hideBaseLayoutDialog();
-                    this.core.buildingManager.loadBaseLayout(layout);
+                loadBtn.addEventListener("click", async () => {
+                    if (loadBtn.disabled) return;
+                    const oldText = loadBtn.textContent;
+                    loadBtn.disabled = true;
+                    let layoutToLoad = layout;
+                    try {
+                        const hasBuildings = Array.isArray(layout?.buildings) && layout.buildings.length > 0;
+                        if (activeSource === "public" && !hasBuildings) {
+                            loadBtn.textContent = "Loading...";
+                            const detailResult = await fetchPublicBaseLayoutById(layout.id);
+                            if (!detailResult?.success || !detailResult?.data) {
+                                this.addChatMessage("System", "Could not load this public base.", "#ffcc66");
+                                return;
+                            }
+                            const details = detailResult.data;
+                            const buildings = Array.isArray(details?.layout_json?.buildings) ? details.layout_json.buildings : [];
+                            layoutToLoad = {
+                                ...layout,
+                                snapshot: details.snapshot || layout.snapshot || null,
+                                buildings
+                            };
+                        }
+
+                        this.hideBaseLayoutDialog();
+                        this.core.buildingManager.loadBaseLayout(layoutToLoad);
+                    } finally {
+                        loadBtn.disabled = false;
+                        loadBtn.textContent = oldText;
+                    }
                 });
 
                 actions.appendChild(loadBtn);
+
+                if (activeSource === "public" && !layout.snapshot && layout.id) {
+                    fetchPublicBaseLayoutById(layout.id).then((detailResult) => {
+                        if (!detailResult?.success || !detailResult?.data) return;
+                        applySnapshotToPreview(detailResult.data.snapshot);
+                    }).catch(() => {});
+                }
+
                 if (activeSource === "local") {
                     const publishBtn = document.createElement("button");
                     publishBtn.textContent = "Publish";
@@ -6335,27 +6582,50 @@ export default class UIManager {
                     publishBtn.style.cursor = "pointer";
                     publishBtn.style.fontWeight = "700";
                     publishBtn.addEventListener("click", async () => {
+                        const withTimeout = (promise, ms = 12000) => Promise.race([
+                            promise,
+                            new Promise((_, reject) => {
+                                setTimeout(() => reject(new Error("publish_timeout")), ms);
+                            })
+                        ]);
                         publishBtn.disabled = true;
                         const oldText = publishBtn.textContent;
                         publishBtn.textContent = "Publishing...";
                         try {
-                            const userId = this.core.networkManager?.userId || null;
-                            const authorName = this.core.gameManager?.player?.name || this.core.networkManager?.userData?.nickname || "Guest";
-                            const result = await publishBaseLayout({
+                            const userId = this.core.networkManager?.userId || this.core.networkManager?.userData?.id || null;
+                            const authorName = this.core.networkManager?.userData?.nickname || this.core.gameManager?.player?.name || "Guest";
+                            const snapshotForPublish = this.normalizeBaseLayoutSnapshot(layout.snapshot)
+                                || this.normalizeBaseLayoutSnapshot(this.captureCurrentBaseSnapshot({ forceCenter: true }))
+                                || this.normalizeBaseLayoutSnapshot(this.captureCurrentBaseSnapshot({ forceCenter: false }))
+                                || null;
+                            if (snapshotForPublish && !layout.snapshot) {
+                                layout.snapshot = snapshotForPublish;
+                            }
+                            const result = await withTimeout(publishBaseLayout({
                                 userId,
                                 authorName,
                                 name: layout.name,
-                                snapshot: layout.snapshot,
+                                snapshot: snapshotForPublish,
                                 buildings: layout.buildings,
                                 isPublic: true
-                            });
+                            }), 12000);
                             if (result?.success) {
                                 this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
                             } else {
-                                this.addChatMessage("System", "Could not publish base (check DB table/config).", "#ffcc66");
+                                const reason = String(result?.error?.message || result?.error?.details || result?.error || "").trim();
+                                this.addChatMessage(
+                                    "System",
+                                    reason ? `Could not publish base: ${reason}` : "Could not publish base (check DB table/config).",
+                                    "#ffcc66"
+                                );
                             }
                         } catch (error) {
-                            this.addChatMessage("System", "Could not publish base (network error).", "#ffcc66");
+                            const timeout = String(error?.message || "").toLowerCase().includes("publish_timeout");
+                            this.addChatMessage(
+                                "System",
+                                timeout ? "Publish timed out. Try again." : "Could not publish base (network error).",
+                                "#ffcc66"
+                            );
                         } finally {
                             publishBtn.disabled = false;
                             publishBtn.textContent = oldText;

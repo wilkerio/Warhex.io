@@ -2,6 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://sbwotyhotmthlmtysltl.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNid290eWhvdG10aGxtdHlzbHRsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2Njg1NDczNSwiZXhwIjoyMDgyNDMwNzM1fQ.M5na5xG06z_PptrSK5Uxgx9aKN4n7lBB3F6k2JEiST8';
+const SUPABASE_CLIENT_PATCH_VERSION = "2026-03-15-rank-bases-fix-v3";
+
+if (typeof window !== "undefined") {
+    window.__warhexSupabasePatchVersion = SUPABASE_CLIENT_PATCH_VERSION;
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: {
@@ -10,7 +15,9 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
         // Callback exchange is handled explicitly in consumeOAuthCallbackSession().
         detectSessionInUrl: false,
         // Prevent Browser LockManager timeouts in environments with duplicated init/reload.
-        multiTab: false
+        multiTab: false,
+        // Avoid deadlocks/orphaned auth locks blocking non-auth requests.
+        lock: async (_name, _acquireTimeout, fn) => await fn()
     }
 });
 
@@ -19,6 +26,8 @@ const SKINS_CACHE_TTL_MS = 10 * 60 * 1000;
 const LEADERBOARD_CACHE_TTL_MS = 60 * 1000;
 const STORAGE_LIST_PAGE_SIZE = 100;
 const STORAGE_LIST_MAX_REQUESTS = 20;
+const GLOBAL_RANK_CACHE_KEY = "warhex_global_rank_cache_v1";
+const PUBLIC_BASES_CACHE_KEY = "warhex_public_bases_cache_v1";
 
 let skinsCache = {
     data: [],
@@ -32,6 +41,23 @@ let leaderboardCache = {
     fetchedAt: 0,
     inFlight: null
 };
+
+function readCachedJson(key, fallbackValue) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return fallbackValue;
+        const parsed = JSON.parse(raw);
+        return parsed ?? fallbackValue;
+    } catch {
+        return fallbackValue;
+    }
+}
+
+function writeCachedJson(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch {}
+}
 
 function isTransientSupabaseError(error) {
     const status = Number(error?.status || error?.code || 0);
@@ -869,6 +895,257 @@ export async function purchaseSkin(userId, skinName, price) {
 }
 
 const BASE_LAYOUTS_TABLE = "base_layouts";
+const BASE_LAYOUTS_LIST_FIELDS = "id, name, author_name, snapshot, created_at";
+const BASE_LAYOUTS_SELECT_FIELDS = "id, name, author_name, snapshot, created_at, layout_json";
+
+function normalizeBaseLayoutSnapshot(snapshot) {
+    if (typeof snapshot !== "string") return null;
+    const value = snapshot.trim();
+    if (!value) return null;
+    if (
+        value.startsWith("data:image/")
+        || value.startsWith("http://")
+        || value.startsWith("https://")
+        || value.startsWith("blob:")
+    ) {
+        return value;
+    }
+
+    // Backward compatibility for rows that stored bare base64.
+    const compact = value.replace(/\s+/g, "");
+    const looksLikeBase64 = compact.length > 120 && /^[A-Za-z0-9+/=]+$/.test(compact);
+    if (looksLikeBase64) {
+        return `data:image/jpeg;base64,${compact}`;
+    }
+    return null;
+}
+
+async function withTimeoutPromise(promise, ms = 10000, timeoutMessage = "request_timeout") {
+    let timeoutId = null;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), ms);
+            })
+        ]);
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+    }
+}
+
+async function getCurrentAccessToken(timeoutMs = 2500) {
+    try {
+        const sessionResult = await withTimeoutPromise(
+            supabase.auth.getSession(),
+            timeoutMs,
+            "auth_session_timeout"
+        );
+        return sessionResult?.data?.session?.access_token || null;
+    } catch {
+        return null;
+    }
+}
+
+async function postgrestRequest(path, {
+    method = "GET",
+    body = null,
+    timeoutMs = 10000,
+    prefer = "",
+    authToken = null
+} = {}) {
+    const controller = new AbortController();
+    let timeoutId = null;
+    try {
+        timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        const headers = {
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${authToken || supabaseKey}`
+        };
+        if (body != null) headers["Content-Type"] = "application/json";
+        if (prefer) headers["Prefer"] = prefer;
+
+        const response = await fetch(`${supabaseUrl}${path}`, {
+            method,
+            headers,
+            signal: controller.signal,
+            body: body == null ? undefined : JSON.stringify(body)
+        });
+        const rawText = await response.text().catch(() => "");
+        let parsed = null;
+        try {
+            parsed = rawText ? JSON.parse(rawText) : null;
+        } catch {
+            parsed = null;
+        }
+
+        if (!response.ok) {
+            const message = parsed?.message || rawText || response.statusText || String(response.status);
+            return {
+                ok: false,
+                status: response.status,
+                error: {
+                    code: parsed?.code || String(response.status),
+                    message,
+                    details: parsed?.details || "",
+                    hint: parsed?.hint || ""
+                }
+            };
+        }
+
+        return { ok: true, status: response.status, data: parsed };
+    } catch (error) {
+        const timedOut = error?.name === "AbortError";
+        return {
+            ok: false,
+            status: 0,
+            error: {
+                code: timedOut ? "request_timeout" : "request_error",
+                message: timedOut ? "Request timed out" : String(error?.message || error || "Request failed"),
+                details: "",
+                hint: ""
+            }
+        };
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+    }
+}
+
+function isTransientRequestError(error) {
+    if (!error) return false;
+    const code = String(error.code || "").toLowerCase();
+    const message = String(error.message || "").toLowerCase();
+    const status = Number(error.status || 0);
+    return status === 0
+        || status === 408
+        || status === 429
+        || status === 500
+        || status === 502
+        || status === 503
+        || status === 504
+        || code === "request_timeout"
+        || code === "request_error"
+        || message.includes("timeout")
+        || message.includes("network");
+}
+
+async function postgrestRequestWithRetry(path, options = {}, retries = 2, baseDelayMs = 320) {
+    let lastResult = null;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const result = await postgrestRequest(path, options);
+        if (result.ok) return result;
+        lastResult = result;
+        if (attempt === retries || !isTransientRequestError(result.error)) break;
+        const delayMs = baseDelayMs * (attempt + 1);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return lastResult || {
+        ok: false,
+        status: 0,
+        error: { code: "request_error", message: "Request failed", details: "", hint: "" }
+    };
+}
+
+function isRlsDeniedError(error) {
+    if (!error) return false;
+    const code = String(error.code || "").toUpperCase();
+    const message = String(error.message || "").toLowerCase();
+    return code === "42501" || message.includes("row-level security");
+}
+
+function isMissingColumnError(error, columnName) {
+    if (!error || !columnName) return false;
+    const code = String(error?.code || "").toUpperCase();
+    if (code === "42703") return true;
+    const haystack = String(error?.message || error?.details || error?.hint || "").toLowerCase();
+    return haystack.includes(String(columnName).toLowerCase());
+}
+
+function buildPublicLayoutsQuery(searchText = "", limit = 30, visibilityColumn = "is_public") {
+    let query = supabase
+        .from(BASE_LAYOUTS_TABLE)
+        .select(BASE_LAYOUTS_LIST_FIELDS);
+
+    if (visibilityColumn) {
+        query = query.eq(visibilityColumn, true);
+    }
+
+    query = query
+        .order("created_at", { ascending: false })
+        .limit(Math.max(1, Math.min(100, limit)));
+
+    const term = (searchText || "").trim();
+    if (term) {
+        query = query.or(`name.ilike.%${term}%,author_name.ilike.%${term}%`);
+    }
+
+    return query;
+}
+
+async function insertBaseLayout(payload, visibilityColumn, isPublic = true) {
+    const insertPayload = { ...payload };
+    if (visibilityColumn) {
+        insertPayload[visibilityColumn] = Boolean(isPublic);
+    }
+    const authToken = await getCurrentAccessToken();
+    if (!authToken) {
+        return {
+            data: null,
+            error: {
+                code: "auth_required",
+                message: "Login required to publish base.",
+                details: "",
+                hint: ""
+            }
+        };
+    }
+
+    const selectQuery = encodeURIComponent(BASE_LAYOUTS_SELECT_FIELDS);
+    const restResult = await postgrestRequestWithRetry(
+        `/rest/v1/${BASE_LAYOUTS_TABLE}?select=${selectQuery}`,
+        {
+            method: "POST",
+            body: insertPayload,
+            timeoutMs: 10000,
+            prefer: "return=representation",
+            authToken
+        },
+        1
+    );
+    if (restResult.ok) {
+        const row = Array.isArray(restResult.data) ? restResult.data[0] : restResult.data;
+        return { data: row || null, error: null };
+    }
+    return { data: null, error: restResult.error };
+}
+
+async function fetchPublicLayoutsWithVisibility(searchText = "", limit = 30, visibilityColumn = "is_public") {
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 30));
+    const termRaw = (searchText || "").trim();
+    const term = termRaw.replace(/[(),]/g, " ").replace(/\s+/g, " ").trim();
+    const authToken = await getCurrentAccessToken();
+
+    let path = `/rest/v1/${BASE_LAYOUTS_TABLE}?select=${encodeURIComponent(BASE_LAYOUTS_LIST_FIELDS)}&order=created_at.desc&limit=${safeLimit}`;
+    if (visibilityColumn) {
+        path += `&${visibilityColumn}=eq.true`;
+    }
+    if (term) {
+        path += `&or=${encodeURIComponent(`(name.ilike.%${term}%,author_name.ilike.%${term}%)`)}`;
+    }
+
+    const restResult = await postgrestRequestWithRetry(path, { timeoutMs: 18000, authToken }, 2);
+    if (restResult.ok) {
+        const rows = Array.isArray(restResult.data) ? restResult.data : [];
+        return {
+            data: rows.map((row) => ({
+                ...row,
+                snapshot: normalizeBaseLayoutSnapshot(row?.snapshot)
+            })),
+            error: null
+        };
+    }
+    return { data: [], error: restResult.error };
+}
 
 export async function publishBaseLayout({ userId, authorName, name, snapshot, buildings, isPublic = true }) {
     try {
@@ -876,23 +1153,41 @@ export async function publishBaseLayout({ userId, authorName, name, snapshot, bu
             user_id: userId || null,
             author_name: authorName || "Guest",
             name: (name || "Unnamed Base").trim(),
-            snapshot: snapshot || null,
-            layout_json: { buildings: Array.isArray(buildings) ? buildings : [] },
-            is_public: Boolean(isPublic)
+            snapshot: normalizeBaseLayoutSnapshot(snapshot) || null,
+            layout_json: { buildings: Array.isArray(buildings) ? buildings : [] }
         };
 
-        const { data, error } = await supabase
-            .from(BASE_LAYOUTS_TABLE)
-            .insert(payload)
-            .select("id, name, author_name, snapshot, created_at, layout_json, is_public")
-            .single();
+        const attempts = ["is_public", "public", null];
+        let lastError = null;
 
-        if (error) {
-            console.error("Error publishing base layout:", error);
-            return { success: false, error };
+        for (const visibilityColumn of attempts) {
+            const { data, error } = await insertBaseLayout(payload, visibilityColumn, isPublic);
+            if (!error) {
+                return { success: true, data };
+            }
+
+            lastError = error;
+            const canTryNext =
+                (visibilityColumn === "is_public" && isMissingColumnError(error, "is_public"))
+                || (visibilityColumn === "public" && isMissingColumnError(error, "public"));
+            if (canTryNext) continue;
+            break;
         }
 
-        return { success: true, data };
+        if (isRlsDeniedError(lastError)) {
+            return {
+                success: false,
+                error: {
+                    code: "publish_forbidden",
+                    message: "You do not have permission to publish this base.",
+                    details: lastError?.message || "",
+                    hint: ""
+                }
+            };
+        }
+
+        console.error("Error publishing base layout:", lastError);
+        return { success: false, error: lastError };
     } catch (error) {
         console.error("Error in publishBaseLayout:", error);
         return { success: false, error };
@@ -901,46 +1196,79 @@ export async function publishBaseLayout({ userId, authorName, name, snapshot, bu
 
 export async function fetchPublicBaseLayouts(searchText = "", limit = 30) {
     try {
-        let query = supabase
-            .from(BASE_LAYOUTS_TABLE)
-            .select("id, name, author_name, snapshot, created_at, layout_json")
-            .eq("is_public", true)
-            .order("created_at", { ascending: false })
-            .limit(Math.max(1, Math.min(100, limit)));
+        const attempts = ["is_public", "public", null];
+        let lastError = null;
+        const safeLimit = Math.max(1, Math.min(100, Number(limit) || 30));
+        const normalizedSearch = String(searchText || "").trim().toLowerCase();
 
-        const term = (searchText || "").trim();
-        if (term) {
-            query = query.or(`name.ilike.%${term}%,author_name.ilike.%${term}%`);
+        for (const visibilityColumn of attempts) {
+            const { data, error } = await fetchPublicLayoutsWithVisibility(searchText, safeLimit, visibilityColumn);
+            if (!error) {
+                const rows = data || [];
+                writeCachedJson(PUBLIC_BASES_CACHE_KEY, {
+                    rows,
+                    fetchedAt: Date.now()
+                });
+                return { success: true, data: rows };
+            }
+
+            lastError = error;
+            const canTryNext =
+                (visibilityColumn === "is_public" && isMissingColumnError(error, "is_public"))
+                || (visibilityColumn === "public" && isMissingColumnError(error, "public"));
+            if (canTryNext) continue;
+            break;
         }
 
-        const { data, error } = await query;
-        if (error) {
-            console.error("Error fetching public base layouts:", error);
-            return { success: false, error, data: [] };
+        console.error("Error fetching public base layouts:", lastError);
+        const cached = readCachedJson(PUBLIC_BASES_CACHE_KEY, { rows: [] });
+        let rows = Array.isArray(cached?.rows) ? cached.rows : [];
+        if (normalizedSearch) {
+            rows = rows.filter((row) => {
+                const name = String(row?.name || "").toLowerCase();
+                const author = String(row?.author_name || "").toLowerCase();
+                return name.includes(normalizedSearch) || author.includes(normalizedSearch);
+            });
         }
-
-        return { success: true, data: data || [] };
+        return {
+            success: rows.length > 0,
+            error: lastError,
+            data: rows.slice(0, safeLimit)
+        };
     } catch (error) {
         console.error("Error in fetchPublicBaseLayouts:", error);
-        return { success: false, error, data: [] };
+        const cached = readCachedJson(PUBLIC_BASES_CACHE_KEY, { rows: [] });
+        const rows = Array.isArray(cached?.rows) ? cached.rows : [];
+        return { success: rows.length > 0, error, data: rows };
+    }
+}
+
+export async function fetchPublicBaseLayoutById(layoutId) {
+    try {
+        const id = Number(layoutId);
+        if (!Number.isFinite(id) || id <= 0) {
+            return { success: false, error: "invalid_layout_id", data: null };
+        }
+
+        const path = `/rest/v1/${BASE_LAYOUTS_TABLE}?select=${encodeURIComponent(BASE_LAYOUTS_SELECT_FIELDS)}&id=eq.${id}&limit=1`;
+        const authToken = await getCurrentAccessToken();
+        const restResult = await postgrestRequestWithRetry(path, { timeoutMs: 18000, authToken }, 2);
+        if (restResult.ok) {
+            const rawRow = Array.isArray(restResult.data) ? (restResult.data[0] || null) : restResult.data;
+            const row = rawRow ? {
+                ...rawRow,
+                snapshot: normalizeBaseLayoutSnapshot(rawRow?.snapshot)
+            } : null;
+            return { success: Boolean(row), data: row, error: row ? null : "layout_not_found" };
+        }
+        return { success: false, data: null, error: restResult.error || "layout_not_found" };
+    } catch (error) {
+        console.error("Error in fetchPublicBaseLayoutById:", error);
+        return { success: false, data: null, error };
     }
 }
 
 export async function fetchGlobalAccountLeaderboard(limit = 10) {
-    const withTimeout = async (promise, ms = 4000) => {
-        let timeoutId = null;
-        try {
-            return await Promise.race([
-                promise,
-                new Promise((_, reject) => {
-                    timeoutId = setTimeout(() => reject(new Error("leaderboard_timeout")), ms);
-                })
-            ]);
-        } finally {
-            if (timeoutId) clearTimeout(timeoutId);
-        }
-    };
-
     const normalizeStatistics = (statistics) => {
         if (!statistics) return {};
         if (typeof statistics === "string") {
@@ -977,10 +1305,33 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
             .slice(0, safeLimit);
     };
 
+    const fetchRowsViaRest = async () => {
+        const readLimit = 120;
+        const authToken = await getCurrentAccessToken();
+        const paths = [
+            `/rest/v1/users?select=nickname,email,role,highscore,playtime,total_kills,statistics&limit=${readLimit}`,
+            `/rest/v1/users?select=nickname,email,statistics&limit=${readLimit}`,
+            "/rest/v1/users?select=*&limit=40"
+        ];
+
+        let lastError = null;
+        for (const path of paths) {
+            const result = await postgrestRequestWithRetry(path, { timeoutMs: 16000, authToken }, 2);
+            if (result.ok) {
+                return { rows: Array.isArray(result.data) ? result.data : [], error: null };
+            }
+            lastError = result.error;
+        }
+
+        return { rows: [], error: lastError || { message: "leaderboard_rest_failed" } };
+    };
+
     try {
         const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
         const cacheKey = `top:${safeLimit}`;
         const now = Date.now();
+        const persistentCache = readCachedJson(GLOBAL_RANK_CACHE_KEY, {});
+        const persistentRows = Array.isArray(persistentCache?.[cacheKey]) ? persistentCache[cacheKey] : [];
         if (leaderboardCache.key === cacheKey && leaderboardCache.data.length > 0 && (now - leaderboardCache.fetchedAt) < LEADERBOARD_CACHE_TTL_MS) {
             return leaderboardCache.data;
         }
@@ -991,33 +1342,26 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
 
         leaderboardCache.key = cacheKey;
         leaderboardCache.inFlight = (async () => {
-        const queryAttempts = [
-            () => supabase.from("users").select("nickname, username, email, role, highscore, playtime, total_kills, statistics").limit(200),
-            () => supabase.from("users").select("nickname, username, email, role, statistics").limit(200),
-            () => supabase.from("users").select("*").limit(200)
-        ];
+            const primary = await fetchRowsViaRest();
+            if (!primary.error) {
+                const mapped = mapLeaderboardRows(primary.rows, safeLimit);
+                leaderboardCache.data = mapped;
+                leaderboardCache.fetchedAt = Date.now();
+                writeCachedJson(GLOBAL_RANK_CACHE_KEY, {
+                    ...persistentCache,
+                    [cacheKey]: mapped
+                });
+                return mapped;
+            }
 
-        let data = [];
-        let error = null;
-
-        for (const runQuery of queryAttempts) {
-            const result = await withTimeout(runQuery(), 4500).catch((e) => ({ data: null, error: e }));
-            data = result?.data || [];
-            error = result?.error || null;
-            if (!error) break;
-        }
-
-        if (error) {
-            console.error("Error fetching global account leaderboard:", error);
+            console.error("Error fetching global account leaderboard:", primary.error);
             if (leaderboardCache.data.length > 0) {
                 return leaderboardCache.data;
             }
+            if (persistentRows.length > 0) {
+                return persistentRows;
+            }
             return [];
-        }
-        const mapped = mapLeaderboardRows(data, safeLimit);
-        leaderboardCache.data = mapped;
-        leaderboardCache.fetchedAt = Date.now();
-        return mapped;
         })();
 
         const result = await leaderboardCache.inFlight;
@@ -1026,40 +1370,16 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
     } catch (error) {
         leaderboardCache.inFlight = null;
         console.error("Error in fetchGlobalAccountLeaderboard:", error);
-        try {
-            const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
-            const urls = [
-                `${supabaseUrl}/rest/v1/users?select=nickname,username,email,role,highscore,playtime,total_kills,statistics&limit=200`,
-                `${supabaseUrl}/rest/v1/users?select=nickname,username,email,role,statistics&limit=200`,
-                `${supabaseUrl}/rest/v1/users?select=*&limit=200`
-            ];
-
-            for (const url of urls) {
-                const resp = await withTimeout(fetch(url, {
-                    headers: {
-                        "apikey": supabaseKey,
-                        "Authorization": `Bearer ${supabaseKey}`
-                    }
-                }), 4500);
-                if (!resp.ok) continue;
-                const rows = await resp.json();
-                const mapped = mapLeaderboardRows(rows, safeLimit);
-                leaderboardCache.data = mapped;
-                leaderboardCache.fetchedAt = Date.now();
-                return mapped;
-            }
-
-            if (leaderboardCache.data.length > 0) {
-                return leaderboardCache.data;
-            }
-            return [];
-        } catch (fallbackError) {
-            console.error("Global leaderboard fallback failed:", fallbackError);
-            if (leaderboardCache.data.length > 0) {
-                return leaderboardCache.data;
-            }
-            return [];
+        if (leaderboardCache.data.length > 0) {
+            return leaderboardCache.data;
         }
+        const persistentCache = readCachedJson(GLOBAL_RANK_CACHE_KEY, {});
+        const cacheKey = `top:${Math.max(1, Math.min(25, Number(limit) || 10))}`;
+        const persistentRows = Array.isArray(persistentCache?.[cacheKey]) ? persistentCache[cacheKey] : [];
+        if (persistentRows.length > 0) {
+            return persistentRows;
+        }
+        return [];
     }
 }
 
