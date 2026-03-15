@@ -22,6 +22,8 @@ export default class UnitManager {
         this.core = core;
         this.selectedUnits = [];
         this.lastCommanderHotkeyBuyAt = 0;
+        this.lastSelectionControlsHintAt = 0;
+        this.selectionControlsHintCooldownMs = 10000;
 
         this.lastTargetPosition = { x: Infinity, y: Infinity };
         this.lastMoveCommandAt = 0;
@@ -50,6 +52,20 @@ export default class UnitManager {
     hasSelectedUnits () {
         this.refreshSelectionHud();
         return this.selectedUnits.length > 0;
+    }
+
+    showSelectionControlsHint () {
+        if (!this.selectedUnits.length) return;
+
+        const now = Date.now();
+        if (now - this.lastSelectionControlsHintAt < this.selectionControlsHintCooldownMs) return;
+        this.lastSelectionControlsHintAt = now;
+
+        this.core?.uiManager?.addChatMessage?.(
+            "System",
+            "Tropa selecionada: botao direito move, botao esquerdo desseleciona.",
+            "#9fd7ff"
+        );
     }
 
     getSingleSelectedUnitHudInfo (unit) {
@@ -198,7 +214,8 @@ export default class UnitManager {
         if (this.core.uiManager.menuOpen) return;
 
         if (this.hasSelectedUnits()) {
-            this.sendMoveCommand(mousePosition);
+            this.clearSelection();
+            return;
         }
     }
 
@@ -227,12 +244,6 @@ export default class UnitManager {
         this.core.networkManager.moveUnits(this.selectedUnits, targetPosition);
         this.lastTargetPosition = targetPosition;
         this.lastMoveCommandAt = now;
-
-        // Match previous UX: after issuing a move command, clear selection
-        // unless the user is holding Shift.
-        if (!this.core.inputManager.shiftPressed) {
-            this.clearSelection();
-        }
     }
 
     updateSelectedUnitsCannonTarget (targetPosition) {
@@ -258,6 +269,7 @@ export default class UnitManager {
             }
         });
         this.refreshSelectionHud();
+        this.showSelectionControlsHint();
     }
 
     selectUnitsByTypes(unitTypes = [], options = {}) {
@@ -278,6 +290,7 @@ export default class UnitManager {
             unit.isSelected = true;
         });
         this.refreshSelectionHud();
+        this.showSelectionControlsHint();
     }
 
     selectArmyCombatUnits () {
@@ -318,6 +331,7 @@ export default class UnitManager {
         }
         commander.isSelected = true;
         this.refreshSelectionHud();
+        this.showSelectionControlsHint();
         return true;
     }
 
@@ -361,5 +375,6 @@ export default class UnitManager {
             }
         });
         this.refreshSelectionHud();
+        this.showSelectionControlsHint();
     }
 }
