@@ -53,6 +53,7 @@ export default class UIManager {
         this.hudEditSessionOverlay = null;
         this.hudEditSessionState = null;
         this.hudEditPreviewState = null;
+        this.hudLayoutDirty = false;
         this.keybindEditorOverlay = null;
         this.unitStyleEditorOverlay = null;
         this._autoBuildShowActions = null;
@@ -653,10 +654,11 @@ export default class UIManager {
         if (typeof window !== "undefined") {
             window.__warhexHudConfig = this.hudConfig;
         }
-        const applyPanel = (selector, cfg, fallback) => {
+        const applyPanel = (selector, cfg, fallback, options = {}) => {
             const el = typeof selector === "string" ? document.querySelector(selector) : selector;
             if (!el) return;
 
+            const hasCustomPosition = cfg?.x != null || cfg?.y != null;
             el.style.position = "fixed";
             el.style.left = cfg?.x != null ? `${cfg.x}px` : "";
             el.style.top = cfg?.y != null ? `${cfg.y}px` : "";
@@ -666,6 +668,9 @@ export default class UIManager {
             el.style.maxWidth = cfg?.width ? `${cfg.width}px` : "";
             el.style.height = cfg?.height ? `${cfg.height}px` : "";
             el.style.maxHeight = cfg?.height ? `${cfg.height}px` : "";
+            if (options.clearTransformOnCustom) {
+                el.style.transform = hasCustomPosition ? "none" : "";
+            }
         };
 
         applyPanel("#chat", this.hudConfig?.hud?.chat, { right: "0px", bottom: "0px" });
@@ -673,7 +678,7 @@ export default class UIManager {
         applyPanel("#global-leaderboard", this.hudConfig?.hud?.globalRank, { right: "0px", top: "0px" });
         applyPanel("#resource-container", this.hudConfig?.hud?.resources, { left: "8px", bottom: "8px" });
         applyPanel("#shield", this.hudConfig?.hud?.protection, { left: "8px", bottom: "80px" });
-        applyPanel("#toolbar-container", this.hudConfig?.hud?.toolbar, { bottom: "0px", left: "" });
+        applyPanel("#toolbar-container", this.hudConfig?.hud?.toolbar, { bottom: "0px", left: "" }, { clearTransformOnCustom: true });
         applyPanel("#upgrade-container", this.hudConfig?.hud?.upgrades, { left: "8px", top: "" });
         this.ensureHudCollapseControls();
         this.applyHudCollapsedStates();
@@ -752,15 +757,32 @@ export default class UIManager {
         bind("#unit-controls-container", "groupTroops");
     }
 
+    saveHudLayoutFromPanels ({ onlyIfDirty = false } = {}) {
+        if (onlyIfDirty && !this.hudLayoutDirty) {
+            return false;
+        }
+        this.captureHudPanelLayout("#chat", "chat");
+        this.captureHudPanelLayout("#leaderboard-container .leaderboard", "leaderboard");
+        this.captureHudPanelLayout("#global-leaderboard", "globalRank");
+        this.captureHudPanelLayout("#resource-container", "resources");
+        this.captureHudPanelLayout("#shield", "protection");
+        this.captureHudPanelLayout("#toolbar-container", "toolbar");
+        this.captureHudPanelLayout("#upgrade-container", "upgrades");
+        this.scheduleHudConfigSync();
+        this.hudLayoutDirty = false;
+        return true;
+    }
+
     captureHudPanelLayout (selector, targetConfigKey) {
         const el = document.querySelector(selector);
         if (!el || !this.hudConfig?.hud?.[targetConfigKey]) return;
         const rect = el.getBoundingClientRect();
+        const zoomFactor = Math.max(0.01, Number(getComputedStyle(el).zoom) || 1);
         this.hudConfig.hud[targetConfigKey] = {
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height)
+            x: Math.round(rect.left / zoomFactor),
+            y: Math.round(rect.top / zoomFactor),
+            width: Math.round(rect.width / zoomFactor),
+            height: Math.round(rect.height / zoomFactor)
         };
     }
 
@@ -774,6 +796,7 @@ export default class UIManager {
         this.hudCustomizeMode = Boolean(enabled);
         document.body.classList.toggle("hud-customize-mode", this.hudCustomizeMode);
         if (this.hudCustomizeMode) {
+            this.hudLayoutDirty = false;
             this.enableHudDragResize();
         } else {
             this.disableHudDragResize();
@@ -835,6 +858,7 @@ export default class UIManager {
                 const onUp = () => {
                     document.removeEventListener("mousemove", onMove);
                     document.removeEventListener("mouseup", onUp);
+                    this.hudLayoutDirty = true;
                     this.captureHudPanelLayout(selector, key);
                     this.scheduleHudConfigSync();
                 };
@@ -872,6 +896,7 @@ export default class UIManager {
                 const onUp = () => {
                     document.removeEventListener("mousemove", onMove);
                     document.removeEventListener("mouseup", onUp);
+                    this.hudLayoutDirty = true;
                     this.captureHudPanelLayout(selector, key);
                     this.scheduleHudConfigSync();
                 };
@@ -977,14 +1002,7 @@ export default class UIManager {
 
         toggleBtn?.addEventListener("click", () => this.setHudCustomizeMode(!this.hudCustomizeMode));
         saveBtn?.addEventListener("click", () => {
-            this.captureHudPanelLayout("#chat", "chat");
-            this.captureHudPanelLayout("#leaderboard-container .leaderboard", "leaderboard");
-            this.captureHudPanelLayout("#global-leaderboard", "globalRank");
-            this.captureHudPanelLayout("#resource-container", "resources");
-            this.captureHudPanelLayout("#shield", "protection");
-            this.captureHudPanelLayout("#toolbar-container", "toolbar");
-            this.captureHudPanelLayout("#upgrade-container", "upgrades");
-            this.scheduleHudConfigSync();
+            this.saveHudLayoutFromPanels({ onlyIfDirty: true });
             this.setHudCustomizeMode(false);
         });
         resetBtn?.addEventListener("click", () => this.resetHudLayoutConfig());
@@ -1180,14 +1198,7 @@ export default class UIManager {
         if (restoreFactory) {
             this.resetHudLayoutConfig();
         } else if (save) {
-            this.captureHudPanelLayout("#chat", "chat");
-            this.captureHudPanelLayout("#leaderboard-container .leaderboard", "leaderboard");
-            this.captureHudPanelLayout("#global-leaderboard", "globalRank");
-            this.captureHudPanelLayout("#resource-container", "resources");
-            this.captureHudPanelLayout("#shield", "protection");
-            this.captureHudPanelLayout("#toolbar-container", "toolbar");
-            this.captureHudPanelLayout("#upgrade-container", "upgrades");
-            this.scheduleHudConfigSync();
+            this.saveHudLayoutFromPanels({ onlyIfDirty: true });
         } else {
             // Restore the last saved layout if the user exits without saving.
             this.applyHudConfig();

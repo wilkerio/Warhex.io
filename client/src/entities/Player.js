@@ -118,7 +118,8 @@ export default class Player extends Renderable {
     }
 
     setHealth (health) {
-        this.targetHealth = health;
+        const safeHealth = Number.isFinite(health) ? health : this.targetHealth;
+        this.targetHealth = Math.max(0, Math.min(safeHealth, this.health.max));
     }
 
     addBullet (bullet) { //! Just used for trapper bullets currently
@@ -257,18 +258,17 @@ export default class Player extends Renderable {
     }
 
     updateHealth (deltaTime) {
-        const springForce = -this.springStiffness * (this.health.current - this.targetHealth);
-        this.springVelocity += springForce * deltaTime;
-        this.springVelocity *= 1 - this.springDamping;
-        this.health.current += this.springVelocity * deltaTime;
+        // Stable smoothing in seconds to avoid core radius spikes when health updates arrive.
+        const dtSeconds = Math.max(0, Number(deltaTime) / 1000);
+        const smoothingSpeed = 12;
+        const t = Math.min(1, dtSeconds * smoothingSpeed);
 
-        // Clamp without snapping instantly to target (keep smooth spring animation).
-        if (this.targetHealth < this.health.current) {
-            this.health.current = Math.max(this.health.current, this.targetHealth);
-        } else {
-            this.health.current = Math.min(this.health.current, this.targetHealth);
+        this.health.current += (this.targetHealth - this.health.current) * t;
+        if (Math.abs(this.targetHealth - this.health.current) < 0.05) {
+            this.health.current = this.targetHealth;
         }
-        this.health.current = Math.max(this.health.current, 0);
+
+        this.health.current = Math.max(0, Math.min(this.health.current, this.health.max));
     }
 
     updateBullets (deltaTime) {
