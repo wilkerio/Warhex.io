@@ -93,6 +93,8 @@
     </script>
     <script>
         (function () {
+            const params = new URLSearchParams(window.location.search || "");
+            const forcedByQuery = params.get("platform") === "crazygames" || params.get("cg") === "1";
             const host = String(window.location?.hostname || "").toLowerCase();
             const isCrazyHost = host === "crazygames.com" || host.endsWith(".crazygames.com");
             let refHost = "";
@@ -101,7 +103,7 @@
             } catch (e) { }
             const isCrazyReferrer = refHost === "crazygames.com" || refHost.endsWith(".crazygames.com");
             const isEmbedded = window.self !== window.top;
-            const isCrazyGamesEnvironment = isCrazyHost || (isEmbedded && isCrazyReferrer);
+            const isCrazyGamesEnvironment = forcedByQuery || isCrazyHost || (isEmbedded && isCrazyReferrer);
 
             window.__WARHEX_CRAZYGAMES_ENV__ = isCrazyGamesEnvironment;
             window.__WARHEX_DISABLE_EXTERNAL_ADS__ = isCrazyGamesEnvironment;

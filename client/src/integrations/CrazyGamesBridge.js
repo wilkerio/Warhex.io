@@ -16,13 +16,15 @@ function isCrazyGamesHost(hostname) {
 }
 
 function detectCrazyGamesEnvironment() {
+    const params = new URLSearchParams(window.location?.search || "");
+    const forcedByQuery = params.get("platform") === "crazygames" || params.get("cg") === "1";
     const locationHost = parseHostname(window.location?.href) || String(window.location?.hostname || "").toLowerCase();
     const referrerHost = parseHostname(document.referrer);
     const embedded = window.self !== window.top;
 
     const onCrazyGamesHost = isCrazyGamesHost(locationHost);
     const fromCrazyGamesReferrer = isCrazyGamesHost(referrerHost);
-    return onCrazyGamesHost || (embedded && fromCrazyGamesReferrer);
+    return forcedByQuery || onCrazyGamesHost || (embedded && fromCrazyGamesReferrer);
 }
 
 export default class CrazyGamesBridge {
@@ -53,6 +55,7 @@ export default class CrazyGamesBridge {
         try {
             await sdk.init();
             this._initialized = true;
+            console.log("CrazyGames SDK initialized.");
         } catch (error) {
             console.error("CrazyGames SDK init failed:", error);
             this._initialized = false;
@@ -105,4 +108,3 @@ export default class CrazyGamesBridge {
         }
     }
 }
-
