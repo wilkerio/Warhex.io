@@ -82,6 +82,10 @@ export default class SimpleTurret extends Building {
             [BuildingVariantTypes.SIMPLE_TURRET.RAPID_TURRET]: this._renderRapidTurret,
             [BuildingVariantTypes.SIMPLE_TURRET.GATLING_TURRET]: this._renderGatlingTurret,
             [BuildingVariantTypes.SIMPLE_TURRET.HEAVY_TURRET]: this._renderHeavyTurret,
+            [BuildingVariantTypes.SIMPLE_TURRET.RAGE_TURRET]: this._renderRageTurret,
+            [BuildingVariantTypes.SIMPLE_TURRET.RANGED_TURRET]: this._renderRangedTurret,
+            [BuildingVariantTypes.SIMPLE_TURRET.TWIN_TURRET]: this._renderTwinTurret,
+            [BuildingVariantTypes.SIMPLE_TURRET.SPOTTER_TURRET]: this._renderSpotterTurret,
         };
         return variantMap[buildingVariant] || this._renderSimpleTurret;
     }
@@ -198,6 +202,113 @@ export default class SimpleTurret extends Building {
         context.arc(0, 0, this.size * 0.6, 0, Math.PI * 2);
         context.closePath();
         context.fillStyle = "#a8a8a8"; // Color of the smaller circle
+        context.fill();
+        context.strokeStyle = "#666666";
+        context.lineWidth = 4;
+        context.stroke();
+    }
+
+    _renderRageTurret (context, worldPosition) {
+        this._renderTurretBase(context);
+
+        const recoilOffset = this.recoil * 1.35;
+        const cannonWidth = this.cannonWidth * 0.7;
+        const cannonLength = this.cannonLength * 0.95;
+        const spacing = this.cannonWidth * 0.55;
+        const y = recoilOffset - cannonLength - this.size * 0.25;
+
+        context.fillStyle = "#a8a8a8";
+        context.strokeStyle = "#666666";
+        context.lineWidth = 3.5;
+
+        context.fillRect(-spacing - cannonWidth / 2, y, cannonWidth, cannonLength);
+        context.strokeRect(-spacing - cannonWidth / 2, y, cannonWidth, cannonLength);
+        context.fillRect(-cannonWidth / 2, y, cannonWidth, cannonLength * 1.08);
+        context.strokeRect(-cannonWidth / 2, y, cannonWidth, cannonLength * 1.08);
+        context.fillRect(spacing - cannonWidth / 2, y, cannonWidth, cannonLength);
+        context.strokeRect(spacing - cannonWidth / 2, y, cannonWidth, cannonLength);
+
+        context.beginPath();
+        context.arc(0, 0, this.size * 0.56, 0, Math.PI * 2);
+        context.closePath();
+        context.fillStyle = "#d67a7a";
+        context.fill();
+        context.strokeStyle = "#7a3434";
+        context.lineWidth = 4;
+        context.stroke();
+    }
+
+    _renderRangedTurret (context, worldPosition) {
+        this._renderTurretBase(context);
+
+        const recoilOffset = this.recoil;
+        // Requested: same turret style, just a longer tube (+2).
+        const longerCannon = this.cannonLength + 2;
+        this._drawCannon(context, recoilOffset, this.cannonWidth, longerCannon);
+
+        context.beginPath();
+        context.arc(0, 0, this.size * 0.5, 0, Math.PI * 2);
+        context.closePath();
+        context.fillStyle = "#a8a8a8";
+        context.fill();
+        context.strokeStyle = "#666666";
+        context.lineWidth = 4;
+        context.stroke();
+    }
+
+    _renderTwinTurret (context, worldPosition) {
+        this._renderTurretBase(context);
+
+        const recoilOffset = this.recoil;
+        const cannonWidth = this.cannonWidth * 0.62;
+        const cannonLength = this.cannonLength + 2;
+        const spacing = this.cannonWidth * 0.58;
+        const y = recoilOffset - cannonLength - this.size * 0.24;
+
+        context.fillStyle = "#a8a8a8";
+        context.strokeStyle = "#666666";
+        context.lineWidth = 3.5;
+
+        context.fillRect(-spacing - cannonWidth / 2, y, cannonWidth, cannonLength);
+        context.strokeRect(-spacing - cannonWidth / 2, y, cannonWidth, cannonLength);
+        context.fillRect(spacing - cannonWidth / 2, y, cannonWidth, cannonLength);
+        context.strokeRect(spacing - cannonWidth / 2, y, cannonWidth, cannonLength);
+
+        context.beginPath();
+        context.arc(0, 0, this.size * 0.52, 0, Math.PI * 2);
+        context.closePath();
+        context.fillStyle = "#b4b4b4";
+        context.fill();
+        context.strokeStyle = "#666666";
+        context.lineWidth = 4;
+        context.stroke();
+    }
+
+    _renderSpotterTurret (context, worldPosition) {
+        this._renderTurretBase(context);
+
+        const recoilOffset = this.recoil;
+        const mainCannonLength = this.cannonLength + 4; // requested: +4cm visual
+        const mainCannonWidth = this.cannonWidth * 0.88;
+        this._drawCannon(context, recoilOffset, mainCannonWidth, mainCannonLength);
+
+        // side mini barrels (left/right)
+        const sideCannonWidth = this.cannonWidth * 0.38;
+        const sideCannonLength = this.cannonLength * 0.62;
+        const sideOffsetX = mainCannonWidth * 0.75;
+        const sideY = recoilOffset - sideCannonLength - this.size * 0.18;
+        context.fillStyle = "#a8a8a8";
+        context.strokeStyle = "#666666";
+        context.lineWidth = 3;
+        context.fillRect(sideOffsetX, sideY, sideCannonWidth, sideCannonLength);
+        context.strokeRect(sideOffsetX, sideY, sideCannonWidth, sideCannonLength);
+        context.fillRect(-sideOffsetX - sideCannonWidth, sideY, sideCannonWidth, sideCannonLength);
+        context.strokeRect(-sideOffsetX - sideCannonWidth, sideY, sideCannonWidth, sideCannonLength);
+
+        context.beginPath();
+        context.arc(0, 0, this.size * 0.52, 0, Math.PI * 2);
+        context.closePath();
+        context.fillStyle = "#b4b4b4";
         context.fill();
         context.strokeStyle = "#666666";
         context.lineWidth = 4;

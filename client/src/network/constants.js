@@ -148,6 +148,10 @@ export const BuildingVariantTypes = {
         RAPID_TURRET: 1,
         GATLING_TURRET: 2,
         HEAVY_TURRET: 3,
+        RAGE_TURRET: 4,
+        RANGED_TURRET: 5,
+        SPOTTER_TURRET: 6,
+        TWIN_TURRET: 7,
     },
     SNIPER_TURRET: {
         BASIC: 0,
@@ -239,7 +243,11 @@ export const BuildingDetails = {
             cost: 25,
             range: 180,
             size: BuildingSizes.SIMPLE_TURRET.size,
-            next: [BuildingVariantTypes.SIMPLE_TURRET.RAPID_TURRET, BuildingVariantTypes.SIMPLE_TURRET.HEAVY_TURRET]
+            next: [
+                BuildingVariantTypes.SIMPLE_TURRET.RAPID_TURRET,
+                BuildingVariantTypes.SIMPLE_TURRET.HEAVY_TURRET,
+                BuildingVariantTypes.SIMPLE_TURRET.RANGED_TURRET
+            ]
         },
         RAPID_TURRET: {
             variant: BuildingVariantTypes.SIMPLE_TURRET.RAPID_TURRET,
@@ -267,6 +275,42 @@ export const BuildingDetails = {
             range: 240,
             size: BuildingSizes.SIMPLE_TURRET.size,
             next: []
+        },
+        RAGE_TURRET: {
+            variant: BuildingVariantTypes.SIMPLE_TURRET.RAGE_TURRET,
+            name: "Rage Turret",
+            description: "Extreme fire rate turret with aggressive pressure.",
+            cost: 180,
+            range: 200,
+            size: BuildingSizes.SIMPLE_TURRET.size,
+            next: []
+        },
+        RANGED_TURRET: {
+            variant: BuildingVariantTypes.SIMPLE_TURRET.RANGED_TURRET,
+            name: "Ranged Turret",
+            description: "Stronger shots with a longer cannon.",
+            cost: 60,
+            range: 180,
+            size: BuildingSizes.SIMPLE_TURRET.size,
+            next: [BuildingVariantTypes.SIMPLE_TURRET.TWIN_TURRET]
+        },
+        TWIN_TURRET: {
+            variant: BuildingVariantTypes.SIMPLE_TURRET.TWIN_TURRET,
+            name: "Twin Turret",
+            description: "Dual barrels that fire 2 shots per attack.",
+            cost: 80,
+            range: 210,
+            size: BuildingSizes.SIMPLE_TURRET.size,
+            next: [BuildingVariantTypes.SIMPLE_TURRET.SPOTTER_TURRET]
+        },
+        SPOTTER_TURRET: {
+            variant: BuildingVariantTypes.SIMPLE_TURRET.SPOTTER_TURRET,
+            name: "Spotter Turret",
+            description: "Shoots incoming enemies at higher range and reveals cloaked enemies.",
+            cost: 100,
+            range: 290,
+            size: BuildingSizes.SIMPLE_TURRET.size,
+            next: [BuildingVariantTypes.SIMPLE_TURRET.RAGE_TURRET]
         }
     },
     SNIPER_TURRET: {
@@ -531,6 +575,26 @@ export const BulletDetails = {
             type: BulletTypes.BASIC,
             speed: 800,
             size: 12
+        },
+        RAGE_TURRET: {
+            type: BulletTypes.BASIC,
+            speed: 700,
+            size: 9
+        },
+        RANGED_TURRET: {
+            type: BulletTypes.BASIC,
+            speed: 500,
+            size: 10
+        },
+        SPOTTER_TURRET: {
+            type: BulletTypes.BASIC,
+            speed: 900,
+            size: 10
+        },
+        TWIN_TURRET: {
+            type: BulletTypes.BASIC,
+            speed: 700,
+            size: 10
         }
     },
     SNIPER_TURRET: {

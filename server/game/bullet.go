@@ -207,7 +207,7 @@ type BulletSpawning struct {
 }
 
 var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
-	SIMPLE_TURRET: {
+		SIMPLE_TURRET: {
 		BASIC_BUILDING: {
 			Health:       Health{Current: 20, Max: 20},
 			Speed:        500,
@@ -232,15 +232,47 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 			StayDuration: 0, // No stay duration for non-trapper bullets
 			Behavior:     NormalBullet,
 		},
-		HEAVY_TURRET: {
-			Health:       Health{Current: 30, Max: 30},
-			Speed:        800,
-			Size:         12,
-			Polygon:      GeneratePolygon(ShapeCircle, 12, 0),
-			StayDuration: 0, // No stay duration for non-trapper bullets
-			Behavior:     NormalBullet,
+			HEAVY_TURRET: {
+				Health:       Health{Current: 30, Max: 30},
+				Speed:        800,
+				Size:         12,
+				Polygon:      GeneratePolygon(ShapeCircle, 12, 0),
+				StayDuration: 0, // No stay duration for non-trapper bullets
+				Behavior:     NormalBullet,
+			},
+			RAGE_TURRET: {
+				Health:       Health{Current: 18, Max: 18},
+				Speed:        700,
+				Size:         9,
+				Polygon:      GeneratePolygon(ShapeCircle, 9, 0),
+				StayDuration: 0, // No stay duration for non-trapper bullets
+				Behavior:     NormalBullet,
+			},
+				RANGED_TURRET: {
+					Health:       Health{Current: 30, Max: 30},
+					Speed:        500,
+					Size:         10,
+					Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
+					StayDuration: 0, // No stay duration for non-trapper bullets
+					Behavior:     NormalBullet,
+				},
+				TWIN_TURRET: {
+					Health:       Health{Current: 24, Max: 24},
+					Speed:        700,
+					Size:         10,
+					Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
+					StayDuration: 0, // No stay duration for non-trapper bullets
+					Behavior:     NormalBullet,
+				},
+				SPOTTER_TURRET: {
+					Health:       Health{Current: 30, Max: 30},
+					Speed:        900,
+					Size:         10,
+					Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
+				StayDuration: 0, // No stay duration for non-trapper bullets
+				Behavior:     NormalBullet,
+			},
 		},
-	},
 	SNIPER_TURRET: {
 		BASIC_BUILDING: {
 			Health:       Health{Current: 30, Max: 30},
@@ -336,7 +368,7 @@ var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 }
 
 var turretBulletSpawningConfig = map[BuildingType]map[BuildingVariant]BulletSpawning{
-	SIMPLE_TURRET: {
+		SIMPLE_TURRET: {
 		BASIC_BUILDING: BulletSpawning{
 			Shooter:   nil,
 			Frequency: SpawnFrequency{Current: 0, Original: 800},
@@ -352,12 +384,32 @@ var turretBulletSpawningConfig = map[BuildingType]map[BuildingVariant]BulletSpaw
 			Frequency: SpawnFrequency{Current: 0, Original: 140},
 			Range:     180,
 		},
-		HEAVY_TURRET: BulletSpawning{
-			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 800},
-			Range:     240,
+			HEAVY_TURRET: BulletSpawning{
+				Shooter:   nil,
+				Frequency: SpawnFrequency{Current: 0, Original: 800},
+				Range:     240,
+			},
+			RAGE_TURRET: BulletSpawning{
+				Shooter:   nil,
+				Frequency: SpawnFrequency{Current: 0, Original: 220},
+				Range:     200,
+			},
+			RANGED_TURRET: BulletSpawning{
+				Shooter:   nil,
+				Frequency: SpawnFrequency{Current: 0, Original: 800},
+				Range:     180,
+			},
+			TWIN_TURRET: BulletSpawning{
+				Shooter:   nil,
+				Frequency: SpawnFrequency{Current: 0, Original: 700},
+				Range:     210,
+			},
+			SPOTTER_TURRET: BulletSpawning{
+				Shooter:   nil,
+				Frequency: SpawnFrequency{Current: 0, Original: 800},
+				Range:     290,
+			},
 		},
-	},
 	SNIPER_TURRET: {
 		BASIC_BUILDING: BulletSpawning{
 			Shooter:   nil,

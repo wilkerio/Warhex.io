@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logo recriado</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #ebebeb;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    canvas {
+      image-rendering: auto;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="logo" width="77" height="84"></canvas>
+
+  <script>
+    const canvas = document.getElementById('logo');
+    const ctx = canvas.getContext('2d');
+
+    // Fundo
+    ctx.fillStyle = '#ebebeb';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(38.5, 42);
+    ctx.rotate(-0.74);
+
+    // Anel rosa principal
+    ctx.beginPath();
+    ctx.arc(0, -2, 22, 0, Math.PI * 2);
+    ctx.fillStyle = '#f64f93';
+    ctx.fill();
+
+    // Furo interno
+    ctx.beginPath();
+    ctx.arc(0, -2, 13.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ebebeb';
+    ctx.fill();
+
+    // Abertura diagonal do anel
+    ctx.save();
+    ctx.rotate(0.08);
+    ctx.fillStyle = '#ebebeb';
+    ctx.fillRect(10, -23, 18, 42);
+    ctx.restore();
+
+    // Haste da lupa
+    ctx.save();
+    ctx.rotate(0.03);
+    ctx.fillStyle = '#7a7a7a';
+    roundRect(ctx, -8, 9, 18, 34, 4);
+    ctx.fill();
+    ctx.restore();
+
+    // Cabeça/círculo da lupa
+    ctx.beginPath();
+    ctx.arc(-1, -1, 12, 0, Math.PI * 2);
+    ctx.fillStyle = '#9a9a9a';
+    ctx.fill();
+
+    // Furo da lupa
+    ctx.beginPath();
+    ctx.arc(-1, -1, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#b3b3b3';
+    ctx.fill();
+
+    ctx.restore();
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+  </script>
+</body>
+</html>

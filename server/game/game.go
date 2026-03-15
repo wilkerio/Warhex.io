@@ -622,21 +622,17 @@ func processPlayerTurrets(player *Player, duration time.Duration, players []*Pla
 
 			// Find the closest unit and spawn bullets if in range
 			closestUnit := findClosestUnitInRange(spawning, players, player)
-			if closestUnit != nil {
-				spawning.Frequency.Reset()
-				closedUnitPosition := closestUnit.GetPosition()
-
-				bullet, ok := ownerBase.AddBullet(spawning, closedUnitPosition, 0)
-				if ok {
+				if closestUnit != nil {
+					spawning.Frequency.Reset()
+					closedUnitPosition := closestUnit.GetPosition()
 					TriggerTurretRotationUpdateEvent(turretOwner, turret, closedUnitPosition)
-					TriggerBulletSpawnEvent(turretOwner, bullet, turret)
-				} else {
-					log.Println("Could not add bullet to owner")
+					if !spawnTurretVolley(ownerBase, spawning, closedUnitPosition, turretOwner, turret) {
+						log.Println("Could not add bullet to owner")
+					}
 				}
 			}
 		}
 	}
-}
 
 func processNeutralTurrets(neutral *NeutralBase, duration time.Duration, players []*Player) {
 	neutral.Base.RLock()
@@ -660,20 +656,41 @@ func processNeutralTurrets(neutral *NeutralBase, duration time.Duration, players
 
 			// Find the closest unit and spawn bullets if in range
 			closestUnit := findClosestUnitInRange(spawning, players, neutral.CapturedBy)
-			if closestUnit != nil {
-				spawning.Frequency.Reset()
-				closedUnitPosition := closestUnit.GetPosition()
-
-				bullet, ok := neutral.Base.AddBullet(spawning, closedUnitPosition, 0)
-				if ok {
+				if closestUnit != nil {
+					spawning.Frequency.Reset()
+					closedUnitPosition := closestUnit.GetPosition()
 					TriggerTurretRotationUpdateEvent(turretOwner, turret, closedUnitPosition)
-					TriggerBulletSpawnEvent(turretOwner, bullet, turret)
-				} else {
-					log.Println("Could not add bullet to neutral base owner")
+					if !spawnTurretVolley(neutral.Base, spawning, closedUnitPosition, turretOwner, turret) {
+						log.Println("Could not add bullet to neutral base owner")
+					}
 				}
 			}
 		}
 	}
+
+func spawnTurretVolley(base *Base, spawning *BulletSpawning, target PositionFloat, owner Owner, turret *Building) bool {
+	offsets := []float32{0}
+	if turret != nil && turret.Type == SIMPLE_TURRET {
+		switch turret.Variant {
+		case TWIN_TURRET:
+			// Twin: two-shot volley.
+			offsets = []float32{-10, 10}
+		case SPOTTER_TURRET:
+			// Spotter: three-shot volley.
+			offsets = []float32{-12, 0, 12}
+		}
+	}
+
+	firedAny := false
+	for _, offset := range offsets {
+		bullet, ok := base.AddBullet(spawning, target, offset)
+		if !ok {
+			continue
+		}
+		TriggerBulletSpawnEvent(owner, bullet, turret)
+		firedAny = true
+	}
+	return firedAny
 }
 
 func processPlayerUnitTurrets(player *Player, duration time.Duration, players []*Player, neutrals []*NeutralBase) {
@@ -741,7 +758,11 @@ func processPlayerUnitTurrets(player *Player, duration time.Duration, players []
 func findClosestUnitInRange(spawning *BulletSpawning, players []*Player, excludePlayer *Player) *Unit {
 	var closestUnit *Unit
 	minDistance := float32(math.MaxFloat32)
-	_, shooterIsTower := spawning.Shooter.GetObjectPointer().(*Building)
+	shooterBuilding, shooterIsTower := spawning.Shooter.GetObjectPointer().(*Building)
+	revealsCloak := shooterIsTower &&
+		shooterBuilding != nil &&
+		shooterBuilding.Type == SIMPLE_TURRET &&
+		shooterBuilding.Variant == SPOTTER_TURRET
 
 	for _, otherPlayer := range players {
 		if excludePlayer == otherPlayer || otherPlayer.IsMarkedForRemoval() {
@@ -766,9 +787,9 @@ func findClosestUnitInRange(spawning *BulletSpawning, players []*Player, exclude
 			if unit.IsMarkedForRemoval() {
 				continue
 			}
-			if shooterIsTower && otherPlayer.HasTankCloak && unit.Type == TANK {
-				continue
-			}
+				if shooterIsTower && otherPlayer.HasTankCloak && unit.Type == TANK && !revealsCloak {
+					continue
+				}
 
 			// ? GetPosition doesnt use a LOCK
 			turretPosition := spawning.Shooter.GetPosition()

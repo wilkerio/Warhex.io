@@ -30,6 +30,10 @@ const (
 	RAPID_TURRET   BuildingVariant = 1
 	GATLING_TURRET BuildingVariant = 2
 	HEAVY_TURRET   BuildingVariant = 3
+	RAGE_TURRET    BuildingVariant = 4
+	RANGED_TURRET  BuildingVariant = 5
+	SPOTTER_TURRET BuildingVariant = 6
+	TWIN_TURRET    BuildingVariant = 7
 
 	// Sniper Turret
 	SEMI_AUTOMATIC_SNIPER BuildingVariant = 1

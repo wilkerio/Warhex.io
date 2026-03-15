@@ -303,11 +303,29 @@ export class BuildingManager {
                         this.core.gameManager.subtractResources(data.cost);
     
                         const neutralBaseID = isNeutralBase ? closestBase.id : null;
-    
-                        this.deselectBuildings();
-                        this.core.uiManager.hideUpgrades();
-    
+
                         this.core.networkManager.upgradeBuildings(buildingIDs, data.buildingVariant, neutralBaseID);
+
+                        // Keep selection/panel open so next evolution appears immediately.
+                        this.selectedBuildings.forEach((selectedBuilding) => {
+                            if (selectedBuilding?.setUpgrade) {
+                                selectedBuilding.setUpgrade(data.buildingVariant);
+                            } else {
+                                selectedBuilding.variant = data.buildingVariant;
+                            }
+                        });
+
+                        this.core.uiManager.showUpgrades({
+                            buildings: this.selectedBuildings,
+                            count: this.selectedBuildings.length,
+                            name: this.selectedBuildings[0].details.name,
+                            type: this.selectedBuildings[0].type,
+                            variant: this.selectedBuildings[0].variant,
+                            color: this.selectedBuildings[0].color,
+                            purchasedUpgrades: this.selectedBuildings[0].purchasedUpgrades,
+                            activated: this.selectedBuildings[0].activated
+                        },
+                        onUpgradeClicked, onDestroyClicked);
                     }else if(this.selectedBuildings.length === 1 && this.selectedBuildings[0].type === BuildingTypes.BARRACKS){
                         const neutralBaseID = isNeutralBase ? closestBase.id : null;
                         this.core.networkManager.toggleUnitSpawning(this.selectedBuildings[0].id, neutralBaseID)
