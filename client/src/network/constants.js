@@ -104,14 +104,14 @@ export const BuildingPlacementFailReasons = {
 };
 
 export const BuildingSizes = {
-    WALL: { size: 30 },
+    WALL: { size: 27 },
     SIMPLE_TURRET: { size: 29 },
     SNIPER_TURRET: { size: 32 },
     ARMORY: { size: 40 },
     BARRACKS: { size: 64 },
     PORTAL: { size: 40 },
     GENERATOR: { size: 32 },
-    HOUSE: { size: 30 }
+    HOUSE: { size: 32 }
 };
 
 export const BuildingLimits = {

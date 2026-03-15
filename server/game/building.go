@@ -317,14 +317,14 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 }
 
 var buildingSizes = map[BuildingType]int{
-	WALL:          30,
+	WALL:          27,
 	SIMPLE_TURRET: 29,
 	SNIPER_TURRET: 32,
 	ARMORY:        40,
 	BARRACKS:      64,
 	PORTAL:        40,
 	GENERATOR:     32,
-	HOUSE:         30,
+	HOUSE:         32,
 }
 
 type BuildingLimit struct {

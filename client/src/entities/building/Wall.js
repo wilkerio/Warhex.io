@@ -23,8 +23,8 @@ export default class Wall extends Building {
     }
 
     initPolygon () {
-        const offset = 2;
-        this.polygon = new Polygon(Shapes.getCirclePoints(this.size + offset, 16), this.position);
+        // Keep collision footprint aligned with configured wall size and server-side checks.
+        this.polygon = new Polygon(Shapes.getCirclePoints(this.size, 16), this.position);
         this.updatePolygonRotation();
     }
 

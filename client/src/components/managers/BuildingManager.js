@@ -52,6 +52,9 @@ export class BuildingManager {
         this.defenseRemountActive = false;
         this.defenseRemountTimer = null;
         this.defensePlacedWalls = [];
+        // Place multiple defense walls per cycle while staying within server anti-spam limits.
+        this.defensePlacementBurstSize = 2;
+        this.defensePlacementIntervalMs = 220;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -1069,11 +1072,11 @@ export class BuildingManager {
             if (this.defensePlacementActive) return;
             this.stopDefenseRemount();
             this.defensePlacementActive = true;
-            this.placeOneDefenseWall();
+            this.placeDefenseWallBurst();
             this.defensePlacementTimer = setInterval(() => {
                 if (!this.defensePlacementActive) return;
-                this.placeOneDefenseWall();
-            }, 120);
+                this.placeDefenseWallBurst();
+            }, this.defensePlacementIntervalMs);
             return;
         }
 
@@ -1089,6 +1092,17 @@ export class BuildingManager {
         }
     }
 
+    placeDefenseWallBurst () {
+        if (!this.defensePlacementActive || !this.defenseProfile) return 0;
+        const burst = Math.max(1, Number(this.defensePlacementBurstSize) || 1);
+        let placed = 0;
+        for (let i = 0; i < burst; i++) {
+            if (!this.placeOneDefenseWall()) break;
+            placed++;
+        }
+        return placed;
+    }
+
     handleDefenseHotkeyUp (key) {
         if (!key) return;
         if (key === this.defensePlacementKey) {
@@ -1101,15 +1115,15 @@ export class BuildingManager {
     }
 
     placeOneDefenseWall () {
-        if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return;
+        if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return false;
 
         const player = this.core.gameManager.player;
-        if (!player) return;
+        if (!player) return false;
 
         const wallType = BuildingTypes.WALL;
         const wallSize = getBuildingDetails(wallType)?.size || 30;
         const cost = this.getPlacementCost(wallType);
-        if (this.core.gameManager.resources.power.current < cost) return;
+        if (this.core.gameManager.resources.power.current < cost) return false;
 
         const positionToleranceSq = 14 * 14;
         const currentBuildings = (player.buildings || []).filter(b => b && !b.removeFlag);
@@ -1140,10 +1154,10 @@ export class BuildingManager {
             break;
         }
 
-        if (!selectedPosition) return;
+        if (!selectedPosition) return false;
 
         const ok = this.core.gameManager.increaseBuildingLimit(wallType);
-        if (!ok) return;
+        if (!ok) return false;
 
         this.core.networkManager.placeBuilding(wallType, selectedPosition);
         const predicted = this.prepareAutoPlacementBuilding(
@@ -1157,6 +1171,7 @@ export class BuildingManager {
         if (this.defensePlacedWalls.length > 240) {
             this.defensePlacedWalls.splice(0, this.defensePlacedWalls.length - 240);
         }
+        return true;
     }
 
     remountOneDefenseSlot () {
