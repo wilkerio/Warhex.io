@@ -6325,6 +6325,8 @@ export default class UIManager {
         card.style.width = "min(760px, 96vw)";
         card.style.maxHeight = "86vh";
         card.style.overflow = "hidden";
+        card.style.display = "flex";
+        card.style.flexDirection = "column";
         card.style.background = "linear-gradient(145deg, rgba(9,17,34,0.97), rgba(16,30,58,0.97))";
         card.style.border = "2px solid rgba(102, 225, 255, 0.65)";
         card.style.borderRadius = "14px";
@@ -6397,7 +6399,10 @@ export default class UIManager {
 
         const list = document.createElement("div");
         list.style.marginTop = "12px";
-        list.style.maxHeight = "62vh";
+        list.style.maxHeight = "none";
+        list.style.minHeight = "140px";
+        list.style.flex = "1 1 auto";
+        list.style.minWidth = "0";
         list.style.overflowY = "auto";
         list.style.display = "grid";
         list.style.gap = "10px";
@@ -6820,7 +6825,8 @@ export default class UIManager {
         renderLayouts();
 
         const closeRow = document.createElement("div");
-        closeRow.style.marginTop = "12px";
+        closeRow.style.marginTop = "10px";
+        closeRow.style.flex = "0 0 auto";
         closeRow.style.display = "flex";
         closeRow.style.justifyContent = "flex-end";
 
