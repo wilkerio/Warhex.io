@@ -5126,7 +5126,9 @@ export default class UIManager {
             this.ensureHudCollapseControls();
             this.applyHudCollapsedStates();
         }
-        this.core.setGameplayActive(show);
+        if (typeof this.core?.setGameplayActive === "function") {
+            this.core.setGameplayActive(show);
+        }
     }
 
     maybeShowOAuthError () {

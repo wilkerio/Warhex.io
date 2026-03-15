@@ -42,7 +42,9 @@ export default class EventManager {
         document.addEventListener("visibilitychange", () => {
             if (document.hidden) {
                 this.core.inputManager.clearActiveKeys();
-                this.core.setGameplayActive(false);
+                if (typeof this.core?.setGameplayActive === "function") {
+                    this.core.setGameplayActive(false);
+                }
             } else {
                 this.core.networkManager.sendResyncRequest();
                 
@@ -54,7 +56,7 @@ export default class EventManager {
                     player._loadSkin(player.skinID);
                 }
 
-                if (!this.core.uiManager?.menuOpen) {
+                if (!this.core.uiManager?.menuOpen && typeof this.core?.setGameplayActive === "function") {
                     this.core.setGameplayActive(true);
                 }
             }
