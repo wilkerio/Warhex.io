@@ -692,7 +692,7 @@ export const UnitDetails = {
         BASIC: {
             variant: UnitVariantTypes.TRI_COMMANDER.BASIC,
             name: "Anti-Tank Commander",
-            description: "",
+            description: "Heavy anti-armor commander with focused cannon fire.",
             cost: 5000,
             size: 40,
             speed: 160,
@@ -707,13 +707,15 @@ export const UnitBulletDetails = {
             variant: UnitVariantTypes.TANK.CANNON,
             type: BulletTypes.BASIC,
             speed: 500,
-            size: 6
+            size: 6,
+            range: 200
         },
         BOOSTER_ENGINE_CANNON: {
             variant: UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON,
             type: BulletTypes.BASIC,
             speed: 500,
-            size: 6
+            size: 6,
+            range: 200
         }
     },
     SIEGE_TANK: {
@@ -722,13 +724,15 @@ export const UnitBulletDetails = {
             variant: UnitVariantTypes.SIEGE_TANK.CANNON,
             type: BulletTypes.BASIC,
             speed: 500,
-            size: 8
+            size: 8,
+            range: 400
         },
         BOOSTER_ENGINE_CANNON: {
             variant: UnitVariantTypes.SIEGE_TANK.BOOSTER_ENGINE_CANNON,
             type: BulletTypes.BASIC,
             speed: 500,
-            size: 8
+            size: 8,
+            range: 400
         }
     },
     COMMANDER: {
@@ -737,7 +741,8 @@ export const UnitBulletDetails = {
             variant: UnitVariantTypes.COMMANDER.BASIC,
             type: BulletTypes.BASIC,
             speed: 700,
-            size: 12
+            size: 12,
+            range: 160
         },
     },
     TRI_COMMANDER: {
@@ -746,7 +751,8 @@ export const UnitBulletDetails = {
             variant: UnitVariantTypes.TRI_COMMANDER.BASIC,
             type: BulletTypes.BASIC,
             speed: 700,
-            size: 12
+            size: 12,
+            range: 160
         },
     }
 }

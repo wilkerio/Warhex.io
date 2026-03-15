@@ -115,6 +115,7 @@ export default class Unit extends Renderable {
     // Rendering
     render (context, camera, worldPosition) {
         if (this.isSelected) {
+            this.renderRangeIndicator(context, worldPosition);
             this.renderShadow(context, worldPosition);
         }
         context.globalAlpha = this.alpha;
@@ -161,6 +162,22 @@ export default class Unit extends Renderable {
         context.fill();
 
         // Restore the previous drawing state
+        context.restore();
+    }
+
+    renderRangeIndicator (context, worldPosition) {
+        const range = Number(this?.bulletDetails?.range || 0);
+        if (!Number.isFinite(range) || range <= 0) return;
+
+        const lineWidth = 5;
+
+        context.save();
+        context.beginPath();
+        context.arc(worldPosition.x, worldPosition.y, Math.max(0, range - lineWidth / 2), 0, Math.PI * 2);
+        context.strokeStyle = ThemeManager.currentThemeProperties.selectionColor;
+        context.globalAlpha = 0.45;
+        context.lineWidth = lineWidth;
+        context.stroke();
         context.restore();
     }
 

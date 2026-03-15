@@ -125,30 +125,48 @@ export default class UIManager {
             const value = document.createElement("span");
             value.className = "soldier-counter-value";
 
+            const description = document.createElement("div");
+            description.className = "soldier-counter-description";
+            description.style.display = "none";
+
             counter.appendChild(label);
             counter.appendChild(value);
+            counter.appendChild(description);
             gameContainer.appendChild(counter);
         }
 
         this.soldierSelectionCounterElement = counter;
     }
 
-    updateSoldierSelectionCounter (selectedCount = 0, totalCount = 0) {
+    updateSoldierSelectionCounter (selectedCount = 0, totalCount = 0, options = {}) {
         this.ensureSoldierSelectionCounter();
         const counter = this.soldierSelectionCounterElement;
         if (!counter) return;
 
-        if (totalCount <= 0) {
+        const hasCustomValue = typeof options?.valueText === "string" && options.valueText.length > 0;
+        if (!hasCustomValue && totalCount <= 0) {
             counter.style.display = "none";
             return;
         }
 
-        const labelText = "Soldiers";
+        const labelText = options?.labelText || "Soldiers";
+        const valueText = hasCustomValue ? options.valueText : `${selectedCount}/${totalCount}`;
+        const descriptionText = options?.descriptionText || "";
         const label = counter.querySelector(".soldier-counter-label");
         const value = counter.querySelector(".soldier-counter-value");
+        const description = counter.querySelector(".soldier-counter-description");
 
         if (label) label.textContent = labelText;
-        if (value) value.textContent = `${selectedCount}/${totalCount}`;
+        if (value) value.textContent = valueText;
+        if (description) {
+            if (descriptionText) {
+                description.textContent = descriptionText;
+                description.style.display = "block";
+            } else {
+                description.textContent = "";
+                description.style.display = "none";
+            }
+        }
 
         counter.style.display = "flex";
     }

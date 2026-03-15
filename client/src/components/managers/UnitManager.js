@@ -3,7 +3,7 @@ import Tank from "../../entities/units/Tank.js";
 import SiegeTank from "../../entities/units/SiegeTank.js";
 import Commander from "../../entities/units/Commander.js";
 import TriCommander from "../../entities/units/TriCommander.js";
-import { BuildingTypes, BuildingVariantTypes, UnitTypes } from "../../network/constants.js";
+import { BuildingTypes, BuildingVariantTypes, UnitTypes, UnitVariantTypes } from "../../network/constants.js";
 
 // Define a namespace/module for buildings
 export const Units = {
@@ -52,6 +52,55 @@ export default class UnitManager {
         return this.selectedUnits.length > 0;
     }
 
+    getSingleSelectedUnitHudInfo (unit) {
+        if (!unit) return null;
+
+        switch (unit.type) {
+            case UnitTypes.COMMANDER:
+            case UnitTypes.TRI_COMMANDER: {
+                const isTriCommander = unit.type === UnitTypes.TRI_COMMANDER;
+                return {
+                    name: unit?.details?.name || (isTriCommander ? "Anti-Tank Commander" : "Commander"),
+                    description: unit?.details?.description || "Powerful unit, you can only have 1"
+                };
+            }
+            case UnitTypes.TANK: {
+                const variant = unit.variant;
+                if (
+                    variant === UnitVariantTypes.TANK.CANNON ||
+                    variant === UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON
+                ) {
+                    return {
+                        name: "Cannon Tank",
+                        description: "Ranged tank variant with cannon fire."
+                    };
+                }
+                return {
+                    name: "Tank",
+                    description: "Armored frontline unit."
+                };
+            }
+            case UnitTypes.SIEGE_TANK: {
+                const variant = unit.variant;
+                if (
+                    variant === UnitVariantTypes.SIEGE_TANK.CANNON ||
+                    variant === UnitVariantTypes.SIEGE_TANK.BOOSTER_ENGINE_CANNON
+                ) {
+                    return {
+                        name: "Cannon Siege Tank",
+                        description: "Long-range siege unit with heavy cannon shots."
+                    };
+                }
+                return {
+                    name: "Siege Tank",
+                    description: "Heavy siege unit with high durability."
+                };
+            }
+            default:
+                return null;
+        }
+    }
+
     refreshSelectionHud () {
         const player = this.core?.gameManager?.player;
         const activeUnits = Array.isArray(player?.units) ? player.units : [];
@@ -66,6 +115,21 @@ export default class UnitManager {
         // Keep selection list synced with currently active player units.
         const activeSet = new Set(activeUnits);
         this.selectedUnits = this.selectedUnits.filter(unit => activeSet.has(unit));
+
+        const singleSelectedUnit = this.selectedUnits.length === 1 ? this.selectedUnits[0] : null;
+        const singleSelectedUnitHudInfo = this.getSingleSelectedUnitHudInfo(singleSelectedUnit);
+        if (singleSelectedUnitHudInfo) {
+            const bulletRange = Number(singleSelectedUnit?.bulletDetails?.range || 0);
+            const rangeLabel = bulletRange > 0 ? `Range ${Math.round(bulletRange)}` : "Selected";
+
+            this.core?.uiManager?.updateSoldierSelectionCounter?.(0, 1, {
+                labelText: singleSelectedUnitHudInfo.name,
+                valueText: rangeLabel,
+                descriptionText: singleSelectedUnitHudInfo.description
+            });
+            return;
+        }
+
         const selectedSoldiers = this.selectedUnits.reduce((count, unit) =>
             count + (unit?.type === UnitTypes.SOLDIER ? 1 : 0), 0);
         if (selectedSoldiers <= 0) {
