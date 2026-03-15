@@ -1,11 +1,19 @@
 import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
-import { signUp, signIn, signInWithDiscord, signInWithGoogle, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchPublicBaseLayoutById, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings } from "../../network/supabaseClient.js";
+import * as supabaseClientApi from "../../network/supabaseClient.js";
+import { signUp, signIn, signInWithDiscord, signInWithGoogle, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
 import LanguageManager from "./LanguageManager.js";
+
+const fetchPublicBaseLayoutByIdSafe = async (layoutId) => {
+    if (typeof supabaseClientApi?.fetchPublicBaseLayoutById === "function") {
+        return supabaseClientApi.fetchPublicBaseLayoutById(layoutId);
+    }
+    return { success: false, data: null, error: "detail_fetch_unavailable" };
+};
 
 /*
     TODO:
@@ -6540,7 +6548,7 @@ export default class UIManager {
                         const hasBuildings = Array.isArray(layout?.buildings) && layout.buildings.length > 0;
                         if (activeSource === "public" && !hasBuildings) {
                             loadBtn.textContent = "Loading...";
-                            const detailResult = await fetchPublicBaseLayoutById(layout.id);
+                            const detailResult = await fetchPublicBaseLayoutByIdSafe(layout.id);
                             if (!detailResult?.success || !detailResult?.data) {
                                 this.addChatMessage("System", "Could not load this public base.", "#ffcc66");
                                 return;
@@ -6565,7 +6573,7 @@ export default class UIManager {
                 actions.appendChild(loadBtn);
 
                 if (activeSource === "public" && !layout.snapshot && layout.id) {
-                    fetchPublicBaseLayoutById(layout.id).then((detailResult) => {
+                    fetchPublicBaseLayoutByIdSafe(layout.id).then((detailResult) => {
                         if (!detailResult?.success || !detailResult?.data) return;
                         applySnapshotToPreview(detailResult.data.snapshot);
                     }).catch(() => {});
