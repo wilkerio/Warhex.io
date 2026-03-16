@@ -1217,11 +1217,11 @@ async function insertBaseLayout(payload, visibilityColumn, isPublic = true) {
         {
             method: "POST",
             body: insertPayload,
-            timeoutMs: 10000,
+            timeoutMs: 18000,
             prefer: "return=representation",
             authToken
         },
-        1
+        2
     );
     if (restResult.ok) {
         const row = Array.isArray(restResult.data) ? restResult.data[0] : restResult.data;
@@ -1321,20 +1321,9 @@ export async function publishBaseLayout({ userId, authorName, name, snapshot, bu
     };
 
     try {
-        return await withTimeoutPromise(runPublish(), 14000, "publish_timeout");
+        // Avoid double-timeout races: publish already uses timed REST requests with retries.
+        return await runPublish();
     } catch (error) {
-        const timedOut = String(error?.message || "").toLowerCase().includes("publish_timeout");
-        if (timedOut) {
-            return {
-                success: false,
-                error: {
-                    code: "publish_timeout",
-                    message: "Publish timed out. Try again.",
-                    details: "",
-                    hint: ""
-                }
-            };
-        }
         console.error("Error in publishBaseLayout:", error);
         return { success: false, error };
     }

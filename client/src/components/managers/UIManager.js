@@ -6648,17 +6648,6 @@ export default class UIManager {
         save.style.borderRadius = "10px";
         save.style.cursor = "pointer";
         save.style.fontWeight = "800";
-        const withTimeout = (promise, ms = 12000) => {
-            let timeoutId = null;
-            return Promise.race([
-                promise,
-                new Promise((_, reject) => {
-                    timeoutId = setTimeout(() => reject(new Error("publish_timeout")), ms);
-                })
-            ]).finally(() => {
-                if (timeoutId) clearTimeout(timeoutId);
-            });
-        };
         save.addEventListener("click", async () => {
             if (save.disabled) return;
             const wasPublishing = publishCheckbox.checked;
@@ -6668,7 +6657,7 @@ export default class UIManager {
             const watchdogId = setTimeout(() => {
                 save.disabled = false;
                 save.textContent = originalButtonText;
-            }, 16000);
+            }, 35000);
             try {
                 // Always center + capture on Save, as requested.
                 const snapshot = this.captureCurrentBaseSnapshot({ forceCenter: true })
@@ -6690,19 +6679,18 @@ export default class UIManager {
                     const authorName = this.core.networkManager?.userData?.nickname || this.core.gameManager?.player?.name || "Guest";
                     let result = null;
                     try {
-                        result = await withTimeout(publishBaseLayout({
+                        result = await publishBaseLayout({
                             userId,
                             authorName,
                             name: layout.name,
                             snapshot: layout.snapshot,
                             buildings: layout.buildings,
                             isPublic: true
-                        }), 12000);
+                        });
                     } catch (error) {
-                        const timeout = String(error?.message || "").toLowerCase().includes("publish_timeout");
                         this.addChatMessage(
                             "System",
-                            timeout ? "Publish timed out. Try again." : "Could not publish base (network error).",
+                            "Could not publish base (network error).",
                             "#ffcc66"
                         );
                         save.disabled = false;
@@ -7176,17 +7164,6 @@ export default class UIManager {
                     publishBtn.style.fontWeight = "700";
                     publishBtn.addEventListener("click", async () => {
                         if (publishBtn.dataset.publishBusy === "1") return;
-                        const withTimeout = (promise, ms = 12000) => {
-                            let timeoutId = null;
-                            return Promise.race([
-                                promise,
-                                new Promise((_, reject) => {
-                                    timeoutId = setTimeout(() => reject(new Error("publish_timeout")), ms);
-                                })
-                            ]).finally(() => {
-                                if (timeoutId) clearTimeout(timeoutId);
-                            });
-                        };
                         publishBtn.dataset.publishBusy = "1";
                         publishBtn.disabled = true;
                         const oldText = publishBtn.textContent;
@@ -7195,7 +7172,7 @@ export default class UIManager {
                             publishBtn.disabled = false;
                             publishBtn.textContent = oldText;
                             publishBtn.dataset.publishBusy = "0";
-                        }, 16000);
+                        }, 35000);
                         try {
                             const userId = this.core.networkManager?.userId || this.core.networkManager?.userData?.id || null;
                             const authorName = this.core.networkManager?.userData?.nickname || this.core.gameManager?.player?.name || "Guest";
@@ -7206,14 +7183,14 @@ export default class UIManager {
                             if (snapshotForPublish && !layout.snapshot) {
                                 layout.snapshot = snapshotForPublish;
                             }
-                            const result = await withTimeout(publishBaseLayout({
+                            const result = await publishBaseLayout({
                                 userId,
                                 authorName,
                                 name: layout.name,
                                 snapshot: snapshotForPublish,
                                 buildings: layout.buildings,
                                 isPublic: true
-                            }), 12000);
+                            });
                             if (result?.success) {
                                 this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
                                 await renderLayouts(searchInput.value);
@@ -7226,10 +7203,9 @@ export default class UIManager {
                                 );
                             }
                         } catch (error) {
-                            const timeout = String(error?.message || "").toLowerCase().includes("publish_timeout");
                             this.addChatMessage(
                                 "System",
-                                timeout ? "Publish timed out. Try again." : "Could not publish base (network error).",
+                                "Could not publish base (network error).",
                                 "#ffcc66"
                             );
                         } finally {
