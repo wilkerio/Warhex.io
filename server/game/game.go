@@ -458,8 +458,8 @@ func startResourceUpdateLoop() {
 					scoreIncrement = 0 // Prevent negative score increments
 				}
 
-				// Do not increase passive rank score while commander is inside own base area.
-				if !isCommanderInsideOwnBaseArea(player) {
+				// Do not increase passive rank score while spawn protection is active.
+				if !player.HasProtection() {
 					player.IncrementScore(uint32(scoreIncrement)) // Cast back to uint32
 				}
 
