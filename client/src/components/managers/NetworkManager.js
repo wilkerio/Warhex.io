@@ -1628,12 +1628,18 @@ export default class NetworkManager {
         if (isClient) {
             // Attempt to retrieve a cached building
             const cachedBuilding = player.getBuildingCache();
-            if (cachedBuilding) {
+            const canUseCachedBuilding = cachedBuilding && cachedBuilding.type === buildingType;
+            if (canUseCachedBuilding) {
                 building = cachedBuilding; // Use cached building if available
                 player.clearBuildingCache(); // Clear cache after use
                 building.id = buildingID; // Set a valid building ID
                 building.setPosition(position); // Correct position based on client prediction
             } else {
+                if (cachedBuilding) {
+                    // Cache may arrive out-of-order during fast autobuild bursts.
+                    // Ignore mismatched cache to avoid rendering wrong building classes.
+                    player.clearBuildingCache();
+                }
                 // Create a new building if no cached building is found
                 building = new BuildingClass(player.color, position, 0, buildingID);
             }

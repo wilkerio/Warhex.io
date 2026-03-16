@@ -107,7 +107,7 @@ export const BuildingSizes = {
     WALL: { size: 27 },
     SIMPLE_TURRET: { size: 29 },
     SNIPER_TURRET: { size: 32 },
-    ARMORY: { size: 40 },
+    ARMORY: { size: 36 },
     BARRACKS: { size: 64 },
     PORTAL: { size: 40 },
     GENERATOR: { size: 32 },

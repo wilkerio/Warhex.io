@@ -321,7 +321,7 @@ var buildingSizes = map[BuildingType]int{
 	WALL:          27,
 	SIMPLE_TURRET: 29,
 	SNIPER_TURRET: 32,
-	ARMORY:        40,
+	ARMORY:        36,
 	BARRACKS:      64,
 	PORTAL:        40,
 	GENERATOR:     32,

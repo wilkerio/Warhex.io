@@ -378,16 +378,16 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	case game.BARRACKS:
 		minRadius = game.PLAYER_MAX_BUILDING_RADIUS
 		minRadiusNeutralBase = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS
-		// Barracks sit on a fixed outer ring.
-		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
-		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
+		// Barracks sit on the fixed legacy outer ring standard.
+		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + game.BARRACKS_OUTER_RING_OFFSET
+		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + game.BARRACKS_OUTER_RING_OFFSET
 	case game.WALL:
-		// Walls can be placed from inner ring up to barracks outer ring.
+		// Walls follow the legacy outer ring offset standard.
 		size := game.GetBuildingSize(buildingType)
 		minRadius += size
 		minRadiusNeutralBase += size
-		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + 34
-		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + 34
+		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + game.WALL_OUTER_RING_OFFSET
+		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + game.WALL_OUTER_RING_OFFSET
 	case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.GENERATOR, game.HOUSE:
 		// These must remain inside ring: building edge cannot cross max radius.
 		size := game.GetBuildingSize(buildingType)

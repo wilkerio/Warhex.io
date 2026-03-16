@@ -108,22 +108,26 @@ const (
 	PLAYER_CORE_ELIMINATION_PERCENT = 35
 
 	// Player timeout and protection settings
-	PLAYER_TIMEOUT                        = 10 // Minutes
-	PLAYER_INACTIVITY_WARNING_DELAY       = 1  // Minutes before showing AFK warning
-	PLAYER_SPAWN_PROTECTION_TIME          = 2  // Minutes
-	PLAYER_SPAWN_PROTECTION_RADIUS        = 306 + 145
-	PORTAL_LIFETIME_SECONDS               = 30
-	PORTAL_COOLDOWN_SECONDS               = 300
+	PLAYER_TIMEOUT                  = 10 // Minutes
+	PLAYER_INACTIVITY_WARNING_DELAY = 1  // Minutes before showing AFK warning
+	PLAYER_SPAWN_PROTECTION_TIME    = 2  // Minutes
+	PLAYER_SPAWN_PROTECTION_RADIUS  = 306 + 145
+	PORTAL_LIFETIME_SECONDS         = 30
+	PORTAL_COOLDOWN_SECONDS         = 300
 
 	// Player health regeneration settings
 	PLAYER_HEALTH_REGENERATION           = 30
 	PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
 
-	// Player building settings
-	PLAYER_MAX_BUILDING_RADIUS = 306
-	PLAYER_MIN_BUILDING_RADIUS = 110
-	// Core stays slightly inside the inner ring.
-	PLAYER_MAX_CORE_RADIUS = PLAYER_MIN_BUILDING_RADIUS
+		// Player building settings
+		PLAYER_MAX_BUILDING_RADIUS = 306
+		PLAYER_MIN_BUILDING_RADIUS = 99
+		// Outer wall ring offset (tightened by 1px from previous setting).
+		WALL_OUTER_RING_OFFSET = 3
+		// Barracks stay on legacy ExternaTK outer ring.
+		BARRACKS_OUTER_RING_OFFSET = 5
+		// Core matches inner ring baseline to keep first-row buildings visually tight.
+		PLAYER_MAX_CORE_RADIUS = PLAYER_MIN_BUILDING_RADIUS
 
 	// Neutral base configuration
 	NEUTRAL_BASE_POPULATION                    = 32

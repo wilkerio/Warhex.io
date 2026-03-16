@@ -3,6 +3,7 @@ import Building from "./Building.js";
 import Unit from "./Unit.js";
 import ThemeManager from "../components/managers/ThemeManager.js";
 import SkinCache from "../components/SkinCache.js";
+import { BuildingSizes } from "../network/constants.js";
 
 export default class Player extends Renderable {
     constructor (id, name = "Warhex.io", color, skinID = null, position = { x: 0, y: 0 }, health = 2000, hasSpawnProtection = true) {
@@ -26,7 +27,7 @@ export default class Player extends Renderable {
         this.springStiffness = 0.005;
         this.buildingRadius = {
             max: 306,
-            min: 110
+            min: 99
         }
         this.coreRadius = { max: this.buildingRadius.min };
         this.buildingCache = null;
@@ -459,10 +460,12 @@ export default class Player extends Renderable {
             circleBorder(this.spawnProtectionRadius, protectionColor, this.borderRotation);
         }
 
-        const innerIndicatorColor = ThemeManager.currentThemeProperties.darkColor || "#666666";
         const outerLimitColor = ThemeManager.currentThemeProperties.indicatorColor || "#d6d6d6";
-        // Inner dashed indicator removed (keep only the outer build radius ring).
-        circleBorder(this.buildingRadius.max, outerLimitColor, this.borderRotation); // Limite (cinza)
+        // Fixed helper ring: keep it static and aligned with the inner edge of the ExternaTK wall ring.
+        const wallOuterRingOffset = 3;
+        const wallSize = Number(BuildingSizes?.WALL?.size) || 27;
+        const helperRadius = Math.max(this.coreRadius.max + 16, this.buildingRadius.max + wallOuterRingOffset - wallSize);
+        circleBorder(helperRadius, outerLimitColor, 0); // Limite (cinza) - fixed
         baseCore();
 
 
