@@ -53,6 +53,36 @@ const LEGACY_EXTERNA_RADIUS_SCALE = 1.0; // Keep original socket radius fidelity
 const WALL_OUTER_RING_OFFSET = 3; // Wall outer ring tightened by another 1px.
 const BARRACKS_OUTER_RING_OFFSET = 5; // Keep barracks aligned with legacy ExternaTK socket radius.
 
+// Legacy socket layout for Autogens (angle, radius, legacyType=3 => Generator).
+const LEGACY_AUTOGENS_SOCKET_LAYOUT = [
+    [1.5700171594315573, 243.85007402090326, 3], [2.4400100710526793, 196.79985467474305, 3],
+    [2.2400039007898447, 243.85656849877958, 3], [-2.7800023458624703, 194.6788252481507, 3],
+    [1.9699911201667188, 243.85313366860794, 3], [2.0999878201715214, 185.58517209087591, 3],
+    [1.8700025978863808, 132.00487756139935, 3], [1.2599938029024704, 132.00454272486235, 3],
+    [1.3800278697318928, 194.13178049974198, 3], [1.7600061169825598, 194.06341746965091, 3],
+    [-2.4400027616849433, 185.75130282181078, 3], [-2.1999936469647867, 131.99750300668575, 3],
+    [-2.5899833434664847, 243.84680949317334, 3], [3.0599865137335724, 131.9992848465475, 3],
+    [2.3700155322992322, 132.00115908582003, 3], [2.7699990995853443, 180.63860107961412, 3],
+    [2.910001829109119, 243.8501927413633, 3], [2.6399909192202835, 243.84888476267423, 3],
+    [3.1100150743706907, 196.05774072961268, 3], [-2.9699920613329622, 243.85151732150447, 3],
+    [-2.690040409174835, 132.00027613607475, 3], [-2.3099851374683826, 243.85151732150447, 3],
+    [-2.0399825212769436, 243.85142525726602, 3], [-1.7700175093099535, 243.85316996094184, 3],
+    [0.7600044161827382, 132.00282572733062, 3], [0.35996640663856383, 180.10304605974878, 3],
+    [0.029980358323314006, 197.1585985951411, 3], [-0.439963547142766, 132.00080795207285, 3],
+    [0.0800082011395776, 132.0022685411125, 3], [0.22998938484625386, 243.85088271318605, 3],
+    [0.5000045603394669, 243.85230796529285, 3], [0.7000201471114224, 196.1091423162112, 3],
+    [0.8999878082444033, 243.84691201653544, 3], [1.0399986494012126, 186.08457861950842, 3],
+    [1.170002238251199, 243.8551629553904, 3], [-0.170023102819992, 243.84605081895415, 3],
+    [-0.36001357695289626, 194.92632916053194, 3], [-0.7000068138510656, 183.7252296229344, 3],
+    [-1.3600094643934062, 243.84717119540267, 3], [-1.0899817628353876, 243.84783862072678, 3],
+    [-0.5500054440958607, 243.85303709406625, 3], [-0.8199991749608286, 243.85031002645857, 3],
+    [-1.9300228177358634, 182.30682104627905, 3], [-1.199997990229862, 183.82290662482725, 3],
+    [-0.9500096278543927, 131.99805036438974, 3], [-1.5699815385655684, 196.37006518306183, 3],
+    [-1.5699629936544652, 132.00004583332537, 3]
+];
+const LEGACY_AUTOGENS_ANGLE_OFFSET = 0;
+const LEGACY_AUTOGENS_RADIUS_SCALE = 1.0;
+
 export class BuildingManager {
     constructor (core) {
         this.core = core;
@@ -1507,24 +1537,9 @@ export class BuildingManager {
         this.baseLoadRunning = true;
         this.core.uiManager.addChatMessage("System", `Loading base layout "${layout.name || "Base"}"...`, "#60c1ff");
 
-        this.baseLoadTimer = setInterval(() => {
-            if (!this.baseLoadRunning) return;
-
+        while (index < queue.length && this.baseLoadRunning) {
             const livePlayer = this.core.gameManager.player;
-            if (!livePlayer) {
-                this.stopBaseLayoutLoad();
-                return;
-            }
-
-            if (index >= queue.length) {
-                this.stopBaseLayoutLoad();
-                this.core.uiManager.addChatMessage(
-                    "System",
-                    `Base loaded: ${placed} placed, ${skipped} skipped.`,
-                    placed > 0 ? "#60c1ff" : "#ffcc66"
-                );
-                return;
-            }
+            if (!livePlayer) break;
 
             const item = queue[index++];
             const type = item.type;
@@ -1539,25 +1554,25 @@ export class BuildingManager {
 
             if (this.core.gameManager.resources.power.current < cost) {
                 skipped++;
-                return;
+                continue;
             }
 
             const allUnits = collectAllUnits();
             if (!this.canAutoPlaceBuilding(livePlayer, position, allUnits, pendingBuildings, type, size, { rotationStep })) {
                 skipped++;
-                return;
+                continue;
             }
 
             const ok = this.core.gameManager.increaseBuildingLimit(type);
             if (!ok) {
                 skipped++;
-                return;
+                continue;
             }
 
             const BuildingClass = BuildingManager.getBuildingClassByType(type);
             if (!BuildingClass) {
                 skipped++;
-                return;
+                continue;
             }
 
             this.core.networkManager.placeBuilding(type, position, true, rotationStep);
@@ -1570,7 +1585,14 @@ export class BuildingManager {
             this.core.gameManager.subtractResources(cost);
             pendingBuildings.push(predicted);
             placed++;
-        }, 150);
+        }
+
+        this.stopBaseLayoutLoad();
+        this.core.uiManager.addChatMessage(
+            "System",
+            `Base loaded: ${placed} placed, ${skipped} skipped.`,
+            placed > 0 ? "#60c1ff" : "#ffcc66"
+        );
     }
 
     mapLegacySocketBuildingType (legacyType) {
@@ -1634,6 +1656,32 @@ export class BuildingManager {
         }
 
         return [...highPriority, ...normal];
+    }
+
+    buildAutogensPresetCandidates (base) {
+        if (!base) return [];
+        const candidates = [];
+        const seen = new Set();
+
+        for (const entry of LEGACY_AUTOGENS_SOCKET_LAYOUT) {
+            if (!Array.isArray(entry) || entry.length < 3) continue;
+            const angle = Number(entry[0]);
+            const radius = Number(entry[1]);
+            const legacyType = Number(entry[2]);
+            if (!Number.isFinite(angle) || !Number.isFinite(radius) || !Number.isFinite(legacyType)) continue;
+            if (legacyType !== 3) continue; // 3 => Generator in legacy socket format.
+
+            const adjustedAngle = angle + LEGACY_AUTOGENS_ANGLE_OFFSET;
+            const adjustedRadius = Math.max(0, radius * LEGACY_AUTOGENS_RADIUS_SCALE);
+            const x = base.position.x + Math.cos(adjustedAngle) * adjustedRadius;
+            const y = base.position.y + Math.sin(adjustedAngle) * adjustedRadius;
+            const key = `${Math.round(x * 10)}:${Math.round(y * 10)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            candidates.push({ x, y });
+        }
+
+        return candidates;
     }
 
     getExternalAtkFallbackPositions (basePosition, originalPosition) {
@@ -1701,9 +1749,6 @@ export class BuildingManager {
 
         let queueIndex = 0;
         let skippedSlots = 0;
-        const slotRetryCount = new Map();
-        const maxRetriesPerSlot = 12;
-        const placementsPerTick = 3;
 
         const finish = (message, color = "#60c1ff") => {
             this.stopAutoPlaceGenerators();
@@ -1714,109 +1759,88 @@ export class BuildingManager {
         this.autoBuildMode = "externatk";
         this.core.uiManager.addChatMessage("System", "ExternaTK started...", "#60c1ff");
 
-        this.autogensTimer = setInterval(() => {
-            if (!this.autogensRunning) return;
-
+        while (queueIndex < queue.length && this.autogensRunning) {
             const livePlayer = this.core.gameManager.player;
             if (!livePlayer) {
                 finish("ExternaTK stopped.", "#ffcc66");
-                return;
+                return 0;
             }
 
-            if (queueIndex >= queue.length) {
-                if (placedByType.size === 0) {
-                    finish("ExternaTK: no space, limit or power to place buildings.", "#ffcc66");
-                    return;
-                }
-                const skippedSuffix = skippedSlots > 0
-                    ? ` (${skippedSlots} skipped)`
-                    : "";
-                finish(`ExternaTK: ${this.getExternalAtkSummaryText(placedByType)}${skippedSuffix}.`);
-                return;
+            const item = queue[queueIndex++];
+
+            if (this.core.gameManager.resources.power.current < item.cost) {
+                skippedSlots++;
+                continue;
             }
 
-            let placedThisTick = 0;
-
-            while (queueIndex < queue.length && placedThisTick < placementsPerTick) {
-                const currentIndex = queueIndex;
-                const item = queue[currentIndex];
-
-                // Strict sequential order: do not skip this slot if power is not enough yet.
-                if (this.core.gameManager.resources.power.current < item.cost) break;
-
-                const liveUnits = collectAllUnits();
-                let rotationStep = Number.isFinite(Number(item.rotationStep)) ? Number(item.rotationStep) : 0;
-                const candidatePositions = this.getExternalAtkFallbackPositions(livePlayer.position, item.position);
-                let selectedPosition = null;
-                let selectedRotationStep = rotationStep;
-                for (const candidatePosition of candidatePositions) {
-                    let candidateStep = rotationStep;
-                    if (this.canRotatePlacementType(item.type)) {
-                        const bestStep = this.findBestAutoPlacementRotationStep(
-                            livePlayer,
-                            candidatePosition,
-                            liveUnits,
-                            pendingBuildings,
-                            item.type,
-                            item.checkSize || item.size,
-                            { preferredRotationStep: rotationStep, ignoreUnits: true }
-                        );
-                        if (bestStep === null) continue;
-                        candidateStep = bestStep;
-                    } else if (!this.canAutoPlaceBuilding(
+            const liveUnits = collectAllUnits();
+            let rotationStep = Number.isFinite(Number(item.rotationStep)) ? Number(item.rotationStep) : 0;
+            const candidatePositions = this.getExternalAtkFallbackPositions(livePlayer.position, item.position);
+            let selectedPosition = null;
+            let selectedRotationStep = rotationStep;
+            for (const candidatePosition of candidatePositions) {
+                let candidateStep = rotationStep;
+                if (this.canRotatePlacementType(item.type)) {
+                    const bestStep = this.findBestAutoPlacementRotationStep(
                         livePlayer,
                         candidatePosition,
                         liveUnits,
                         pendingBuildings,
                         item.type,
                         item.checkSize || item.size,
-                        { rotationStep: candidateStep, ignoreUnits: true }
-                    )) {
-                        continue;
-                    }
-                    selectedPosition = candidatePosition;
-                    selectedRotationStep = candidateStep;
-                    break;
-                }
-                if (!selectedPosition) {
-                    const retries = (slotRetryCount.get(currentIndex) || 0) + 1;
-                    slotRetryCount.set(currentIndex, retries);
-                    const isCriticalSlot = item.type === BuildingTypes.BARRACKS || item.type === BuildingTypes.ARMORY;
-                    if (!isCriticalSlot && retries >= maxRetriesPerSlot) {
-                        skippedSlots++;
-                        queueIndex++;
-                    }
-                    break;
-                }
-
-                const ok = this.core.gameManager.increaseBuildingLimit(item.type);
-                if (!ok) {
-                    const retries = (slotRetryCount.get(currentIndex) || 0) + 1;
-                    slotRetryCount.set(currentIndex, retries);
-                    const isCriticalSlot = item.type === BuildingTypes.BARRACKS || item.type === BuildingTypes.ARMORY;
-                    if (!isCriticalSlot && retries >= maxRetriesPerSlot) {
-                        skippedSlots++;
-                        queueIndex++;
-                    }
-                    break;
-                }
-
-                this.core.networkManager.placeBuilding(item.type, selectedPosition, true, selectedRotationStep);
-                const predicted = this.prepareAutoPlacementBuilding(
-                    new item.ctor(livePlayer.color, selectedPosition),
+                        { preferredRotationStep: rotationStep, ignoreUnits: true }
+                    );
+                    if (bestStep === null) continue;
+                    candidateStep = bestStep;
+                } else if (!this.canAutoPlaceBuilding(
                     livePlayer,
-                    selectedPosition,
-                    selectedRotationStep
-                );
-                livePlayer.setBuildingCache(predicted);
-                this.core.gameManager.subtractResources(item.cost);
-                pendingBuildings.push(predicted);
-                placedByType.set(item.type, (placedByType.get(item.type) || 0) + 1);
-                slotRetryCount.delete(currentIndex);
-                queueIndex++;
-                placedThisTick++;
+                    candidatePosition,
+                    liveUnits,
+                    pendingBuildings,
+                    item.type,
+                    item.checkSize || item.size,
+                    { rotationStep: candidateStep, ignoreUnits: true }
+                )) {
+                    continue;
+                }
+                selectedPosition = candidatePosition;
+                selectedRotationStep = candidateStep;
+                break;
             }
-        }, 220);
+
+            if (!selectedPosition) {
+                skippedSlots++;
+                continue;
+            }
+
+            const ok = this.core.gameManager.increaseBuildingLimit(item.type);
+            if (!ok) {
+                skippedSlots++;
+                continue;
+            }
+
+            this.core.networkManager.placeBuilding(item.type, selectedPosition, true, selectedRotationStep);
+            const predicted = this.prepareAutoPlacementBuilding(
+                new item.ctor(livePlayer.color, selectedPosition),
+                livePlayer,
+                selectedPosition,
+                selectedRotationStep
+            );
+            livePlayer.setBuildingCache(predicted);
+            this.core.gameManager.subtractResources(item.cost);
+            pendingBuildings.push(predicted);
+            placedByType.set(item.type, (placedByType.get(item.type) || 0) + 1);
+        }
+
+        if (placedByType.size === 0) {
+            finish("ExternaTK: no space, limit or power to place buildings.", "#ffcc66");
+            return 0;
+        }
+
+        const skippedSuffix = skippedSlots > 0
+            ? ` (${skippedSlots} skipped)`
+            : "";
+        finish(`ExternaTK: ${this.getExternalAtkSummaryText(placedByType)}${skippedSuffix}.`);
 
         return 0;
     }
@@ -1866,7 +1890,10 @@ export class BuildingManager {
             allUnits.push(...(p.units || []));
         });
 
-        const candidates = this.getAutoGeneratorCandidates(base, generatorSize);
+        let candidates = this.buildAutogensPresetCandidates(base);
+        if (!Array.isArray(candidates) || candidates.length === 0) {
+            candidates = this.getAutoGeneratorCandidates(base, generatorSize);
+        }
         const pendingGenerators = [];
         let placed = 0;
         let candidateIndex = 0;
@@ -1882,73 +1909,47 @@ export class BuildingManager {
         this.autoBuildMode = "autogens";
         this.core.uiManager.addChatMessage("System", "Autogens started...", "#60c1ff");
 
-        this.autogensTimer = setInterval(() => {
-            if (!this.autogensRunning) return;
+        const livePlayer = this.core.gameManager.player;
+        if (!livePlayer) {
+            finishAutogens("Autogens stopped.", "#ffcc66");
+            return 0;
+        }
 
-            const livePlayer = this.core.gameManager.player;
-            if (!livePlayer) {
-                finishAutogens("Autogens stopped.", "#ffcc66");
-                return;
-            }
-
-            const livePower = this.core.gameManager.resources.power.current;
-            if (livePower < cost) {
-                if (placed > 0) {
-                    finishAutogens(
-                        `Autogens placed ${placed} generator${placed > 1 ? "s" : ""} (not enough power).`
-                    );
-                } else {
-                    finishAutogens("Not enough power to place generators.", "#ffcc66");
-                }
-                return;
-            }
-
-            const liveLimitEntry = this.core.gameManager.buildingLimits
-                .find(entry => entry.type === BuildingTypes.GENERATOR);
-            const liveRemainingLimit = Math.max(0, (liveLimitEntry?.limit || 0) - (liveLimitEntry?.current || 0));
-            if (liveRemainingLimit <= 0 || placed >= maxToPlace) {
-                if (placed > 0) {
-                    finishAutogens(`Autogens placed ${placed} generator${placed > 1 ? "s" : ""}.`);
-                } else {
-                    finishAutogens("Generator limit reached.", "#ffcc66");
-                }
-                return;
-            }
-
-            let placedThisTick = false;
-
-            while (candidateIndex < candidates.length) {
-                const position = candidates[candidateIndex++];
-                if (!this.canAutoPlaceGenerator(base, position, allUnits, pendingGenerators, generatorSize)) {
-                    continue;
-                }
-
-                const ok = this.core.gameManager.increaseBuildingLimit(BuildingTypes.GENERATOR);
-                if (!ok) {
-                    finishAutogens(`Autogens placed ${placed} generator${placed > 1 ? "s" : ""}.`);
-                    return;
-                }
-
-                this.core.networkManager.placeBuilding(BuildingTypes.GENERATOR, position, true);
-
-                const predicted = new Generator(livePlayer.color, position);
-                livePlayer.setBuildingCache(predicted);
-                this.core.gameManager.subtractResources(cost);
-                pendingGenerators.push(predicted);
-                placed++;
-                placedThisTick = true;
+        while (candidateIndex < candidates.length && placed < maxToPlace) {
+            if (this.core.gameManager.resources.power.current < cost) {
                 break;
             }
 
-            if (!placedThisTick || candidateIndex >= candidates.length) {
-                if (placed === 0) {
-                    finishAutogens("Couldn't find valid space to auto-place generators.", "#ffcc66");
-                    return;
-                }
-
-                finishAutogens(`Autogens placed ${placed} generator${placed > 1 ? "s" : ""}.`);
+            const position = candidates[candidateIndex++];
+            if (!this.canAutoPlaceGenerator(base, position, allUnits, pendingGenerators, generatorSize)) {
+                continue;
             }
-        }, 220);
+
+            const ok = this.core.gameManager.increaseBuildingLimit(BuildingTypes.GENERATOR);
+            if (!ok) {
+                break;
+            }
+
+            this.core.networkManager.placeBuilding(BuildingTypes.GENERATOR, position, true);
+            const predicted = new Generator(livePlayer.color, position);
+            livePlayer.setBuildingCache(predicted);
+            this.core.gameManager.subtractResources(cost);
+            pendingGenerators.push(predicted);
+            placed++;
+        }
+
+        if (placed === 0) {
+            if (this.core.gameManager.resources.power.current < cost) {
+                finishAutogens("Not enough power to place generators.", "#ffcc66");
+            } else {
+                finishAutogens("Couldn't find valid space to auto-place generators.", "#ffcc66");
+            }
+            return 0;
+        }
+
+        const stoppedByPower = this.core.gameManager.resources.power.current < cost;
+        const suffix = stoppedByPower ? " (not enough power)." : ".";
+        finishAutogens(`Autogens placed ${placed} generator${placed > 1 ? "s" : ""}${suffix}`);
 
         return 0;
     }
