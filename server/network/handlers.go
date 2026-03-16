@@ -377,6 +377,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	maxRadiusNeutralByType := maxRadiusNeutralBase
 	// Small visual safety so polygon/stroke edges stay inside the white helper ring.
 	const innerRingVisualMargin = 4
+	const innerRingMinRadiusTolerance = 1
 	innerHelperRingRadius := game.PLAYER_MAX_BUILDING_RADIUS + game.WALL_OUTER_RING_OFFSET - game.GetBuildingSize(game.WALL)
 	neutralInnerHelperRingRadius := game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + game.WALL_OUTER_RING_OFFSET - game.GetBuildingSize(game.WALL)
 
@@ -398,8 +399,8 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		// These must remain inside the white helper ring.
 		// Clamp center radius so the outer edge never crosses that ring.
 		size := game.GetBuildingSize(buildingType)
-		minRadius += size
-		minRadiusNeutralBase += size
+		minRadius += size - innerRingMinRadiusTolerance
+		minRadiusNeutralBase += size - innerRingMinRadiusTolerance
 		maxRadiusByType = innerHelperRingRadius - size - innerRingVisualMargin
 		maxRadiusNeutralByType = neutralInnerHelperRingRadius - size - innerRingVisualMargin
 	default:
@@ -415,8 +416,8 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		tolerance = 12
 	} else if buildingType == game.SIMPLE_TURRET || buildingType == game.SNIPER_TURRET ||
 		buildingType == game.ARMORY || buildingType == game.GENERATOR || buildingType == game.HOUSE {
-		// Strict clamp for inner-ring buildings so they never cross white ring.
-		tolerance = 0
+		// Near-edge sockets can hit float precision; keep tiny tolerance aligned with client.
+		tolerance = 1
 	}
 
 	// Validation for building placement

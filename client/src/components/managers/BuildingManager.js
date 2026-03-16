@@ -53,6 +53,7 @@ const LEGACY_EXTERNA_RADIUS_SCALE = 1.0; // Keep original socket radius fidelity
 const WALL_OUTER_RING_OFFSET = 3; // Wall outer ring tightened by another 1px.
 const BARRACKS_OUTER_RING_OFFSET = 5; // Keep barracks aligned with legacy ExternaTK socket radius.
 const INNER_RING_VISUAL_MARGIN = 4; // Keep inner-building visuals fully inside the white helper ring.
+const INNER_RING_MIN_RADIUS_TOLERANCE = 1; // Preserve legacy sockets near the inner edge.
 const INNER_HELPER_RING_OFFSET = WALL_OUTER_RING_OFFSET - (BuildingSizes.WALL?.size || 27);
 
 function getInnerHelperRingRadius (base) {
@@ -850,7 +851,7 @@ export class BuildingManager {
                 case BuildingTypes.HOUSE:
                     // These buildings must stay inside the white helper ring.
                     maxRadius = getInnerHelperRingRadius(closestBase) - this.buildingToPlace.building.size - INNER_RING_VISUAL_MARGIN;
-                    minRadius += this.buildingToPlace.building.size;
+                    minRadius += Math.max(0, this.buildingToPlace.building.size - INNER_RING_MIN_RADIUS_TOLERANCE);
                     break;
                 default:
                     // Circular shape (Wall, turret, ...)
@@ -1727,8 +1728,17 @@ export class BuildingManager {
             const size = details?.size || 32;
             const adjustedAngle = angle + LEGACY_EXTERNA_ANGLE_OFFSET;
             let adjustedRadius = radius * LEGACY_EXTERNA_RADIUS_SCALE;
-            if (type === BuildingTypes.WALL) {
-                adjustedRadius = Math.max(0, adjustedRadius - 1);
+            if (
+                type === BuildingTypes.SIMPLE_TURRET ||
+                type === BuildingTypes.SNIPER_TURRET ||
+                type === BuildingTypes.ARMORY ||
+                type === BuildingTypes.GENERATOR ||
+                type === BuildingTypes.HOUSE
+            ) {
+                const { minRadius } = this.getPlacementRadiusRangeForType(player, type, size);
+                if (Number.isFinite(minRadius) && adjustedRadius < minRadius) {
+                    adjustedRadius = minRadius;
+                }
             }
             const position = {
                 x: player.position.x + Math.cos(adjustedAngle) * adjustedRadius,
@@ -1746,17 +1756,8 @@ export class BuildingManager {
             });
         }
 
-        const highPriority = [];
-        const normal = [];
-        for (const item of queue) {
-            if (item.type === BuildingTypes.ARMORY || item.type === BuildingTypes.BARRACKS) {
-                highPriority.push(item);
-            } else {
-                normal.push(item);
-            }
-        }
-
-        return [...highPriority, ...normal];
+        // Preserve legacy order exactly for Full ATK fidelity.
+        return queue;
     }
 
     buildAutogensPresetCandidates (base) {
@@ -2074,7 +2075,7 @@ export class BuildingManager {
             case BuildingTypes.PORTAL:
             case BuildingTypes.GENERATOR:
             case BuildingTypes.HOUSE:
-                minRadius += buildingSize;
+                minRadius += Math.max(0, buildingSize - INNER_RING_MIN_RADIUS_TOLERANCE);
                 maxRadius = getInnerHelperRingRadius(base) - buildingSize - INNER_RING_VISUAL_MARGIN;
                 break;
             default:
@@ -2442,7 +2443,19 @@ export class BuildingManager {
         const dx = position.x - base.position.x;
         const dy = position.y - base.position.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const radiusTolerance = buildingType === BuildingTypes.BARRACKS ? 12 : 4;
+        let radiusTolerance = 4;
+        if (buildingType === BuildingTypes.BARRACKS) {
+            radiusTolerance = 12;
+        } else if (
+            buildingType === BuildingTypes.SIMPLE_TURRET ||
+            buildingType === BuildingTypes.SNIPER_TURRET ||
+            buildingType === BuildingTypes.ARMORY ||
+            buildingType === BuildingTypes.GENERATOR ||
+            buildingType === BuildingTypes.HOUSE
+        ) {
+            // Keep client-side radius check in sync with server side for inner-ring sockets.
+            radiusTolerance = 1;
+        }
         if (!ignoreRadius && (distance < (minRadius - radiusTolerance) || distance > (maxRadius + radiusTolerance))) {
             return false;
         }
