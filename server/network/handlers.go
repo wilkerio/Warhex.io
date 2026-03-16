@@ -863,6 +863,12 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 	dy_base := float64(targetPosition.Y - basePosition.Y)
 	distance_from_base := math.Sqrt(dx_base*dx_base + dy_base*dy_base)
 
+	// Spawn protection should only end when the player explicitly commands a move
+	// outside the green protection radius.
+	if player.HasProtection() && distance_from_base > float64(game.PLAYER_SPAWN_PROTECTION_RADIUS) {
+		player.RemoveProtection()
+	}
+
 	isClickOnBase := distance_from_base <= game.PLAYER_MAX_BUILDING_RADIUS
 
 	isClickOnBush := false

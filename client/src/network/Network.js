@@ -16,6 +16,7 @@ export default class Network {
 
         this.worker = null;
         this.retryDelay = 3000;
+        this.retryTimer = null;
         this._initWorker();
     }
 
@@ -43,7 +44,9 @@ export default class Network {
                     break;
                 case 'error':
                     this.onError(data);
-                    this.retryConnect();
+                    if (!data || data.kind !== 'send') {
+                        this.retryConnect();
+                    }
                     break;
                 default:
                     console.warn('Unknown message type:', type);
@@ -153,12 +156,21 @@ export default class Network {
     }
 
     async retryConnect() {
+        if (this.retryTimer) {
+            return;
+        }
         console.log(`Reconnecting in ${this.retryDelay / 1000} seconds...`);
-        await this.delay(this.retryDelay);
-        this.connect();
+        this.retryTimer = setTimeout(() => {
+            this.retryTimer = null;
+            this.connect();
+        }, this.retryDelay);
     }
 
     onConnect(data) {
+        if (this.retryTimer) {
+            clearTimeout(this.retryTimer);
+            this.retryTimer = null;
+        }
         console.log('Connected to server:', data);
         this.triggerEvent('open', data);
     }

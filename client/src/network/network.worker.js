@@ -31,6 +31,26 @@ function readColor (dataView, offset) {
 }
 
 let socket = null;
+let heartbeatInterval = null;
+const pendingMessages = [];
+const MAX_PENDING_MESSAGES = 64;
+
+function enqueueMessage(message) {
+    if (pendingMessages.length >= MAX_PENDING_MESSAGES) {
+        pendingMessages.shift();
+    }
+    pendingMessages.push(message);
+}
+
+function flushPendingMessages() {
+    if (!socket || socket.readyState !== WebSocket.OPEN || pendingMessages.length === 0) {
+        return;
+    }
+    while (pendingMessages.length > 0) {
+        const message = pendingMessages.shift();
+        socket.send(message);
+    }
+}
 
 self.onmessage = (event) => {
     const { type, data } = event.data;
@@ -50,8 +70,7 @@ self.onmessage = (event) => {
 }
 
 function connect (address) {
-    if (socket && socket.readyState !== WebSocket.CLOSED) {
-        console.warn('Socket is already open or in the process of connecting.');
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         return;
     }
 
@@ -60,24 +79,25 @@ function connect (address) {
 
     socket.onopen = () => {
         self.postMessage({ type: 'connected', data: { address } });
-
-        // Start the heartbeat mechanism
-        socket.onopen = () => {
-            self.postMessage({ type: 'connected', data: { address } });
-
-            // Start the heartbeat mechanism
-            setInterval(() => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    const heartbeatMessage = new Uint8Array([MessageTypes.HEARTBEAT]); 
-                    socket.send(heartbeatMessage);
-                }
-            }, 30000);
-        };
-
+        flushPendingMessages();
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+        heartbeatInterval = setInterval(() => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const heartbeatMessage = new Uint8Array([MessageTypes.HEARTBEAT]);
+                socket.send(heartbeatMessage);
+            }
+        }, 30000);
     };
 
     socket.onclose = (event) => {
-        console.log(event)
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+        socket = null;
         self.postMessage({ type: 'disconnected', data: {} });
     };
 
@@ -88,8 +108,8 @@ function connect (address) {
     };
 
     socket.onerror = (event) => {
-        const errorMessage = event.message || "Unknown error occurred"; // Extract the error message
-        self.postMessage({ type: 'error', data: errorMessage });
+        const errorMessage = event?.message || "Unknown socket error";
+        self.postMessage({ type: 'error', data: { kind: 'connection', message: errorMessage } });
     };
 }
 
@@ -108,10 +128,10 @@ function disconnect () {
 function sendMessage (message) {
     if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(message);
-    } else {
-        console.warn('Socket is not open. Unable to send message.');
-        self.postMessage({ type: 'error', data: 'Socket is not open.' });
+        return;
     }
+    // Queue messages while reconnecting/closed so critical packets (e.g. JOIN) are not lost.
+    enqueueMessage(message);
 }
 
 function decodeMessage (buffer) {

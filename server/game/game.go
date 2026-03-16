@@ -450,15 +450,21 @@ func startResourceUpdateLoop() {
 
 			numNeutralBases := len(player.CapturedNeutralBases)
 
-			// Calculate score increment while ensuring it doesn't go negative or overflow
-			scoreIncrement := int32(generatingPower) - 1 + int32(numNeutralBases)*10 // Calculate as int32 to prevent overflow
+				// Calculate score increment while ensuring it doesn't go negative or overflow
+				scoreIncrement := int32(generatingPower) - 1 + int32(numNeutralBases)*10 // Calculate as int32 to prevent overflow
 
-				// Ensure the score increment is non-negative
-				if scoreIncrement < 0 {
-					scoreIncrement = 0 // Prevent negative score increments
-				}
+					// Ensure the score increment is non-negative
+					if scoreIncrement < 0 {
+						scoreIncrement = 0 // Prevent negative score increments
+					}
 
-				// Do not increase passive rank score while spawn protection is active.
+					// Base passive generation is 1. If total generation is <= 1, the player has
+					// no Generator/Micro Generator and should still gain at least +1 score/s.
+					if generatingPower <= 1 && scoreIncrement < 1 {
+						scoreIncrement = 1
+					}
+
+				// Passive score gain is enabled when spawn protection is off.
 				if !player.HasProtection() {
 					player.IncrementScore(uint32(scoreIncrement)) // Cast back to uint32
 				}
@@ -470,29 +476,31 @@ func startResourceUpdateLoop() {
 		}
 }
 
-func isCommanderInsideOwnBaseArea(player *Player) bool {
+func isCommanderOutsideSpawnProtectionArea(player *Player) bool {
 	if player == nil || player.Base == nil {
 		return false
 	}
 
 	basePosition := IntToFloat(player.Base.Position)
-	baseRadius := float32(PLAYER_MAX_BUILDING_RADIUS + 34)
-	foundCommander := false
+	protectionRadius := float32(PLAYER_SPAWN_PROTECTION_RADIUS)
+
+	player.RLock()
+	defer player.RUnlock()
 
 	for _, unit := range player.Units {
 		if unit == nil || unit.IsMarkedForRemoval() || unit.Type != COMMANDER {
 			continue
 		}
-		foundCommander = true
-		allowedRadius := baseRadius - float32(unit.Size)
+		allowedRadius := protectionRadius - float32(unit.Size)
 		if allowedRadius < 0 {
 			allowedRadius = 0
 		}
-		return unit.IsWithinRadius(basePosition, allowedRadius)
+		if !unit.IsWithinRadius(basePosition, allowedRadius) {
+			return true
+		}
 	}
 
-	// If commander is not present, treat as inside base to avoid passive score gain.
-	return !foundCommander
+	return false
 }
 
 func startUnitSpawnLoop() {
@@ -1604,18 +1612,11 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 		hasSpawnProtection := otherPlayer.HasProtection()
 		basePosition := otherPlayer.Base.Position
 
-		// Same player checks own units if left spawn protection
-		if otherPlayer.ID == player.ID {
-			if hasSpawnProtection {
-				for _, unit := range units {
-					if !unit.IsWithinRadius(IntToFloat(basePosition), float32(PLAYER_SPAWN_PROTECTION_RADIUS-unit.Size)) {
-						player.RemoveProtection()
-						break
-					}
-				}
+			// Same player: spawn protection leave is controlled by explicit move command
+			// (handled in network/handlers.go), not by passive unit position checks.
+			if otherPlayer.ID == player.ID {
+				continue
 			}
-			continue
-		}
 		if !CanPlayersInteract(player, otherPlayer) {
 			continue
 		}
