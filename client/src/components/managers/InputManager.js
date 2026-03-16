@@ -72,7 +72,9 @@ export default class InputManager {
                 bindKey("upgrade2", "e"),
                 bindKey("upgrade3", "t"),
                 bindKey("upgradeDestroy", "r"),
-                bindKey("upgradeBarracksToggle", "f")
+                bindKey("upgradeBarracksToggle", "f"),
+                bindKey("upgradeAllMode", "y"),
+                bindKey("upgradeDestroyAll", "u")
             ];
             this.activeKeys.add(key); // Add key to active keys
             if (event.key === "Shift") {
@@ -388,6 +390,8 @@ export default class InputManager {
         const keyUpgrade3 = bindKey("upgrade3", "t");
         const keyUpgradeDestroy = bindKey("upgradeDestroy", "r");
         const keyUpgradeBarracks = bindKey("upgradeBarracksToggle", "f");
+        const keyUpgradeAllMode = bindKey("upgradeAllMode", "y");
+        const keyUpgradeDestroyAll = bindKey("upgradeDestroyAll", "u");
 
         const upgradeListElement = this.core.uiManager.DOM.game.upgrades.list; // Get the upgrade list element
 
@@ -410,11 +414,21 @@ export default class InputManager {
                 if (upgradeDestroyButton) {
                     upgradeDestroyButton.click(); // Simulate a click on the destroy button
                 }
+            } else if (key === keyUpgradeDestroyAll) {
+                const upgradeDestroyAllButton = document.getElementById("upgrade-destroy-all-button");
+                if (upgradeDestroyAllButton) {
+                    upgradeDestroyAllButton.click();
+                }
             } else if (key === keyUpgradeBarracks) {
                 // If 'F' is pressed, simulate a click on the barracks activation tab
                 const barracksTab = document.querySelector('[data-type="barracks-activation-toggle"]');
                 if (barracksTab) {
                     barracksTab.click();
+                }
+            } else if (key === keyUpgradeAllMode) {
+                const upgradeBulkToggleButton = document.getElementById("upgrade-bulk-toggle-button");
+                if (upgradeBulkToggleButton) {
+                    upgradeBulkToggleButton.click();
                 }
             }
         }

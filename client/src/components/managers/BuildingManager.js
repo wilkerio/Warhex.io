@@ -7,7 +7,7 @@ import SimpleTurret from "../../entities/building/SimpleTurret.js";
 import SniperTurret from "../../entities/building/SniperTurret.js";
 import Armory from "../../entities/building/Armory.js";
 import BuildingPreview from "../../entities/BuildingPreview.js";
-import { BuildingTypes, BuildingVariantTypes, UnitTypes, UnitVariantTypes, getBuildingDetails } from "../../network/constants.js";
+import { BuildingTypes, BuildingVariantTypes, UnitTypes, UnitVariantTypes, getAvailableBuildingUpgrades, getBuildingDetails } from "../../network/constants.js";
 import { QueueType, Renderer } from "../Renderer.js";
 import { SelectionState } from "../../entities/Building.js";
 
@@ -386,8 +386,32 @@ export class BuildingManager {
         }
 
         if (this.selectedBuildings.length > 0) {
-            const buildingIDs = this.selectedBuildings.map(building => building.id);
-            const onDestroyClicked = () => {
+            const referenceBuilding = this.selectedBuildings[0];
+            const getAllSameTypeTargetsInClosestBase = () => {
+                const reference = referenceBuilding;
+                if (!reference || !closestBase) return [];
+                return (closestBase.buildings || []).filter((building) =>
+                    building
+                    && !building.removeFlag
+                    && building.type === reference.type
+                );
+            };
+            const getSameTypeVariantTargetsInClosestBase = () => {
+                const reference = referenceBuilding;
+                if (!reference || !closestBase) return [];
+                return (closestBase.buildings || []).filter((building) =>
+                    building
+                    && !building.removeFlag
+                    && building.type === reference.type
+                    && building.variant === reference.variant
+                );
+            };
+            const onDestroyClicked = (options = {}) => {
+                const applyAll = Boolean(options?.applyAll);
+                const targets = applyAll ? getAllSameTypeTargetsInClosestBase() : this.selectedBuildings;
+                const buildingIDs = targets.map((building) => building.id);
+                if (buildingIDs.length === 0) return;
+
                 this.deselectBuildings();
                 this.core.uiManager.hideUpgrades();
 
@@ -397,16 +421,69 @@ export class BuildingManager {
             };
 
             const allSameTypeAndVariant = this.selectedBuildings.every(b => b.type === this.selectedBuildings[0].type && b.variant === this.selectedBuildings[0].variant);
+            const getAllCountForPanel = () => {
+                if (!allSameTypeAndVariant) return this.selectedBuildings.length;
+                return Math.max(this.selectedBuildings.length, getAllSameTypeTargetsInClosestBase().length);
+            };
+            const getAllRefundForPanel = () => {
+                const sameTypeTargets = getAllSameTypeTargetsInClosestBase();
+                if (sameTypeTargets.length === 0) return 0;
+                return sameTypeTargets.reduce((total, building) => {
+                    const details = getBuildingDetails(building.type, building.variant);
+                    return total + Math.floor((details?.cost || 0) / 2);
+                }, 0);
+            };
 
             if (allSameTypeAndVariant) {
                 const onUpgradeClicked = (data) => {
 
                     if (data) {
+                        const upgradeAll = Boolean(data?.upgradeAll);
+                        let targetBuildings = (upgradeAll && allSameTypeAndVariant)
+                            ? getAllSameTypeTargetsInClosestBase()
+                            : [...this.selectedBuildings];
+                        if (targetBuildings.length === 0) return;
+                        if (upgradeAll) {
+                            const targetVariant = Number(data?.buildingVariant);
+                            targetBuildings = targetBuildings.filter((building) => {
+                                if (!building || building.removeFlag || building.type !== referenceBuilding?.type) return false;
+                                if (building.variant === targetVariant) return false;
+                                const available = getAvailableBuildingUpgrades(building.type, building.variant, building.purchasedUpgrades ? Array.from(building.purchasedUpgrades) : []);
+                                return available.some((u) => Number(u?.variant) === targetVariant);
+                            });
+                            if (targetBuildings.length === 0) {
+                                this.core.uiManager.addChatMessage("System", "No valid buildings left for this upgrade.", "#ffcc66");
+                                return;
+                            }
+                        }
+                        const perBuildingCost = Number.isFinite(Number(data.baseCost))
+                            ? Number(data.baseCost)
+                            : (Number(data.cost) / Math.max(1, this.selectedBuildings.length));
+                        if (!Number.isFinite(perBuildingCost) || perBuildingCost <= 0) return;
+                        if (upgradeAll && targetBuildings.length > 1) {
+                            const affordableCount = Math.floor(this.core.gameManager.resources.power.current / perBuildingCost);
+                            if (affordableCount <= 0) {
+                                this.core.uiManager.addChatMessage("System", "Not enough power for Auto Upgrade.", "#ffcc66");
+                                return;
+                            }
+                            if (affordableCount < targetBuildings.length) {
+                                targetBuildings = targetBuildings.slice(0, affordableCount);
+                                this.core.uiManager.addChatMessage(
+                                    "System",
+                                    `Auto Upgrade: upgraded ${targetBuildings.length}/${(upgradeAll && allSameTypeAndVariant) ? getAllSameTypeTargetsInClosestBase().length : targetBuildings.length}.`,
+                                    "#60c1ff"
+                                );
+                            }
+                        }
+                        const targetIDs = targetBuildings.map((building) => building.id);
+                        if (targetIDs.length === 0) return;
+                        const totalCost = Math.max(0, Math.round(perBuildingCost * targetIDs.length));
+
                         // Armory unit upgrade flow
                         if (data.unitType !== undefined && data.unitVariant !== undefined) {
                             const currentPower = this.core.gameManager.resources.power.current;
-                            if (currentPower < data.cost) {
-                                console.error("Not enough power to build!");
+                            if (currentPower < totalCost) {
+                                this.core.uiManager.addChatMessage("System", "Not enough power to upgrade.", "#ffcc66");
                                 return;
                             }
 
@@ -428,13 +505,13 @@ export class BuildingManager {
                                 }
                             }
 
-                            this.core.gameManager.subtractResources(data.cost);
+                            this.core.gameManager.subtractResources(totalCost);
                             this.core.gameManager.applyUnitUpgrade(data.unitType, data.unitVariant);
 
                             const neutralBaseID = isNeutralBase ? closestBase.id : null;
-                            this.core.networkManager.upgradeBuildings(buildingIDs, data.buildingVariant, neutralBaseID);
+                            this.core.networkManager.upgradeBuildings(targetIDs, data.buildingVariant, neutralBaseID);
 
-                            this.selectedBuildings.forEach(building => {
+                            targetBuildings.forEach(building => {
                                 if (building.type === BuildingTypes.ARMORY) {
                                     building.variant = data.buildingVariant;
                                     if (!building.purchasedUpgrades) building.purchasedUpgrades = new Set();
@@ -446,6 +523,8 @@ export class BuildingManager {
                             this.core.uiManager.showUpgrades({
                                 buildings: this.selectedBuildings,
                                 count: this.selectedBuildings.length,
+                                allCount: getAllCountForPanel(),
+                                allRefund: getAllRefundForPanel(),
                                 name: this.selectedBuildings[0].details.name,
                                 type: this.selectedBuildings[0].type,
                                 variant: this.selectedBuildings[0].variant,
@@ -460,19 +539,19 @@ export class BuildingManager {
                         const currentPower = this.core.gameManager.resources.power.current;
     
                         // Check if sufficient power is available
-                        if (currentPower < data.cost) {
-                            console.error("Not enough power to build!");
+                        if (currentPower < totalCost) {
+                            this.core.uiManager.addChatMessage("System", "Not enough power to upgrade.", "#ffcc66");
                             return;
                         }
     
-                        this.core.gameManager.subtractResources(data.cost);
+                        this.core.gameManager.subtractResources(totalCost);
     
                         const neutralBaseID = isNeutralBase ? closestBase.id : null;
 
-                        this.core.networkManager.upgradeBuildings(buildingIDs, data.buildingVariant, neutralBaseID);
+                        this.core.networkManager.upgradeBuildings(targetIDs, data.buildingVariant, neutralBaseID);
 
                         // Keep selection/panel open so next evolution appears immediately.
-                        this.selectedBuildings.forEach((selectedBuilding) => {
+                        targetBuildings.forEach((selectedBuilding) => {
                             if (selectedBuilding?.setUpgrade) {
                                 selectedBuilding.setUpgrade(data.buildingVariant);
                             } else {
@@ -483,6 +562,8 @@ export class BuildingManager {
                         this.core.uiManager.showUpgrades({
                             buildings: this.selectedBuildings,
                             count: this.selectedBuildings.length,
+                            allCount: getAllCountForPanel(),
+                            allRefund: getAllRefundForPanel(),
                             name: this.selectedBuildings[0].details.name,
                             type: this.selectedBuildings[0].type,
                             variant: this.selectedBuildings[0].variant,
@@ -500,6 +581,8 @@ export class BuildingManager {
                 this.core.uiManager.showUpgrades({
                     buildings: this.selectedBuildings,
                     count: this.selectedBuildings.length,
+                    allCount: getAllCountForPanel(),
+                    allRefund: getAllRefundForPanel(),
                     name: this.selectedBuildings[0].details.name,
                     type: this.selectedBuildings[0].type,
                     variant: this.selectedBuildings[0].variant,
@@ -1134,7 +1217,7 @@ export class BuildingManager {
         this.stopDefenseRemount();
 
         const entries = (player.buildings || [])
-            .filter(b => b && !b.removeFlag && b.type !== BuildingTypes.WALL)
+            .filter(b => b && !b.removeFlag)
             .map(b => ({
                 type: b.type,
                 rotationStep: Number.isFinite(Number(b.placementRotationStep)) ? Number(b.placementRotationStep) : 0,

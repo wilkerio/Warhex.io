@@ -3,6 +3,7 @@ export default class EventManager {
         this.core = core;
         this.lastMouseEvent = null;
         this.mousePosition = { x: 0, y: 0 };
+        this.pointerDownStartedOnCanvas = false;
     }
 
     init () {
@@ -20,11 +21,17 @@ export default class EventManager {
         window.addEventListener("mousedown", (event) => {
             this.lastMouseEvent = event;
             this.updateMousePosition(event);
+            const startedOnCanvas = event.target === this.core.canvas;
+            this.pointerDownStartedOnCanvas = startedOnCanvas;
+            if (!startedOnCanvas) return;
             this.core.inputManager.onMouseDown(event);
         });
         window.addEventListener("mouseup", (event) => {
             this.lastMouseEvent = event;
             this.updateMousePosition(event);
+            const shouldForwardMouseUp = event.target === this.core.canvas || this.pointerDownStartedOnCanvas;
+            this.pointerDownStartedOnCanvas = false;
+            if (!shouldForwardMouseUp) return;
             this.core.inputManager.onMouseUp(event);
         });
         this.core.canvas.addEventListener("click", (event) => {

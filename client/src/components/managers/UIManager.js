@@ -38,6 +38,7 @@ export default class UIManager {
         this.upgradeCostElements = []; // Stores elements for later updates 
         this.selectedUpgradeTab = 0;
         this.upgradePanelOpen = false;
+        this.upgradeBulkMode = false;
         this.inactivityTimerInterval = null;
         this.inactivityTimeout = 540; // Warning starts after 1 minute; 9 minutes remain until 10-minute kick.
         this.x1PromptElement = null;
@@ -392,7 +393,9 @@ export default class UIManager {
                 upgrade2: "e",
                 upgrade3: "t",
                 upgradeDestroy: "r",
-                upgradeBarracksToggle: "f"
+                upgradeBarracksToggle: "f",
+                upgradeAllMode: "y",
+                upgradeDestroyAll: "u"
             },
             unitShapes: {
                 soldier: "triangle",
@@ -522,7 +525,9 @@ export default class UIManager {
             { key: "upgrade2", label: this.t("key.action.upgrade2"), group: this.t("key.group.upgrades") },
             { key: "upgrade3", label: this.t("key.action.upgrade3"), group: this.t("key.group.upgrades") },
             { key: "upgradeDestroy", label: this.t("key.action.upgradeDestroy"), group: this.t("key.group.upgrades") },
-            { key: "upgradeBarracksToggle", label: this.t("key.action.upgradeBarracksToggle"), group: this.t("key.group.upgrades") }
+            { key: "upgradeBarracksToggle", label: this.t("key.action.upgradeBarracksToggle"), group: this.t("key.group.upgrades") },
+            { key: "upgradeAllMode", label: "Upgrade All Mode", group: this.t("key.group.upgrades") },
+            { key: "upgradeDestroyAll", label: "Sell All", group: this.t("key.group.upgrades") }
         ];
     }
 
@@ -1002,6 +1007,8 @@ export default class UIManager {
                 <label>Upgrade #3 Key <input id="hud-key-upgrade-3" maxlength="1" value="t"></label>
                 <label>Destroy Upgrade Key <input id="hud-key-upgrade-destroy" maxlength="1" value="r"></label>
                 <label>Barracks Toggle Key <input id="hud-key-upgrade-barracks" maxlength="1" value="f"></label>
+                <label>Upgrade All Mode Key <input id="hud-key-upgrade-all-mode" maxlength="1" value="y"></label>
+                <label>Sell All Key <input id="hud-key-upgrade-destroy-all" maxlength="1" value="u"></label>
                 <label>Soldier Shape
                     <select id="hud-shape-soldier">
                         <option value="round">Round</option>
@@ -1074,6 +1081,8 @@ export default class UIManager {
         bindInput("#hud-key-upgrade-3", "keybinds", "upgrade3");
         bindInput("#hud-key-upgrade-destroy", "keybinds", "upgradeDestroy");
         bindInput("#hud-key-upgrade-barracks", "keybinds", "upgradeBarracksToggle");
+        bindInput("#hud-key-upgrade-all-mode", "keybinds", "upgradeAllMode");
+        bindInput("#hud-key-upgrade-destroy-all", "keybinds", "upgradeDestroyAll");
         bindSelect("#hud-shape-soldier", "soldier");
         bindSelect("#hud-shape-tank", "tank");
         bindSelect("#hud-shape-siege", "siege");
@@ -1101,6 +1110,8 @@ export default class UIManager {
         setVal("#hud-key-upgrade-3", this.hudConfig?.keybinds?.upgrade3 || "t");
         setVal("#hud-key-upgrade-destroy", this.hudConfig?.keybinds?.upgradeDestroy || "r");
         setVal("#hud-key-upgrade-barracks", this.hudConfig?.keybinds?.upgradeBarracksToggle || "f");
+        setVal("#hud-key-upgrade-all-mode", this.hudConfig?.keybinds?.upgradeAllMode || "y");
+        setVal("#hud-key-upgrade-destroy-all", this.hudConfig?.keybinds?.upgradeDestroyAll || "u");
         setVal("#hud-shape-soldier", this.hudConfig?.unitShapes?.soldier || "triangle");
         setVal("#hud-shape-tank", this.hudConfig?.unitShapes?.tank || "triangle");
         setVal("#hud-shape-siege", this.hudConfig?.unitShapes?.siege || "triangle");
@@ -3885,12 +3896,17 @@ export default class UIManager {
     }
 
     showUpgrades (building, onUpgradeSelect, onDestroyClicked) {
-        this.hideUpgrades();
+        this.hideUpgrades(false);
         this.DOM.game.upgrades.list.innerHTML = "";
+
+        const oldDestroyAllButton = document.getElementById("upgrade-destroy-all-button");
+        if (oldDestroyAllButton?.parentNode) {
+            oldDestroyAllButton.parentNode.removeChild(oldDestroyAllButton);
+        }
 
         // Set up destroy button
         this.DOM.game.upgrades.destroyButton.removeEventListener("click", this.destroyClickHandler);
-        this.destroyClickHandler = () => onDestroyClicked();
+        this.destroyClickHandler = () => onDestroyClicked?.();
         this.DOM.game.upgrades.destroyButton.addEventListener("click", this.destroyClickHandler);
 
         if (onUpgradeSelect === null) {
@@ -3939,6 +3955,11 @@ export default class UIManager {
             const isArmory = BuildingTypes.ARMORY === building.type;
             const isBarracks = BuildingTypes.BARRACKS === building.type;
             const upgradeHotkeys = ["Q", "E", "T", "R", "Y"];
+            const keyUpgradeAllMode = String(this.getHudKeybind("upgradeAllMode", "y") || "y").toUpperCase();
+            const allCount = Number.isFinite(Number(building?.allCount))
+                ? Number(building.allCount)
+                : Number(building.count || 0);
+            const canBulkAcrossBase = !isArmory && allCount > 1;
 
             const getAvailableUpgrades = () => {
                 const purchasedVariants = building.purchasedUpgrades ? Array.from(building.purchasedUpgrades) : [];
@@ -4047,6 +4068,8 @@ export default class UIManager {
 
                 const description = document.createElement("div");
                 description.classList.add("description");
+                description.style.cursor = "pointer";
+                preview.style.cursor = "pointer";
 
                 const hotkey = upgradeHotkeys[index] ?? "-";
                 description.innerHTML = `
@@ -4061,16 +4084,31 @@ export default class UIManager {
                 upgradeItem.appendChild(description);
                 attachNextEvolutionTooltip(upgradeItem, upgradeInfo);
 
-                upgradeItem.addEventListener("click", () => {
+                const triggerUpgradeFromItem = () => {
+                    const baseCost = Number.isFinite(Number(upgradeInfo.baseCost))
+                        ? Number(upgradeInfo.baseCost)
+                        : (Number(upgradeInfo.cost) / Math.max(1, Number(building.count) || 1));
+                    const upgradeAll = Boolean(this.upgradeBulkMode && canBulkAcrossBase);
                     const upgradeData = isArmory
                         ? {
                             unitType: upgradeInfo.unitType ?? this.selectedUpgradeTab,
                             unitVariant: upgradeInfo.unitVariant ?? upgradeInfo.variant,
                             buildingVariant: upgradeInfo.variant,
-                            cost: upgradeInfo.cost
+                            cost: upgradeInfo.cost,
+                            baseCost,
+                            upgradeAll
                         }
-                        : { buildingVariant: upgradeInfo.variant, cost: upgradeInfo.cost };
+                        : { buildingVariant: upgradeInfo.variant, cost: upgradeInfo.cost, baseCost, upgradeAll };
                     onUpgradeSelect(upgradeData);
+                };
+                upgradeItem.addEventListener("click", triggerUpgradeFromItem);
+                preview.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    triggerUpgradeFromItem();
+                });
+                description.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    triggerUpgradeFromItem();
                 });
 
                 this.DOM.game.upgrades.list.appendChild(upgradeItem);
@@ -4111,11 +4149,59 @@ export default class UIManager {
                 this._clearUpgradeTabsElement();
             }
 
+            if (canBulkAcrossBase) {
+                const bulkActions = document.createElement("div");
+                bulkActions.id = "upgrade-bulk-actions";
+
+                const bulkToggleButton = document.createElement("button");
+                bulkToggleButton.type = "button";
+                bulkToggleButton.id = "upgrade-bulk-toggle-button";
+                bulkToggleButton.classList.add("upgrade-bulk-action-btn");
+
+                const refreshBulkModeButton = () => {
+                    bulkToggleButton.classList.toggle("active", this.upgradeBulkMode);
+                    bulkToggleButton.textContent = this.upgradeBulkMode
+                        ? `Auto Upgrade: ON [${keyUpgradeAllMode}]`
+                        : `Auto Upgrade: OFF [${keyUpgradeAllMode}]`;
+                };
+                refreshBulkModeButton();
+
+                bulkToggleButton.addEventListener("click", () => {
+                    this.upgradeBulkMode = !this.upgradeBulkMode;
+                    refreshBulkModeButton();
+                    this.addChatMessage(
+                        "System",
+                        this.upgradeBulkMode ? "Auto Upgrade enabled." : "Auto Upgrade disabled.",
+                        "#60c1ff"
+                    );
+                });
+                bulkActions.appendChild(bulkToggleButton);
+
+                this.DOM.game.upgrades.list.appendChild(bulkActions);
+
+                const buildingDetailsForAll = getBuildingDetails(building.type, building.variant);
+                if (buildingDetailsForAll) {
+                    const refundAmountAll = Number.isFinite(Number(building?.allRefund))
+                        ? Math.max(0, Math.floor(Number(building.allRefund)))
+                        : Math.floor(buildingDetailsForAll.cost * allCount / 2);
+                    const destroyAllButton = document.createElement("button");
+                    destroyAllButton.type = "button";
+                    destroyAllButton.id = "upgrade-destroy-all-button";
+                    destroyAllButton.classList.add("upgrade-destroy-all-button");
+                    destroyAllButton.innerHTML = `
+                        <p>Sell All</p>
+                        <p class="refund-amount">+${refundAmountAll} Power</p>
+                    `;
+                    destroyAllButton.addEventListener("click", () => onDestroyClicked?.({ applyAll: true }));
+                    this.DOM.game.upgrades.container.appendChild(destroyAllButton);
+                }
+            }
+
             availableUpgrades.forEach((upgradeInfo, index) => {
                 if (upgradeInfo && (upgradeInfo.baseCost || upgradeInfo.cost)) {
                     const baseCost = upgradeInfo.baseCost ?? upgradeInfo.cost;
                     const calculatedCost = baseCost * building.count;
-                    const upgradeInfoCopy = { ...upgradeInfo, cost: calculatedCost };
+                    const upgradeInfoCopy = { ...upgradeInfo, baseCost, cost: calculatedCost };
                     createUpgradeItem(upgradeInfoCopy, index);
                 } else {
                     console.warn(`Invalid upgradeInfo at index ${index}:`, upgradeInfo);
@@ -4219,9 +4305,17 @@ export default class UIManager {
         });
     }
 
-    hideUpgrades () {
+    hideUpgrades (resetBulkMode = true) {
         if (this.DOM.game.upgrades.container.style.display === "none") return;
         this.upgradeCostElements = []; // Clear
+        if (resetBulkMode) {
+            this.upgradeBulkMode = false;
+        }
+
+        const destroyAllButton = document.getElementById("upgrade-destroy-all-button");
+        if (destroyAllButton?.parentNode) {
+            destroyAllButton.parentNode.removeChild(destroyAllButton);
+        }
 
 
         // Make the destroy button visible in case it got set to none (see showCoreUpgrades())
