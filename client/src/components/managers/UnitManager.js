@@ -194,10 +194,13 @@ export default class UnitManager {
             totalPopulationCapacity += countHouseCapacity(neutral?.buildings || []);
         }
 
+        // Legacy HUD behavior: soldier counter displays population slots, not unit count.
+        // One soldier consumes 2 population (e.g., one soldier appears as 2/179).
         const availableForSoldiers = Math.max(0, totalPopulationCapacity - nonSoldierUsedPopulation);
-        const totalSoldierSlots = Math.max(spawnedSoldiers, Math.floor(availableForSoldiers / 2));
+        const usedSoldierPopulation = spawnedSoldiers * 2;
+        const totalSoldierPopulation = Math.max(usedSoldierPopulation, availableForSoldiers);
 
-        this.core?.uiManager?.updateSoldierSelectionCounter?.(spawnedSoldiers, totalSoldierSlots);
+        this.core?.uiManager?.updateSoldierSelectionCounter?.(usedSoldierPopulation, totalSoldierPopulation);
     }
 
     clearSelection () {

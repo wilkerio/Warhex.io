@@ -142,13 +142,13 @@ func startInactivityCheckLoop() {
 				continue
 			}
 
-				// Show AFK warning after configured delay.
-				if time.Since(player.GetLastActivity()) > PLAYER_INACTIVITY_WARNING_DELAY*time.Minute &&
-					time.Since(player.LastActivityWarningSent) > 10*time.Second {
-					player.LastActivityWarningSent = time.Now()
-					// Send warning message to player
-					TriggerPlayerInactiveWarningEvent(player)
-				}
+			// Show AFK warning after configured delay.
+			if time.Since(player.GetLastActivity()) > PLAYER_INACTIVITY_WARNING_DELAY*time.Minute &&
+				time.Since(player.LastActivityWarningSent) > 10*time.Second {
+				player.LastActivityWarningSent = time.Now()
+				// Send warning message to player
+				TriggerPlayerInactiveWarningEvent(player)
+			}
 		}
 		State.RUnlock()
 	}
@@ -442,38 +442,38 @@ func startResourceUpdateLoop() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-		for range ticker.C {
-			State.RLock()
-			for _, player := range State.Players {
-				generatingPower := player.GetGenerating().Power
-				player.Resources.Power.Increment(generatingPower)
+	for range ticker.C {
+		State.RLock()
+		for _, player := range State.Players {
+			generatingPower := player.GetGenerating().Power
+			player.Resources.Power.Increment(generatingPower)
 
 			numNeutralBases := len(player.CapturedNeutralBases)
 
-				// Calculate score increment while ensuring it doesn't go negative or overflow
-				scoreIncrement := int32(generatingPower) - 1 + int32(numNeutralBases)*10 // Calculate as int32 to prevent overflow
+			// Calculate score increment while ensuring it doesn't go negative or overflow
+			scoreIncrement := int32(generatingPower) - 1 + int32(numNeutralBases)*10 // Calculate as int32 to prevent overflow
 
-					// Ensure the score increment is non-negative
-					if scoreIncrement < 0 {
-						scoreIncrement = 0 // Prevent negative score increments
-					}
-
-					// Base passive generation is 1. If total generation is <= 1, the player has
-					// no Generator/Micro Generator and should still gain at least +1 score/s.
-					if generatingPower <= 1 && scoreIncrement < 1 {
-						scoreIncrement = 1
-					}
-
-				// Passive score gain is enabled when spawn protection is off.
-				if !player.HasProtection() {
-					player.IncrementScore(uint32(scoreIncrement)) // Cast back to uint32
-				}
-
-				// Trigger resource update event
-				TriggerResourceUpdateEvent(player)
+			// Ensure the score increment is non-negative
+			if scoreIncrement < 0 {
+				scoreIncrement = 0 // Prevent negative score increments
 			}
-			State.RUnlock()
+
+			// Base passive generation is 1. If total generation is <= 1, the player has
+			// no Generator/Micro Generator and should still gain at least +1 score/s.
+			if generatingPower <= 1 && scoreIncrement < 1 {
+				scoreIncrement = 1
+			}
+
+			// Passive score gain is enabled when spawn protection is off.
+			if !player.HasProtection() {
+				player.IncrementScore(uint32(scoreIncrement)) // Cast back to uint32
+			}
+
+			// Trigger resource update event
+			TriggerResourceUpdateEvent(player)
 		}
+		State.RUnlock()
+	}
 }
 
 func isCommanderOutsideSpawnProtectionArea(player *Player) bool {
@@ -630,17 +630,17 @@ func processPlayerTurrets(player *Player, duration time.Duration, players []*Pla
 
 			// Find the closest unit and spawn bullets if in range
 			closestUnit := findClosestUnitInRange(spawning, players, player)
-				if closestUnit != nil {
-					spawning.Frequency.Reset()
-					closedUnitPosition := closestUnit.GetPosition()
-					TriggerTurretRotationUpdateEvent(turretOwner, turret, closedUnitPosition)
-					if !spawnTurretVolley(ownerBase, spawning, closedUnitPosition, turretOwner, turret) {
-						log.Println("Could not add bullet to owner")
-					}
+			if closestUnit != nil {
+				spawning.Frequency.Reset()
+				closedUnitPosition := closestUnit.GetPosition()
+				TriggerTurretRotationUpdateEvent(turretOwner, turret, closedUnitPosition)
+				if !spawnTurretVolley(ownerBase, spawning, closedUnitPosition, turretOwner, turret) {
+					log.Println("Could not add bullet to owner")
 				}
 			}
 		}
 	}
+}
 
 func processNeutralTurrets(neutral *NeutralBase, duration time.Duration, players []*Player) {
 	neutral.Base.RLock()
@@ -664,17 +664,17 @@ func processNeutralTurrets(neutral *NeutralBase, duration time.Duration, players
 
 			// Find the closest unit and spawn bullets if in range
 			closestUnit := findClosestUnitInRange(spawning, players, neutral.CapturedBy)
-				if closestUnit != nil {
-					spawning.Frequency.Reset()
-					closedUnitPosition := closestUnit.GetPosition()
-					TriggerTurretRotationUpdateEvent(turretOwner, turret, closedUnitPosition)
-					if !spawnTurretVolley(neutral.Base, spawning, closedUnitPosition, turretOwner, turret) {
-						log.Println("Could not add bullet to neutral base owner")
-					}
+			if closestUnit != nil {
+				spawning.Frequency.Reset()
+				closedUnitPosition := closestUnit.GetPosition()
+				TriggerTurretRotationUpdateEvent(turretOwner, turret, closedUnitPosition)
+				if !spawnTurretVolley(neutral.Base, spawning, closedUnitPosition, turretOwner, turret) {
+					log.Println("Could not add bullet to neutral base owner")
 				}
 			}
 		}
 	}
+}
 
 func spawnTurretVolley(base *Base, spawning *BulletSpawning, target PositionFloat, owner Owner, turret *Building) bool {
 	offsets := []float32{0}
@@ -795,9 +795,9 @@ func findClosestUnitInRange(spawning *BulletSpawning, players []*Player, exclude
 			if unit.IsMarkedForRemoval() {
 				continue
 			}
-				if shooterIsTower && otherPlayer.HasTankCloak && unit.Type == TANK && !revealsCloak {
-					continue
-				}
+			if shooterIsTower && otherPlayer.HasTankCloak && unit.Type == TANK && !revealsCloak {
+				continue
+			}
 
 			// ? GetPosition doesnt use a LOCK
 			turretPosition := spawning.Shooter.GetPosition()
@@ -927,21 +927,92 @@ func startEntityUpdateLoop() {
 
 func updateEntities(players []*Player, neutrals []*NeutralBase, duration time.Duration) {
 	for _, player := range players {
-		updateBullets(player.Base, duration)
+		updateBullets(player.Base, duration, players)
 		updateUnits(player, duration, players)
 	}
 	for _, neutral := range neutrals {
-		updateBullets(neutral.Base, duration)
+		updateBullets(neutral.Base, duration, players)
 	}
 }
 
-func updateBullets(base *Base, duration time.Duration) {
+const antiTankHomingScanRadius float32 = 700
+
+func isAntiTankPreferredTarget(unit *Unit) bool {
+	return unit != nil && (unit.Type == COMMANDER || unit.Type == SOLDIER)
+}
+
+func findClosestEnemyUnitForAntiTankBullet(ownerPlayer *Player, players []*Player, bullet *Bullet) *Unit {
+	if ownerPlayer == nil || bullet == nil {
+		return nil
+	}
+
+	bulletPosition := bullet.GetPosition()
+	var preferredTarget *Unit
+	var fallbackTarget *Unit
+	preferredDistance := float32(math.MaxFloat32)
+	fallbackDistance := float32(math.MaxFloat32)
+
+	for _, otherPlayer := range players {
+		if otherPlayer == nil || otherPlayer.IsMarkedForRemoval() {
+			continue
+		}
+		if otherPlayer.ID == ownerPlayer.ID {
+			continue
+		}
+		if !CanPlayersInteract(ownerPlayer, otherPlayer) {
+			continue
+		}
+		if otherPlayer.HasProtection() && !AreDuelOpponents(ownerPlayer, otherPlayer) {
+			continue
+		}
+
+		otherPlayer.RLock()
+		otherPlayerUnits := make([]*Unit, 0, len(otherPlayer.Units))
+		for _, otherPlayerUnit := range otherPlayer.Units {
+			otherPlayerUnits = append(otherPlayerUnits, otherPlayerUnit)
+		}
+		otherPlayer.RUnlock()
+
+		for _, unit := range otherPlayerUnits {
+			if unit == nil || unit.IsMarkedForRemoval() {
+				continue
+			}
+
+			distance := bulletPosition.DistanceTo(unit.GetPosition())
+			if distance > antiTankHomingScanRadius {
+				continue
+			}
+
+			if distance < fallbackDistance {
+				fallbackDistance = distance
+				fallbackTarget = unit
+			}
+
+			if isAntiTankPreferredTarget(unit) && distance < preferredDistance {
+				preferredDistance = distance
+				preferredTarget = unit
+			}
+		}
+	}
+
+	if preferredTarget != nil {
+		return preferredTarget
+	}
+	return fallbackTarget
+}
+
+func updateBullets(base *Base, duration time.Duration, players []*Player) {
 	base.RLock()
 	bullets := make([]*Bullet, 0, len(base.Bullets))
 	for _, bullet := range base.Bullets {
 		bullets = append(bullets, bullet)
 	}
 	base.RUnlock()
+
+	var ownerPlayer *Player
+	if playerOwner, ok := base.Owner.(*Player); ok {
+		ownerPlayer = playerOwner
+	}
 
 	for _, bullet := range bullets {
 		if bullet.isMarkedForRemoval() {
@@ -961,6 +1032,13 @@ func updateBullets(base *Base, duration time.Duration) {
 				base.RemoveBullet(bullet.ID)
 			}
 			continue
+		}
+
+		if bullet.Behavior == AntiTankBullet {
+			closestTarget := findClosestEnemyUnitForAntiTankBullet(ownerPlayer, players, bullet)
+			if closestTarget != nil {
+				bullet.SetTargetPosition(closestTarget.GetPosition())
+			}
 		}
 
 		updated := bullet.UpdatePosition(duration)
@@ -1622,11 +1700,11 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 		hasSpawnProtection := otherPlayer.HasProtection()
 		basePosition := otherPlayer.Base.Position
 
-			// Same player: spawn protection leave is controlled by explicit move command
-			// (handled in network/handlers.go), not by passive unit position checks.
-			if otherPlayer.ID == player.ID {
-				continue
-			}
+		// Same player: spawn protection leave is controlled by explicit move command
+		// (handled in network/handlers.go), not by passive unit position checks.
+		if otherPlayer.ID == player.ID {
+			continue
+		}
 		if !CanPlayersInteract(player, otherPlayer) {
 			continue
 		}
@@ -1674,19 +1752,21 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 				continue
 			}
 
-				// Check if unit is colliding with the core
-				otherPlayerHealth := otherPlayer.Base.Health.Current
-				isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), getPlayerCoreRadius(otherPlayer.Base)+unitSize)
-				if isNearCore {
-					unitDamage := unit.Damage
-					if unit.Type == COMMANDER {
-						unitDamage *= COMMANDER_CORE_DAMAGE_MULTIPLIER
-					}
-					unitIsAlive := unit.TakeDamage(otherPlayerHealth)
-					otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitDamage)
-					if otherPlayerIsAlive && isPlayerBaseDefeated(otherPlayer.Base) {
-						otherPlayerIsAlive = false
-					}
+			// Check if unit is colliding with the core
+			otherPlayerHealth := otherPlayer.Base.Health.Current
+			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), getPlayerCoreRadius(otherPlayer.Base)+unitSize)
+			if isNearCore {
+				unitDamage := unit.Damage
+				if unit.Type == COMMANDER {
+					unitDamage *= COMMANDER_CORE_DAMAGE_MULTIPLIER
+				} else if unit.Type == SOLDIER {
+					unitDamage *= SOLDIER_CORE_DAMAGE_MULTIPLIER
+				}
+				unitIsAlive := unit.TakeDamage(otherPlayerHealth)
+				otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitDamage)
+				if otherPlayerIsAlive && isPlayerBaseDefeated(otherPlayer.Base) {
+					otherPlayerIsAlive = false
+				}
 
 				if !otherPlayerIsAlive {
 					// Calculate the score and power increment
@@ -1768,16 +1848,16 @@ func checkNeutralBaseCollisions(player *Player, neutrals []*NeutralBase, units [
 				continue
 			}
 
-				// Check if unit is colliding with the core
-				neutralBaseHealth := neutral.Base.Health.Current
-				isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(neutralBaseHealth)/NEUTRAL_BASE_INITIAL_HEALTH)*NEUTRAL_BASE_MAX_CORE_RADIUS+unitSize)
-				if isNearCore {
-					unitDamage := unit.Damage
-					if unit.Type == COMMANDER {
-						unitDamage *= COMMANDER_CORE_DAMAGE_MULTIPLIER
-					}
-					unitIsAlive := unit.TakeDamage(neutralBaseHealth)
-					neutralBaseIsAlive := neutral.Base.TakeDamage(unitDamage)
+			// Check if unit is colliding with the core
+			neutralBaseHealth := neutral.Base.Health.Current
+			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(neutralBaseHealth)/NEUTRAL_BASE_INITIAL_HEALTH)*NEUTRAL_BASE_MAX_CORE_RADIUS+unitSize)
+			if isNearCore {
+				unitDamage := unit.Damage
+				if unit.Type == COMMANDER {
+					unitDamage *= COMMANDER_CORE_DAMAGE_MULTIPLIER
+				}
+				unitIsAlive := unit.TakeDamage(neutralBaseHealth)
+				neutralBaseIsAlive := neutral.Base.TakeDamage(unitDamage)
 
 				if !neutralBaseIsAlive {
 					handleNeutralBaseCaptured(player, neutral)
@@ -2104,6 +2184,13 @@ func handleUnitCollision(unit1, unit2 *Unit) (bool, bool) {
 
 	unit1Damage := unit1.Damage
 	unit2Damage := unit2.Damage
+
+	if unit1.Type == SOLDIER && unit2.Type == COMMANDER {
+		unit1Damage *= SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER
+	}
+	if unit2.Type == SOLDIER && unit1.Type == COMMANDER {
+		unit2Damage *= SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER
+	}
 
 	// Apply damage
 	isAliveUnit1 := unit1.TakeDamage(unit2Damage)

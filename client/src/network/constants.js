@@ -536,7 +536,7 @@ export const BuildingDetails = {
             description: "Increases population limit.",
             cost: 60,
             size: BuildingSizes.HOUSE.size,
-            next: [BuildingVariantTypes.HOUSE.LARGE_HOUSE]
+            next: []
         },
         LARGE_HOUSE: {
             variant: BuildingVariantTypes.HOUSE.LARGE_HOUSE,

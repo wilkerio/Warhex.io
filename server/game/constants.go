@@ -115,23 +115,23 @@ const (
 	PORTAL_LIFETIME_SECONDS         = 30
 	PORTAL_COOLDOWN_SECONDS         = 300
 
-		// Player health regeneration settings
-		PLAYER_HEALTH_REGENERATION           = 30
-		PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
-		// Commander regeneration is intentionally slow and periodic.
-		COMMANDER_HEALTH_REGENERATION           = 120 // HP per tick
-		COMMANDER_HEALTH_REGENERATION_FREQUENCY = 300 // Seconds (5 minutes)
-		COMMANDER_HEALTH_REGENERATION_DELAY     = 30  // Seconds without taking damage
+	// Player health regeneration settings
+	PLAYER_HEALTH_REGENERATION           = 30
+	PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
+	// Commander regeneration is intentionally slow and periodic.
+	COMMANDER_HEALTH_REGENERATION           = 120 // HP per tick
+	COMMANDER_HEALTH_REGENERATION_FREQUENCY = 300 // Seconds (5 minutes)
+	COMMANDER_HEALTH_REGENERATION_DELAY     = 30  // Seconds without taking damage
 
-		// Player building settings
-		PLAYER_MAX_BUILDING_RADIUS = 306
-		PLAYER_MIN_BUILDING_RADIUS = 99
-		// Outer wall ring offset (tightened by 1px from previous setting).
-		WALL_OUTER_RING_OFFSET = 3
-		// Barracks stay on legacy ExternaTK outer ring.
-		BARRACKS_OUTER_RING_OFFSET = 5
-		// Core matches inner ring baseline to keep first-row buildings visually tight.
-		PLAYER_MAX_CORE_RADIUS = PLAYER_MIN_BUILDING_RADIUS
+	// Player building settings
+	PLAYER_MAX_BUILDING_RADIUS = 306
+	PLAYER_MIN_BUILDING_RADIUS = 99
+	// Outer wall ring offset (tightened by 1px from previous setting).
+	WALL_OUTER_RING_OFFSET = 3
+	// Barracks stay on legacy ExternaTK outer ring.
+	BARRACKS_OUTER_RING_OFFSET = 5
+	// Core matches inner ring baseline to keep first-row buildings visually tight.
+	PLAYER_MAX_CORE_RADIUS = PLAYER_MIN_BUILDING_RADIUS
 
 	// Neutral base configuration
 	NEUTRAL_BASE_POPULATION                    = 32
@@ -155,6 +155,10 @@ const (
 	RELOCATE_BASE_COST = 4000
 	// Commander deals amplified damage only when ramming a core/nucleus.
 	COMMANDER_CORE_DAMAGE_MULTIPLIER = 3
+	// Soldiers are swarms; boost only when colliding with enemy core.
+	SOLDIER_CORE_DAMAGE_MULTIPLIER = 3
+	// Restore legacy matchup feeling: soldier waves should punish commanders hard.
+	SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER = 3
 
 	// Spawn settings
 	MIN_PLAYER_SPAWN_DISTANCE = 1500 // Minimum distance between player spawns
