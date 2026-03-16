@@ -199,7 +199,7 @@ func startProtectionCheckLoop() {
 }
 
 func startCommanderRegenerationLoop() {
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(COMMANDER_HEALTH_REGENERATION_FREQUENCY * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -207,8 +207,8 @@ func startCommanderRegenerationLoop() {
 		for _, player := range State.Players {
 			for _, unit := range player.Units {
 				if unit.Type == COMMANDER {
-					if time.Since(unit.LastDamageTime) > 10*time.Second && unit.Health.Current < unit.Health.Max {
-						unit.Health.Increment(100) // Regenerate 100 health per second
+					if time.Since(unit.LastDamageTime) > COMMANDER_HEALTH_REGENERATION_DELAY*time.Second && unit.Health.Current < unit.Health.Max {
+						unit.Health.Increment(COMMANDER_HEALTH_REGENERATION)
 						TriggerUnitHealthUpdateEvent(player, unit)
 					}
 				}
@@ -1674,16 +1674,19 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 				continue
 			}
 
-			// Check if unit is colliding with the core
-			otherPlayerHealth := otherPlayer.Base.Health.Current
-			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), getPlayerCoreRadius(otherPlayer.Base)+unitSize)
-			if isNearCore {
-				unitDamage := unit.Damage
-				unitIsAlive := unit.TakeDamage(otherPlayerHealth)
-				otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitDamage)
-				if otherPlayerIsAlive && isPlayerBaseDefeated(otherPlayer.Base) {
-					otherPlayerIsAlive = false
-				}
+				// Check if unit is colliding with the core
+				otherPlayerHealth := otherPlayer.Base.Health.Current
+				isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), getPlayerCoreRadius(otherPlayer.Base)+unitSize)
+				if isNearCore {
+					unitDamage := unit.Damage
+					if unit.Type == COMMANDER {
+						unitDamage *= COMMANDER_CORE_DAMAGE_MULTIPLIER
+					}
+					unitIsAlive := unit.TakeDamage(otherPlayerHealth)
+					otherPlayerIsAlive := otherPlayer.Base.TakeDamage(unitDamage)
+					if otherPlayerIsAlive && isPlayerBaseDefeated(otherPlayer.Base) {
+						otherPlayerIsAlive = false
+					}
 
 				if !otherPlayerIsAlive {
 					// Calculate the score and power increment
@@ -1765,13 +1768,16 @@ func checkNeutralBaseCollisions(player *Player, neutrals []*NeutralBase, units [
 				continue
 			}
 
-			// Check if unit is colliding with the core
-			neutralBaseHealth := neutral.Base.Health.Current
-			isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(neutralBaseHealth)/NEUTRAL_BASE_INITIAL_HEALTH)*NEUTRAL_BASE_MAX_CORE_RADIUS+unitSize)
-			if isNearCore {
-				unitDamage := unit.Damage
-				unitIsAlive := unit.TakeDamage(neutralBaseHealth)
-				neutralBaseIsAlive := neutral.Base.TakeDamage(unitDamage)
+				// Check if unit is colliding with the core
+				neutralBaseHealth := neutral.Base.Health.Current
+				isNearCore := unit.IsWithinRadius(IntToFloat(basePosition), (float32(neutralBaseHealth)/NEUTRAL_BASE_INITIAL_HEALTH)*NEUTRAL_BASE_MAX_CORE_RADIUS+unitSize)
+				if isNearCore {
+					unitDamage := unit.Damage
+					if unit.Type == COMMANDER {
+						unitDamage *= COMMANDER_CORE_DAMAGE_MULTIPLIER
+					}
+					unitIsAlive := unit.TakeDamage(neutralBaseHealth)
+					neutralBaseIsAlive := neutral.Base.TakeDamage(unitDamage)
 
 				if !neutralBaseIsAlive {
 					handleNeutralBaseCaptured(player, neutral)

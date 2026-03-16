@@ -273,7 +273,7 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 				Behavior:     NormalBullet,
 			},
 		},
-	SNIPER_TURRET: {
+		SNIPER_TURRET: {
 		BASIC_BUILDING: {
 			Health:       Health{Current: 30, Max: 30},
 			Speed:        800,
@@ -426,11 +426,11 @@ var turretBulletSpawningConfig = map[BuildingType]map[BuildingVariant]BulletSpaw
 			Frequency: SpawnFrequency{Current: 0, Original: 2000},
 			Range:     240,
 		},
-		ANTI_TANK_GUN: BulletSpawning{
-			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 4500},
-			Range:     280,
-		},
+			ANTI_TANK_GUN: BulletSpawning{
+				Shooter:   nil,
+				Frequency: SpawnFrequency{Current: 0, Original: 4000},
+				Range:     280,
+			},
 		TRAPPER: BulletSpawning{
 			Shooter:   nil,
 			Frequency: SpawnFrequency{Current: 0, Original: 6000},
@@ -464,14 +464,14 @@ var unitBulletSpawningConfig = map[UnitType]map[UnitVariant]BulletSpawning{
 			Range:     400,
 		},
 	},
-	COMMANDER: {
-		BASIC_UNIT: BulletSpawning{
-			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 600},
-			Range:     160,
+		COMMANDER: {
+			BASIC_UNIT: BulletSpawning{
+				Shooter:   nil,
+				Frequency: SpawnFrequency{Current: 0, Original: 500},
+				Range:     160,
+			},
 		},
-	},
-}
+	}
 
 func GetBulletStats(entityType interface{}, variant interface{}) (BulletStats, bool) {
 	switch t := entityType.(type) {

@@ -115,9 +115,13 @@ const (
 	PORTAL_LIFETIME_SECONDS         = 30
 	PORTAL_COOLDOWN_SECONDS         = 300
 
-	// Player health regeneration settings
-	PLAYER_HEALTH_REGENERATION           = 30
-	PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
+		// Player health regeneration settings
+		PLAYER_HEALTH_REGENERATION           = 30
+		PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
+		// Commander regeneration is intentionally slow and periodic.
+		COMMANDER_HEALTH_REGENERATION           = 120 // HP per tick
+		COMMANDER_HEALTH_REGENERATION_FREQUENCY = 300 // Seconds (5 minutes)
+		COMMANDER_HEALTH_REGENERATION_DELAY     = 30  // Seconds without taking damage
 
 		// Player building settings
 		PLAYER_MAX_BUILDING_RADIUS = 306
@@ -149,6 +153,8 @@ const (
 
 	COMMANDER_COST     = 1500
 	RELOCATE_BASE_COST = 4000
+	// Commander deals amplified damage only when ramming a core/nucleus.
+	COMMANDER_CORE_DAMAGE_MULTIPLIER = 3
 
 	// Spawn settings
 	MIN_PLAYER_SPAWN_DISTANCE = 1500 // Minimum distance between player spawns
