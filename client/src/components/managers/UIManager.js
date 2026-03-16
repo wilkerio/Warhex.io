@@ -2,7 +2,7 @@ import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBu
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
 import * as supabaseClientApi from "../../network/supabaseClient.js";
-import { signUp, signIn, signInWithDiscord, signInWithGoogle, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings } from "../../network/supabaseClient.js";
+import { signUp, signIn, signInWithDiscord, signInWithGoogle, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings, resendSignupConfirmation } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -2090,38 +2090,72 @@ export default class UIManager {
             });
         }
 
+        const handleSignupSubmit = async () => {
+            const email = String(this.DOM.account.signupEmail?.value || "").trim();
+            const nickname = String(this.DOM.account.signupNickname?.value || "").trim();
+            const password = String(this.DOM.account.signupPassword?.value || "");
+
+            if (!email || !nickname || !password) {
+                alert(this.t("error.signupMissing"));
+                return;
+            }
+
+            // Basic nickname validation
+            if (nickname.length < 3) {
+                alert(this.t("error.nicknameShort"));
+                return;
+            }
+
+            if (!/^[a-zA-Z0-9_]+$/.test(nickname)) {
+                alert(this.t("error.nicknameInvalid"));
+                return;
+            }
+
+            if (signupSubmit) signupSubmit.disabled = true;
+            try {
+                const signupData = await signUp(email, password, nickname);
+                const signupSession = signupData?.session || null;
+                const signupUserId = signupSession?.user?.id || null;
+
+                if (signupUserId && this.core?.networkManager?.hydrateAuthenticatedSession) {
+                    await this.core.networkManager.hydrateAuthenticatedSession(signupSession);
+                    this.showSignupDialog(false);
+                    this.showSigninDialog(false);
+                    this.updateAccount();
+                    this.updateAccountButton();
+                    return;
+                }
+
+                // If email confirmation is enabled in Supabase, session is null here.
+                this.showSignupDialog(false);
+                this.showSigninDialog(true);
+                if (this.DOM?.account?.signinEmail) {
+                    this.DOM.account.signinEmail.value = email.toLowerCase();
+                }
+                alert(this.t("success.accountCreated"));
+            } catch (error) {
+                const rawMessage = String(error?.message || "");
+                const normalized = rawMessage.toLowerCase();
+                const alreadyRegistered = normalized.includes("already registered") || normalized.includes("user already");
+                if (alreadyRegistered) {
+                    this.showSignupDialog(false);
+                    this.showSigninDialog(true);
+                    if (this.DOM?.account?.signinEmail) {
+                        this.DOM.account.signinEmail.value = email.toLowerCase();
+                    }
+                    alert(this.t("error.loginFailed", { message: "Conta já existe. Faça login." }));
+                    return;
+                }
+                alert(this.t("error.signupFailed", { message: error.message }));
+            } finally {
+                if (signupSubmit) signupSubmit.disabled = false;
+            }
+        };
+
         // Signup dialog handlers
         if (signupSubmit && !signupSubmit.dataset.boundSignupSubmit) {
             signupSubmit.dataset.boundSignupSubmit = "1";
-            signupSubmit.addEventListener("click", async () => {
-                const email = this.DOM.account.signupEmail?.value;
-                const nickname = this.DOM.account.signupNickname?.value;
-                const password = this.DOM.account.signupPassword?.value;
-
-                if (!email || !nickname || !password) {
-                    alert(this.t("error.signupMissing"));
-                    return;
-                }
-
-                // Basic nickname validation
-                if (nickname.length < 3) {
-                    alert(this.t("error.nicknameShort"));
-                    return;
-                }
-
-                if (!/^[a-zA-Z0-9_]+$/.test(nickname)) {
-                    alert(this.t("error.nicknameInvalid"));
-                    return;
-                }
-
-                try {
-                    await signUp(email, password, nickname);
-                    this.showSignupDialog(false);
-                    alert(this.t("success.accountCreated"));
-                } catch (error) {
-                    alert(this.t("error.signupFailed", { message: error.message }));
-                }
-            });
+            signupSubmit.addEventListener("click", handleSignupSubmit);
         }
 
         if (signupCancel && !signupCancel.dataset.boundSignupCancel) {
@@ -2129,6 +2163,27 @@ export default class UIManager {
             signupCancel.addEventListener("click", () => {
                 this.showSignupDialog(false);
             });
+        }
+
+        const signupEmailInput = this.DOM.account.signupEmail || document.getElementById("signup-email");
+        const signupNicknameInput = this.DOM.account.signupNickname || document.getElementById("signup-nickname");
+        const signupPasswordInput = this.DOM.account.signupPassword || document.getElementById("signup-password");
+        const onSignupEnter = async (event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            await handleSignupSubmit();
+        };
+        if (signupEmailInput && !signupEmailInput.dataset.boundSignupEnter) {
+            signupEmailInput.dataset.boundSignupEnter = "1";
+            signupEmailInput.addEventListener("keydown", onSignupEnter);
+        }
+        if (signupNicknameInput && !signupNicknameInput.dataset.boundSignupEnter) {
+            signupNicknameInput.dataset.boundSignupEnter = "1";
+            signupNicknameInput.addEventListener("keydown", onSignupEnter);
+        }
+        if (signupPasswordInput && !signupPasswordInput.dataset.boundSignupEnter) {
+            signupPasswordInput.dataset.boundSignupEnter = "1";
+            signupPasswordInput.addEventListener("keydown", onSignupEnter);
         }
 
         if (signupDiscord && !signupDiscord.dataset.boundSignupDiscord) {
@@ -2159,34 +2214,71 @@ export default class UIManager {
             });
         }
 
+        const handleSigninSubmit = async () => {
+            const email = String(this.DOM.account.signinEmail?.value || "").trim();
+            const password = String(this.DOM.account.signinPassword?.value || "");
+
+            if (!email || !password) {
+                alert(this.t("error.signinMissing"));
+                return;
+            }
+
+            if (signinSubmit) signinSubmit.disabled = true;
+            try {
+                const authData = await signIn(email, password);
+                const session = authData?.session || null;
+                const sessionUserId = session?.user?.id || null;
+
+                if (sessionUserId && this.core?.networkManager?.hydrateAuthenticatedSession) {
+                    await this.core.networkManager.hydrateAuthenticatedSession(session);
+                } else {
+                    await this.core.networkManager.checkLoginStatus();
+                }
+
+                try { localStorage.removeItem("warhex_oauth_pending_provider"); } catch (e) {}
+                this.showSigninDialog(false);
+                this.updateAccount();
+                this.updateAccountButton();
+            } catch (error) {
+                const rawMessage = String(error?.message || "");
+                const normalized = rawMessage.toLowerCase();
+                const emailNotConfirmed = normalized.includes("email not confirmed")
+                    || normalized.includes("email_not_confirmed");
+                if (emailNotConfirmed) {
+                    try {
+                        await resendSignupConfirmation(email);
+                    } catch (resendError) {
+                        console.warn("Could not resend signup confirmation email:", resendError);
+                    }
+                    alert("Seu e-mail ainda não foi confirmado. Enviamos um novo e-mail de confirmação.");
+                    return;
+                }
+                alert(this.t("error.loginFailed", { message: error.message }));
+            } finally {
+                if (signinSubmit) signinSubmit.disabled = false;
+            }
+        };
+
         // Signin dialog handlers
         if (signinSubmit && !signinSubmit.dataset.boundSigninSubmit) {
             signinSubmit.dataset.boundSigninSubmit = "1";
-            signinSubmit.addEventListener("click", async () => {
-                const email = this.DOM.account.signinEmail?.value;
-                const password = this.DOM.account.signinPassword?.value;
+            signinSubmit.addEventListener("click", handleSigninSubmit);
+        }
 
-                if (!email || !password) {
-                    alert(this.t("error.signinMissing"));
-                    return;
-                }
-
-                try {
-                    const authData = await signIn(email, password);
-                    const sessionUserId = authData?.session?.user?.id;
-                    if (sessionUserId) {
-                        this.core.networkManager.loggedIn = true;
-                        this.core.networkManager.userId = sessionUserId;
-                    }
-                    try { localStorage.removeItem("warhex_oauth_pending_provider"); } catch (e) {}
-                    this.showSigninDialog(false);
-                    await this.core.networkManager.checkLoginStatus();
-                    this.updateAccount();
-                    this.updateAccountButton();
-                } catch (error) {
-                    alert(this.t("error.loginFailed", { message: error.message }));
-                }
-            });
+        const signinEmailInput = this.DOM.account.signinEmail || document.getElementById("signin-email");
+        const signinPasswordInput = this.DOM.account.signinPassword || document.getElementById("signin-password");
+        const onSigninEnter = async (event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            await handleSigninSubmit();
+        };
+        if (signinEmailInput && !signinEmailInput.dataset.boundSigninEnter) {
+            signinEmailInput.dataset.boundSigninEnter = "1";
+            signinEmailInput.addEventListener("keydown", onSigninEnter);
+        }
+        if (signinPasswordInput && !signinPasswordInput.dataset.boundSigninEnter) {
+            signinPasswordInput.dataset.boundSigninEnter = "1";
+            signinPasswordInput.addEventListener("keydown", onSigninEnter);
         }
 
         if (signinCancel && !signinCancel.dataset.boundSigninCancel) {

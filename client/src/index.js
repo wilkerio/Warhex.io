@@ -1,5 +1,6 @@
 import Core from "./components/Core.js";
 import CrazyGamesBridge from "./integrations/CrazyGamesBridge.js";
+import { consumeOAuthCallbackSession } from "./network/supabaseClient.js";
 
 function isIPv4Address(hostname) {
     return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname);
@@ -31,6 +32,15 @@ function getLoadBalancerAddress() {
 }
 
 async function bootstrap() {
+    try {
+        const oauthResult = await consumeOAuthCallbackSession();
+        if (oauthResult?.error) {
+            console.error("OAuth bootstrap callback failed:", oauthResult.error);
+        }
+    } catch (oauthError) {
+        console.error("OAuth bootstrap processing error:", oauthError);
+    }
+
     const platformBridge = new CrazyGamesBridge();
     window.__WARHEX_PLATFORM__ = platformBridge;
     window.__WARHEX_CRAZYGAMES_ENV__ = platformBridge.isCrazyGamesEnvironment();

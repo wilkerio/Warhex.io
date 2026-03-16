@@ -124,12 +124,19 @@ export function clearLocalAuthState() {
 
 // Auth functions
 export async function signUp(email, password, nickname) {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedPassword = String(password || "");
+    const normalizedNickname = String(nickname || "").trim();
+    if (!normalizedEmail || !normalizedPassword || !normalizedNickname) {
+        throw new Error("Email, nickname and password are required.");
+    }
+
     const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
+        email: normalizedEmail,
+        password: normalizedPassword,
         options: {
             data: {
-                nickname: nickname
+                nickname: normalizedNickname
             }
         }
     });
@@ -137,11 +144,30 @@ export async function signUp(email, password, nickname) {
     return data;
 }
 
+export async function resendSignupConfirmation(email) {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+        throw new Error("Email is required.");
+    }
+    const { data, error } = await supabase.auth.resend({
+        type: "signup",
+        email: normalizedEmail
+    });
+    if (error) throw error;
+    return data;
+}
+
 export async function signIn(email, password) {
-    console.log('Attempting sign in with email:', email);
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedPassword = String(password || "");
+    if (!normalizedEmail || !normalizedPassword) {
+        throw new Error("Email and password are required.");
+    }
+
+    console.log('Attempting sign in with email:', normalizedEmail);
     const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
+        email: normalizedEmail,
+        password: normalizedPassword
     });
     if (error) {
         console.error('Sign in error:', error);
@@ -399,16 +425,47 @@ export async function consumeOAuthCallbackSession() {
 
     try {
         const url = new URL(window.location.href);
+        const hashParams = new URLSearchParams((url.hash || "").startsWith("#") ? url.hash.slice(1) : "");
         const oauthError = url.searchParams.get("error");
         const oauthErrorDescription = url.searchParams.get("error_description");
-        if (oauthError) {
-            storeOAuthLastError(oauthErrorDescription || oauthError);
+        const hashError = hashParams.get("error");
+        const hashErrorDescription = hashParams.get("error_description");
+        if (oauthError || hashError) {
+            const message = oauthErrorDescription || oauthError || hashErrorDescription || hashError || "OAuth error";
+            storeOAuthLastError(message);
             cleanupOAuthParamsFromCurrentUrl();
             return {
                 consumed: true,
                 session: null,
-                error: new Error(oauthErrorDescription || oauthError)
+                error: new Error(message)
             };
+        }
+
+        // Handle implicit OAuth callback (#access_token=...&refresh_token=...)
+        const hashAccessToken = hashParams.get("access_token");
+        const hashRefreshToken = hashParams.get("refresh_token");
+        if (hashAccessToken && hashRefreshToken && typeof supabase?.auth?.setSession === "function") {
+            const { data, error } = await supabase.auth.setSession({
+                access_token: hashAccessToken,
+                refresh_token: hashRefreshToken
+            });
+            cleanupOAuthParamsFromCurrentUrl();
+
+            if (error) {
+                storeOAuthLastError(error?.message || "OAuth session setup failed.");
+                return { consumed: true, session: null, error };
+            }
+
+            const session = data?.session || null;
+            storeOAuthLastError("");
+            try {
+                if (session) {
+                    localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(session));
+                }
+            } catch (e) {
+                console.warn("Could not persist OAuth session to localStorage:", e);
+            }
+            return { consumed: true, session, error: null };
         }
 
         const code = url.searchParams.get("code");
