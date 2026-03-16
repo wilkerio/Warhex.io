@@ -231,6 +231,13 @@ export default class UIManager {
         };
 
         document.documentElement.lang = this.languageManager.getLanguage();
+        const lang = this.languageManager.getLanguage();
+        const changelogButtonLabel = lang === "pt"
+            ? "Atualizacoes"
+            : (lang === "es" ? "Actualizaciones" : "Changelog");
+        const changelogSubtitle = lang === "pt"
+            ? "Ultimas atualizacoes e correcoes"
+            : (lang === "es" ? "Ultimas actualizaciones y correcciones" : "Latest updates and fixes");
 
         setText("#language-label", "language.label");
         const languageSelect = document.getElementById("language-select");
@@ -256,6 +263,8 @@ export default class UIManager {
         setText("#privacy-open-button", "legal.privacyPolicy");
         setText("#terms-open-button", "legal.termsOfUse");
         setText("#about-open-button", "legal.about");
+        const changelogOpenButton = document.querySelector("#changelog-open-button");
+        if (changelogOpenButton) changelogOpenButton.textContent = changelogButtonLabel;
 
         setText("#menu-dialog h2", "menu.connectionRejected");
         const rejected = document.querySelectorAll("#menu-dialog p");
@@ -282,7 +291,6 @@ export default class UIManager {
         setPlaceholder("#signup-email", "dialog.email");
         setPlaceholder("#signup-nickname", "dialog.nickname");
         setPlaceholder("#signup-password", "dialog.password");
-        const lang = this.languageManager.getLanguage();
         const defaultDiscordLabel = lang === "pt" ? "Cadastrar com Discord" : (lang === "es" ? "Registrarse con Discord" : "Sign up with Discord");
         const defaultGoogleLabel = lang === "pt" ? "Cadastrar com Google" : (lang === "es" ? "Registrarse con Google" : "Sign up with Google");
         const defaultSigninDiscordLabel = lang === "pt" ? "Entrar com Discord" : (lang === "es" ? "Iniciar con Discord" : "Continue with Discord");
@@ -311,13 +319,18 @@ export default class UIManager {
         setText("#privacy-dialog h2", "legal.privacyPolicy");
         setText("#terms-dialog h2", "legal.termsOfUse");
         setText("#about-dialog h2", "legal.about");
+        const changelogDialogTitle = document.querySelector("#changelog-dialog h2");
+        if (changelogDialogTitle) changelogDialogTitle.textContent = changelogButtonLabel;
         document.querySelectorAll(".privacy-updated").forEach((el) => {
             if (el.closest("#about-dialog")) {
                 el.textContent = this.t("legal.aboutTagline");
+            } else if (el.closest("#changelog-dialog")) {
+                el.textContent = changelogSubtitle;
             } else {
                 el.textContent = this.t("legal.lastUpdated");
             }
         });
+        this.renderLocalizedChangelog();
 
         setText("#game-over-content h1 span:first-child", "game.killedBy");
         const scoreStrong = document.querySelector("#game-over-stats p:nth-child(1) strong");
@@ -1660,6 +1673,9 @@ export default class UIManager {
             },
 
             legal: {
+                changelogOpenButton: "changelog-open-button",
+                changelogDialog: "changelog-dialog",
+                changelogCloseButton: "changelog-dialog-close",
                 privacyOpenButton: "privacy-open-button",
                 privacyDialog: "privacy-dialog",
                 privacyCloseButton: "privacy-dialog-close",
@@ -5083,9 +5099,192 @@ export default class UIManager {
             });
         };
 
+        bindDialog(legal.changelogOpenButton, legal.changelogDialog, legal.changelogCloseButton);
         bindDialog(legal.privacyOpenButton, legal.privacyDialog, legal.privacyCloseButton);
         bindDialog(legal.termsOpenButton, legal.termsDialog, legal.termsCloseButton);
         bindDialog(legal.aboutOpenButton, legal.aboutDialog, legal.aboutCloseButton);
+    }
+
+    getChangelogByLanguage () {
+        return {
+            pt: [
+                {
+                    date: "16/03/2026",
+                    title: "Sistema de Upgrade e Sell All",
+                    notes: [
+                        "Novo modo Auto Upgrade para evoluir estruturas de forma automatica.",
+                        "Sell All expandido para facilitar a limpeza da base em massa.",
+                        "Fluxo de upgrade ajustado para todos os itens com melhor consistencia visual."
+                    ]
+                },
+                {
+                    date: "16/03/2026",
+                    title: "Pontuacao e progresso em partida",
+                    notes: [
+                        "Corrigido bug de pontuacao ao sair da area de protecao.",
+                        "Ganho de pontos voltou ao comportamento esperado durante a partida."
+                    ]
+                },
+                {
+                    date: "16/03/2026",
+                    title: "Autogens e Full ATK",
+                    notes: [
+                        "Novo formato de Auto Gens para layout mais padrao.",
+                        "Modelo de base Full ATK refinado com ajustes de nucleo e objetos."
+                    ]
+                },
+                {
+                    date: "15/03/2026",
+                    title: "Defesa e construcao",
+                    notes: [
+                        "Sistema de defesa melhorado com logica inspirada em layouts veteranos.",
+                        "Tecla R agora rotaciona Generator e House para novos formatos de base."
+                    ]
+                },
+                {
+                    date: "15/03/2026",
+                    title: "Combate e qualidade de vida",
+                    notes: [
+                        "Adicionada arma com 3 disparos para aumentar dificuldade e variedade.",
+                        "Corrigido bug visual de linhas e tela rapida ao entrar no jogo."
+                    ]
+                }
+            ],
+            en: [
+                {
+                    date: "2026-03-16",
+                    title: "Upgrade and Sell All System",
+                    notes: [
+                        "Added Auto Upgrade mode for automated structure upgrades.",
+                        "Expanded Sell All behavior for faster base cleanup.",
+                        "Upgrade flow polished across all item categories."
+                    ]
+                },
+                {
+                    date: "2026-03-16",
+                    title: "Scoring and match progression",
+                    notes: [
+                        "Fixed score gain issue after leaving protection range.",
+                        "Point progression now behaves as expected during gameplay."
+                    ]
+                },
+                {
+                    date: "2026-03-16",
+                    title: "Autogens and Full ATK layout",
+                    notes: [
+                        "Introduced a new Auto Gens format for a cleaner standard pattern.",
+                        "Refined Full ATK base model with core and object size adjustments."
+                    ]
+                },
+                {
+                    date: "2026-03-15",
+                    title: "Defense and building flow",
+                    notes: [
+                        "Defense logic improved to match veteran-style base patterns.",
+                        "R key now rotates Generator and House for better fitting layouts."
+                    ]
+                },
+                {
+                    date: "2026-03-15",
+                    title: "Combat and stability updates",
+                    notes: [
+                        "Added a 3-shot weapon to increase pressure and combat variety.",
+                        "Fixed line-visibility and fast-entry screen issues."
+                    ]
+                }
+            ],
+            es: [
+                {
+                    date: "16/03/2026",
+                    title: "Sistema de Upgrade y Sell All",
+                    notes: [
+                        "Se agrego Auto Upgrade para mejorar estructuras automaticamente.",
+                        "Sell All fue ampliado para limpiar la base mas rapido.",
+                        "Se ajusto el flujo de mejoras para todos los tipos de items."
+                    ]
+                },
+                {
+                    date: "16/03/2026",
+                    title: "Puntuacion y progreso de partida",
+                    notes: [
+                        "Corregido el bug de puntuacion al salir del area de proteccion.",
+                        "La ganancia de puntos vuelve a funcionar como se esperaba."
+                    ]
+                },
+                {
+                    date: "16/03/2026",
+                    title: "Autogens y layout Full ATK",
+                    notes: [
+                        "Nuevo formato de Auto Gens para un patron mas estandar.",
+                        "Mejoras en el modelo Full ATK con ajustes de nucleo y objetos."
+                    ]
+                },
+                {
+                    date: "15/03/2026",
+                    title: "Defensa y construccion",
+                    notes: [
+                        "Mejorada la logica de defensa con enfoque de bases veteranas.",
+                        "La tecla R ahora rota Generator y House para mejores encajes."
+                    ]
+                },
+                {
+                    date: "15/03/2026",
+                    title: "Combate y estabilidad",
+                    notes: [
+                        "Nueva arma de 3 disparos para mas dificultad y variacion tactica.",
+                        "Corregidos bugs visuales de lineas y pantalla rapida al entrar."
+                    ]
+                }
+            ]
+        };
+    }
+
+    renderLocalizedChangelog () {
+        const container = document.getElementById("changelog-content");
+        if (!container) return;
+
+        const language = this.languageManager.getLanguage();
+        const changelogByLanguage = this.getChangelogByLanguage();
+        const entries = changelogByLanguage[language] || changelogByLanguage.en;
+
+        container.innerHTML = "";
+
+        const creatorsLabel = language === "pt"
+            ? "Desenvolvedores"
+            : (language === "es" ? "Desarrolladores" : "Developers");
+        const creatorsEntry = document.createElement("article");
+        creatorsEntry.className = "changelog-entry changelog-creators";
+        creatorsEntry.innerHTML = `
+            <div class="changelog-date">${creatorsLabel}</div>
+            <h3 class="changelog-title">Wilker Junio, Emerson Rodrigues</h3>
+        `;
+        container.appendChild(creatorsEntry);
+
+        entries.forEach((entry) => {
+            const card = document.createElement("article");
+            card.className = "changelog-entry";
+
+            const date = document.createElement("div");
+            date.className = "changelog-date";
+            date.textContent = entry.date;
+
+            const title = document.createElement("h3");
+            title.className = "changelog-title";
+            title.textContent = entry.title;
+
+            const notes = document.createElement("ul");
+            notes.className = "changelog-notes";
+            (entry.notes || []).forEach((note) => {
+                const item = document.createElement("li");
+                item.textContent = note;
+                notes.appendChild(item);
+            });
+
+            card.appendChild(date);
+            card.appendChild(title);
+            card.appendChild(notes);
+            container.appendChild(card);
+        });
     }
 
     addSettingsPanelListener () {

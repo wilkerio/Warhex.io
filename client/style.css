@@ -294,7 +294,10 @@ img {
   z-index: 10020;
 }
 
-#privacy-dialog > .menu-card.privacy-card {
+#privacy-dialog > .menu-card.privacy-card,
+#terms-dialog > .menu-card.privacy-card,
+#about-dialog > .menu-card.privacy-card,
+#changelog-dialog > .menu-card.privacy-card {
   width: min(760px, 94vw);
   max-height: 82vh;
   overflow: hidden;
@@ -303,7 +306,8 @@ img {
 
 #privacy-dialog .privacy-card h2,
 #terms-dialog .privacy-card h2,
-#about-dialog .privacy-card h2 {
+#about-dialog .privacy-card h2,
+#changelog-dialog .privacy-card h2 {
   color: #f1f6ff;
 }
 
@@ -314,7 +318,8 @@ img {
 }
 
 #terms-dialog .privacy-updated,
-#about-dialog .privacy-updated {
+#about-dialog .privacy-updated,
+#changelog-dialog .privacy-updated {
   color: #b7c8ff;
   font-size: 13px;
   margin-top: -6px;
@@ -328,7 +333,8 @@ img {
 }
 
 #terms-dialog .privacy-content,
-#about-dialog .privacy-content {
+#about-dialog .privacy-content,
+#changelog-dialog .privacy-content {
   margin-top: 10px;
   padding-right: 10px;
   overflow-y: auto;
@@ -342,7 +348,8 @@ img {
 }
 
 #terms-dialog .privacy-content h3,
-#about-dialog .privacy-content h3 {
+#about-dialog .privacy-content h3,
+#changelog-dialog .privacy-content h3 {
   margin: 12px 0 6px 0;
   color: #d9e7ff;
   font-size: 16px;
@@ -355,16 +362,58 @@ img {
 }
 
 #terms-dialog .privacy-content p,
-#about-dialog .privacy-content p {
+#about-dialog .privacy-content p,
+#changelog-dialog .privacy-content p {
   color: #e5ecff;
   line-height: 1.45;
   font-size: 14px;
 }
 
 #terms-dialog,
-#about-dialog {
+#about-dialog,
+#changelog-dialog {
   display: none;
   z-index: 10020;
+}
+
+#changelog-dialog .changelog-entry {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid rgba(160, 210, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(20, 35, 72, 0.22);
+}
+
+#changelog-dialog .changelog-entry.changelog-creators {
+  background: rgba(44, 22, 76, 0.28);
+  border-color: rgba(180, 160, 255, 0.3);
+}
+
+#changelog-dialog .changelog-date {
+  color: #9fe8ff;
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+}
+
+#changelog-dialog .changelog-title {
+  color: #f2f7ff;
+  font-size: 15px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+#changelog-dialog .changelog-notes {
+  margin: 0;
+  padding-left: 18px;
+  color: #dce7ff;
+}
+
+#changelog-dialog .changelog-notes li {
+  margin-bottom: 4px;
+  line-height: 1.38;
+  font-size: 13px;
 }
 
 #guest-button {
