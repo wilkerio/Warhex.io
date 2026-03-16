@@ -102,13 +102,16 @@ func handleEvent(event game.Event) {
 		_, playerScore, kills, playtime, _ := game.RemovePlayer(player.Conn)
 
 		if userOk {
-			if userData.Discord.ID != "" {
+			progressUserID := userData.ProgressUserID()
+			if progressUserID != "" {
 				go func() {
-					newUnlockedSkins, ok := UpdateUserStats(userData.Discord.ID, playerScore, kills, playtime)
+					newUnlockedSkins, ok := UpdateUserStats(progressUserID, playerScore, kills, playtime)
 					if ok {
 						AddUnlockedSkinsLocally(player.Conn, newUnlockedSkins)
 					}
 				}()
+			}
+			if userData.Discord.ID != "" {
 				RemovePlayingDiscordAccount(userData.Discord.ID)
 			}
 		}
@@ -128,14 +131,16 @@ func handleEvent(event game.Event) {
 		_, playerScore, kills, playtime, _ := game.RemovePlayer(player.Conn)
 
 		if userOk {
-			if userData.Discord.ID != "" {
+			progressUserID := userData.ProgressUserID()
+			if progressUserID != "" {
 				go func() {
-					newUnlockedSkins, ok := UpdateUserStats(userData.Discord.ID, playerScore, kills, playtime)
+					newUnlockedSkins, ok := UpdateUserStats(progressUserID, playerScore, kills, playtime)
 					if ok {
 						AddUnlockedSkinsLocally(player.Conn, newUnlockedSkins)
 					}
 				}()
-
+			}
+			if userData.Discord.ID != "" {
 				RemovePlayingDiscordAccount(userData.Discord.ID)
 			}
 		}
@@ -250,10 +255,15 @@ func removePlayerByConnection(conn *websocket.Conn) {
 	if ok {
 		broadcastPlayerLeft(playerID)
 		removePlayerMessageState(playerID)
-		// Update user stats in a non-blocking way if a Discord ID exists
-		if userOk && userData.Discord.ID != "" {
-			go UpdateUserStats(userData.Discord.ID, playerScore, kills, playtime)
-			RemovePlayingDiscordAccount(userData.Discord.ID)
+		// Update user stats in a non-blocking way if an authenticated user ID exists.
+		if userOk {
+			progressUserID := userData.ProgressUserID()
+			if progressUserID != "" {
+				go UpdateUserStats(progressUserID, playerScore, kills, playtime)
+			}
+			if userData.Discord.ID != "" {
+				RemovePlayingDiscordAccount(userData.Discord.ID)
+			}
 		}
 	}
 

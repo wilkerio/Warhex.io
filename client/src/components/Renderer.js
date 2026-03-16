@@ -437,63 +437,74 @@ export class Renderer {
 
     updatePlayerConnections () {
         this.connectionLines = [];
-        const clientPlayer = this.queues.player.find(player => player.isClient);
-        if (!clientPlayer) return;
+        if (!this.queues.player || this.queues.player.length <= 1) return;
 
-        // Only connect to cardinal neighbors that are axis-aligned with the client base.
-        // This prevents diagonal links (e.g. bottom base linking to top-left base).
+        // Connect each base to its nearest cardinal neighbors so players can see
+        // who is linked to whom (not only links from the local player).
         const axisTolerance = 250;
-        const nearestByDirection = {
-            up: null,
-            down: null,
-            left: null,
-            right: null
-        };
+        const seenPairs = new Set();
 
-        for (const otherPlayer of this.queues.player) {
-            if (otherPlayer.id === clientPlayer.id) continue;
+        for (const sourcePlayer of this.queues.player) {
+            const nearestByDirection = {
+                up: null,
+                down: null,
+                left: null,
+                right: null
+            };
 
-            const dx = otherPlayer.position.x - clientPlayer.position.x;
-            const dy = otherPlayer.position.y - clientPlayer.position.y;
-            const absDx = Math.abs(dx);
-            const absDy = Math.abs(dy);
+            for (const otherPlayer of this.queues.player) {
+                if (otherPlayer.id === sourcePlayer.id) continue;
 
-            // Vertical neighbors (same X line)
-            if (absDx <= axisTolerance && absDy > 0) {
-                const direction = dy >= 0 ? "up" : "down";
-                const current = nearestByDirection[direction];
-                if (!current || absDy < current.distance) {
-                    nearestByDirection[direction] = { player: otherPlayer, distance: absDy };
+                const dx = otherPlayer.position.x - sourcePlayer.position.x;
+                const dy = otherPlayer.position.y - sourcePlayer.position.y;
+                const absDx = Math.abs(dx);
+                const absDy = Math.abs(dy);
+
+                // Vertical neighbors (roughly same X line)
+                if (absDx <= axisTolerance && absDy > 0) {
+                    const direction = dy >= 0 ? "up" : "down";
+                    const current = nearestByDirection[direction];
+                    if (!current || absDy < current.distance) {
+                        nearestByDirection[direction] = { player: otherPlayer, distance: absDy };
+                    }
+                }
+
+                // Horizontal neighbors (roughly same Y line)
+                if (absDy <= axisTolerance && absDx > 0) {
+                    const direction = dx >= 0 ? "right" : "left";
+                    const current = nearestByDirection[direction];
+                    if (!current || absDx < current.distance) {
+                        nearestByDirection[direction] = { player: otherPlayer, distance: absDx };
+                    }
                 }
             }
 
-            // Horizontal neighbors (same Y line)
-            if (absDy <= axisTolerance && absDx > 0) {
-                const direction = dx >= 0 ? "right" : "left";
-                const current = nearestByDirection[direction];
-                if (!current || absDx < current.distance) {
-                    nearestByDirection[direction] = { player: otherPlayer, distance: absDx };
-                }
+            for (const direction of ["up", "down", "left", "right"]) {
+                const entry = nearestByDirection[direction];
+                if (!entry) continue;
+
+                const targetPlayer = entry.player;
+                const lowID = Math.min(sourcePlayer.id, targetPlayer.id);
+                const highID = Math.max(sourcePlayer.id, targetPlayer.id);
+                const pairKey = `${lowID}:${highID}`;
+                if (seenPairs.has(pairKey)) continue;
+                seenPairs.add(pairKey);
+
+                this.connectionLines.push({
+                    from: sourcePlayer,
+                    to: targetPlayer,
+                    color: (sourcePlayer.hasSpawnProtection || targetPlayer.hasSpawnProtection)
+                        ? "rgba(255,255,255,0.65)"
+                        : "rgba(255,64,64,0.9)"
+                });
             }
-        }
-
-        for (const direction of ["up", "down", "left", "right"]) {
-            const entry = nearestByDirection[direction];
-            if (!entry) continue;
-
-            const otherPlayer = entry.player;
-            this.connectionLines.push({
-                from: clientPlayer,
-                to: otherPlayer,
-                color: otherPlayer.hasSpawnProtection
-                    ? "rgba(255,255,255,0.65)"
-                    : "rgba(255,64,64,0.9)"
-            });
         }
     }
 
     _renderPlayerConnections (camera) {
         const { context } = this;
+        // Recalculate every frame so newly connected/positioned players update immediately.
+        this.updatePlayerConnections();
 
         // Save the current state
         context.save();

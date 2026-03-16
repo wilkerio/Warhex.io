@@ -566,12 +566,25 @@ export async function ensureUserRow(authUser, preferredNickname = "") {
         for (const payload of payloadCandidates) {
             const { data, error } = await supabase
                 .from("users")
-                .upsert(payload, { onConflict: "id" })
+                // Ignore existing rows to avoid overwriting progression/stats on every login.
+                .upsert(payload, { onConflict: "id", ignoreDuplicates: true })
                 .select("*")
-                .single();
+                .maybeSingle();
 
             if (!error) {
-                return { success: true, data: normalizeUserRow(data) };
+                if (data) {
+                    return { success: true, data: normalizeUserRow(data) };
+                }
+                // Row likely already existed and was ignored by upsert.
+                const { data: existingRow, error: existingError } = await supabase
+                    .from("users")
+                    .select("*")
+                    .eq("id", userId)
+                    .maybeSingle();
+                if (!existingError && existingRow) {
+                    return { success: true, data: normalizeUserRow(existingRow) };
+                }
+                return { success: true, data: normalizeUserRow({ id: userId, email: resolvedEmail, nickname }) };
             }
 
             lastError = error;
@@ -844,23 +857,19 @@ export async function updateUserProgressStats(userId, progression, statistics) {
             playtime: Number(statistics?.playtime || 0)
         };
 
-        const url = `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`;
-        const resp = await fetch(url, {
+        const authToken = await getCurrentAccessToken();
+        const path = `/rest/v1/users?id=eq.${encodeURIComponent(userId)}`;
+        const result = await postgrestRequestWithRetry(path, {
             method: "PATCH",
-            headers: {
-                "apikey": supabaseKey,
-                "Authorization": `Bearer ${supabaseKey}`,
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal"
-            },
-            body: JSON.stringify(payload)
-        });
+            body: payload,
+            prefer: "return=minimal",
+            timeoutMs: 10000,
+            authToken
+        }, 2);
 
-        if (!resp.ok) {
-            const text = await resp.text().catch(() => "");
-            const error = text || resp.statusText || String(resp.status);
-            console.error("Error updating user progression/stats:", error);
-            return { success: false, error };
+        if (!result?.ok) {
+            console.error("Error updating user progression/stats:", result?.error || "unknown_error");
+            return { success: false, error: result?.error || "update_failed" };
         }
 
         return { success: true };
@@ -871,7 +880,7 @@ export async function updateUserProgressStats(userId, progression, statistics) {
 }
 
 // Same stats update, but resilient during tab close/reload via keepalive fetch.
-export async function updateUserProgressStatsKeepalive(userId, statistics) {
+export async function updateUserProgressStatsKeepalive(userId, statistics, progression = null) {
     try {
         if (!userId) return { success: false, error: "missing_user_id" };
 
@@ -992,13 +1001,44 @@ async function withTimeoutPromise(promise, ms = 10000, timeoutMessage = "request
 }
 
 async function getCurrentAccessToken(timeoutMs = 2500) {
+    const readSessionToken = async (ms = timeoutMs) => {
+        try {
+            const sessionResult = await withTimeoutPromise(
+                supabase.auth.getSession(),
+                ms,
+                "auth_session_timeout"
+            );
+            return sessionResult?.data?.session?.access_token || null;
+        } catch {
+            return null;
+        }
+    };
+
+    // 1) Fast path: current in-memory/auth session.
+    let token = await readSessionToken(timeoutMs);
+    if (token) return token;
+
+    // 2) Recovery path: restore from local fallback and retry.
     try {
-        const sessionResult = await withTimeoutPromise(
-            supabase.auth.getSession(),
-            timeoutMs,
-            "auth_session_timeout"
+        const restored = await withTimeoutPromise(
+            restoreSessionFromStorage(),
+            Math.max(2200, timeoutMs),
+            "auth_restore_timeout"
         );
-        return sessionResult?.data?.session?.access_token || null;
+        token = restored?.access_token || null;
+        if (token) return token;
+    } catch {}
+
+    // 3) Retry getSession once more after restore attempt.
+    token = await readSessionToken(Math.max(2200, timeoutMs));
+    if (token) return token;
+
+    // 4) Last-resort fallback from persisted local session.
+    try {
+        const raw = localStorage.getItem(LOCAL_SESSION_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed?.access_token || null;
     } catch {
         return null;
     }
@@ -1144,7 +1184,17 @@ async function insertBaseLayout(payload, visibilityColumn, isPublic = true) {
     if (visibilityColumn) {
         insertPayload[visibilityColumn] = Boolean(isPublic);
     }
-    const authToken = await getCurrentAccessToken();
+    let authToken = await getCurrentAccessToken();
+    if (!authToken) {
+        try {
+            const restored = await restoreSessionFromStorage();
+            if (restored?.access_token) {
+                authToken = restored.access_token;
+            } else {
+                authToken = await getCurrentAccessToken(3200);
+            }
+        } catch {}
+    }
     if (!authToken) {
         return {
             data: null,
@@ -1206,9 +1256,24 @@ async function fetchPublicLayoutsWithVisibility(searchText = "", limit = 30, vis
 
 export async function publishBaseLayout({ userId, authorName, name, snapshot, buildings, isPublic = true }) {
     try {
+        let resolvedUserId = userId || null;
+        let resolvedAuthorName = authorName || "";
+        try {
+            const authUser = await getCurrentUser();
+            if (!resolvedUserId && authUser?.id) {
+                resolvedUserId = authUser.id;
+            }
+            if (!resolvedAuthorName) {
+                resolvedAuthorName =
+                    authUser?.user_metadata?.nickname
+                    || resolveAuthEmail(authUser)?.split("@")[0]
+                    || "";
+            }
+        } catch {}
+
         const payload = {
-            user_id: userId || null,
-            author_name: authorName || "Guest",
+            user_id: resolvedUserId || null,
+            author_name: resolvedAuthorName || "Guest",
             name: (name || "Unnamed Base").trim(),
             snapshot: normalizeBaseLayoutSnapshot(snapshot) || null,
             layout_json: { buildings: Array.isArray(buildings) ? buildings : [] }
@@ -1364,16 +1429,31 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
 
     const fetchRowsViaRest = async () => {
         const readLimit = 120;
-        const authToken = await getCurrentAccessToken();
         const paths = [
-            `/rest/v1/users?select=nickname,email,role,highscore,playtime,total_kills,statistics&limit=${readLimit}`,
+            `/rest/v1/users?select=nickname,email,role,highscore,playtime,total_kills,statistics&order=highscore.desc.nullslast,total_kills.desc.nullslast,playtime.desc.nullslast&limit=${readLimit}`,
             `/rest/v1/users?select=nickname,email,statistics&limit=${readLimit}`,
             "/rest/v1/users?select=*&limit=40"
         ];
 
         let lastError = null;
         for (const path of paths) {
-            const result = await postgrestRequestWithRetry(path, { timeoutMs: 16000, authToken }, 2);
+            let result = null;
+            try {
+                // Keep leaderboard independent from user auth session state.
+                result = await withTimeoutPromise(
+                    postgrestRequestWithRetry(path, { timeoutMs: 11000, authToken: null }, 1),
+                    13000,
+                    "leaderboard_timeout"
+                );
+            } catch (timeoutError) {
+                result = {
+                    ok: false,
+                    error: {
+                        code: "leaderboard_timeout",
+                        message: String(timeoutError?.message || "leaderboard_timeout")
+                    }
+                };
+            }
             if (result.ok) {
                 return { rows: Array.isArray(result.data) ? result.data : [], error: null };
             }
@@ -1399,7 +1479,22 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
 
         leaderboardCache.key = cacheKey;
         leaderboardCache.inFlight = (async () => {
-            const primary = await fetchRowsViaRest();
+            let primary = null;
+            try {
+                primary = await withTimeoutPromise(
+                    fetchRowsViaRest(),
+                    15000,
+                    "leaderboard_timeout"
+                );
+            } catch (error) {
+                primary = {
+                    rows: [],
+                    error: {
+                        code: "leaderboard_timeout",
+                        message: String(error?.message || "leaderboard_timeout")
+                    }
+                };
+            }
             if (!primary.error) {
                 const mapped = mapLeaderboardRows(primary.rows, safeLimit);
                 leaderboardCache.data = mapped;

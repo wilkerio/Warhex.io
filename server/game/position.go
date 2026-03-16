@@ -211,20 +211,47 @@ func FindFreePosition() PositionInt {
 
 	newPlayerIndex := len(State.Players)
 	mapRadius := calculateMapRadius(newPlayerIndex + 1)
-
-	gridX, gridY := getSpawnGridCell(newPlayerIndex)
 	step := int(MIN_PLAYER_SPAWN_DISTANCE)
-	spawnPos := PositionInt{
+
+	isValidSlot := func(pos PositionInt) bool {
+		return isWithinMapBounds(pos, mapRadius) &&
+			isFarEnoughFromAll(pos, occupiedPositions, MIN_PLAYER_SPAWN_DISTANCE)
+	}
+
+	// 1) Try deterministic preferred slot first.
+	gridX, gridY := getSpawnGridCell(newPlayerIndex)
+	preferredPos := PositionInt{
 		X: int16(gridX * step),
 		Y: int16(gridY * step),
 	}
-
-	if isWithinMapBounds(spawnPos, mapRadius) && isFarEnoughFromAll(spawnPos, occupiedPositions, MIN_PLAYER_SPAWN_DISTANCE) {
-		log.Printf("Player spawned at grid position: X=%d, Y=%d (index %d)", spawnPos.X, spawnPos.Y, newPlayerIndex)
-		return spawnPos
+	if isValidSlot(preferredPos) {
+		log.Printf("Player spawned at preferred grid position: X=%d, Y=%d (index %d)", preferredPos.X, preferredPos.Y, newPlayerIndex)
+		return preferredPos
 	}
 
-	log.Printf("Grid spawn invalid (index %d), using center fallback", newPlayerIndex)
+	// 2) Fallback: scan other grid slots to guarantee no overlap.
+	maxCandidates := len(State.Players) + len(State.NeutralBases) + 256
+	for i := 0; i < maxCandidates; i++ {
+		gridX, gridY := getSpawnGridCell(i)
+		pos := PositionInt{
+			X: int16(gridX * step),
+			Y: int16(gridY * step),
+		}
+		if !isValidSlot(pos) {
+			continue
+		}
+		log.Printf(
+			"Player spawn fallback used: preferred index %d occupied, selected index %d at X=%d, Y=%d",
+			newPlayerIndex,
+			i,
+			pos.X,
+			pos.Y,
+		)
+		return pos
+	}
+
+	// 3) Last resort: keep old behavior, but warn loudly.
+	log.Printf("No free grid slot found (preferred index %d). Falling back to center.", newPlayerIndex)
 	return PositionInt{X: 0, Y: 0}
 }
 

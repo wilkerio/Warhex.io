@@ -7,7 +7,7 @@ import SimpleTurret from "../../entities/building/SimpleTurret.js";
 import SniperTurret from "../../entities/building/SniperTurret.js";
 import Armory from "../../entities/building/Armory.js";
 import BuildingPreview from "../../entities/BuildingPreview.js";
-import { BuildingTypes, BuildingVariantTypes, UnitTypes, UnitVariantTypes, getAvailableBuildingUpgrades, getBuildingDetails } from "../../network/constants.js";
+import { BuildingSizes, BuildingTypes, BuildingVariantTypes, UnitTypes, UnitVariantTypes, getAvailableBuildingUpgrades, getBuildingDetails } from "../../network/constants.js";
 import { QueueType, Renderer } from "../Renderer.js";
 import { SelectionState } from "../../entities/Building.js";
 
@@ -52,6 +52,12 @@ const LEGACY_EXTERNA_ANGLE_OFFSET = -0.055; // Slight clockwise correction.
 const LEGACY_EXTERNA_RADIUS_SCALE = 1.0; // Keep original socket radius fidelity.
 const WALL_OUTER_RING_OFFSET = 3; // Wall outer ring tightened by another 1px.
 const BARRACKS_OUTER_RING_OFFSET = 5; // Keep barracks aligned with legacy ExternaTK socket radius.
+const INNER_RING_VISUAL_MARGIN = 4; // Keep inner-building visuals fully inside the white helper ring.
+const INNER_HELPER_RING_OFFSET = WALL_OUTER_RING_OFFSET - (BuildingSizes.WALL?.size || 27);
+
+function getInnerHelperRingRadius (base) {
+    return base.buildingRadius.max + INNER_HELPER_RING_OFFSET;
+}
 
 // Legacy socket layout for Autogens (angle, radius, legacyType=3 => Generator).
 const LEGACY_AUTOGENS_SOCKET_LAYOUT = [
@@ -842,13 +848,17 @@ export class BuildingManager {
                 case BuildingTypes.PORTAL:
                 case BuildingTypes.GENERATOR:
                 case BuildingTypes.HOUSE:
-                    // These buildings must stay inside the ring: outer edge cannot cross the line.
-                    maxRadius = closestBase.buildingRadius.max - this.buildingToPlace.building.size;
+                    // These buildings must stay inside the white helper ring.
+                    maxRadius = getInnerHelperRingRadius(closestBase) - this.buildingToPlace.building.size - INNER_RING_VISUAL_MARGIN;
                     minRadius += this.buildingToPlace.building.size;
                     break;
                 default:
                     // Circular shape (Wall, turret, ...)
                     minRadius += this.buildingToPlace.building.size;
+            }
+
+            if (maxRadius < minRadius) {
+                maxRadius = minRadius;
             }
 
             if (enforceRadiusLimit) {
@@ -1641,7 +1651,15 @@ export class BuildingManager {
             }
 
             const allUnits = collectAllUnits();
-            if (!this.canAutoPlaceBuilding(livePlayer, position, allUnits, pendingBuildings, type, size, { rotationStep })) {
+            if (!this.canAutoPlaceBuilding(
+                livePlayer,
+                position,
+                allUnits,
+                pendingBuildings,
+                type,
+                size,
+                { rotationStep, ignoreRadius: true }
+            )) {
                 skipped++;
                 continue;
             }
@@ -2057,10 +2075,14 @@ export class BuildingManager {
             case BuildingTypes.GENERATOR:
             case BuildingTypes.HOUSE:
                 minRadius += buildingSize;
-                maxRadius = base.buildingRadius.max - buildingSize;
+                maxRadius = getInnerHelperRingRadius(base) - buildingSize - INNER_RING_VISUAL_MARGIN;
                 break;
             default:
                 minRadius += buildingSize;
+        }
+
+        if (maxRadius < minRadius) {
+            maxRadius = minRadius;
         }
 
         return { minRadius, maxRadius };
@@ -2144,7 +2166,7 @@ export class BuildingManager {
 
     getAutoPackedHouseCandidates (base, houseSize) {
         const range = this.getPlacementRadiusRangeForType(base, BuildingTypes.HOUSE, houseSize);
-        const radiusTolerance = 4; // Keep candidate search aligned with server-side tolerance.
+        const radiusTolerance = 0; // Keep candidate search strictly aligned with server-side clamp.
         const minRadius = Math.max(0, range.minRadius);
         const maxRadius = range.maxRadius + radiusTolerance;
         if (maxRadius < minRadius) return [];

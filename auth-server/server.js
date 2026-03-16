@@ -541,9 +541,11 @@ app.get("/user", authenticateToken, async (req, res) => {
             return res.status(404).send("User not found.");
         }
 
-        const userData = doc.data();
-
-        res.send(userData);
+        const userData = doc.data() || {};
+        res.send({
+            id: userData.id || userId,
+            ...userData
+        });
     } catch (error) {
         console.error("Error retrieving user data:", error);
         res.status(500).send("An error occurred while retrieving user data.");
@@ -582,9 +584,11 @@ app.post("/api/user", validateOrigin, async (req, res) => {
             return res.status(404).send("User not found.");
         }
 
-        const userData = doc.data();
-
-        res.send(userData);
+        const userData = doc.data() || {};
+        res.send({
+            id: userData.id || userId,
+            ...userData
+        });
     } catch (error) {
         console.error("Error retrieving user data:", error);
         res.status(403).send("Invalid or expired refresh token.");

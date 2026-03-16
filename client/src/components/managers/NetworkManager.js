@@ -13,7 +13,7 @@ import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
-import { consumeOAuthCallbackSession, ensureUserRow, fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
+import { clearLocalAuthState, consumeOAuthCallbackSession, ensureUserRow, fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -36,6 +36,7 @@ export default class NetworkManager {
         this._statsSyncIntervalId = null;
         this._statsSyncInFlight = false;
         this._statsSyncTick = 0;
+        this._statsSyncEnabled = false;
         this._lastPlaytimeTickAt = Date.now();
         this.spawnLeaveWatchers = new Map(); // playerID -> playerName
         this.discordInviteUrl = "https://discord.gg/Q337spAqR7";
@@ -85,7 +86,13 @@ export default class NetworkManager {
             } catch (e) {}
 
             // Best-effort remote flush on reload/close.
-            updateUserProgressStatsKeepalive(this.userId, statistics);
+            const progression = this.userData.progression || {
+                level: Number(this.userData.level || 1),
+                xp: Number(this.userData.xp || 0)
+            };
+            if (this._statsSyncEnabled) {
+                updateUserProgressStatsKeepalive(this.userId, statistics, progression);
+            }
         };
 
         window.addEventListener("pagehide", flush);
@@ -107,6 +114,8 @@ export default class NetworkManager {
         if (!this.loggedIn || !this.userId) return;
         // Step 2: data availability gate
         if (!this.userData) return;
+        // Prevent stale local cache from overwriting server stats before real hydration.
+        if (!this._statsSyncEnabled) return;
 
         if (this._statsSyncInFlight) return;
         this._statsSyncInFlight = true;
@@ -345,6 +354,7 @@ export default class NetworkManager {
 
         this.loggedIn = true;
         this.userId = sessionUser.id;
+        this._statsSyncEnabled = false;
         this.ownerAccountActive = this.isOwnerEmail(this.extractEmailFromAuthUser(authUser));
 
         try {
@@ -368,6 +378,7 @@ export default class NetworkManager {
             } else if (event === 'SIGNED_OUT') {
                 this.loggedIn = false;
                 this.userData = null;
+                this._statsSyncEnabled = false;
                 this.ownerAccountActive = false;
                 this.core.uiManager.updateAccount();
                 this.core.uiManager.updateAccountButton();
@@ -399,6 +410,7 @@ export default class NetworkManager {
             console.warn("getUserData called without userId");
             return;
         }
+        this._statsSyncEnabled = false;
         try {
             console.log('Starting supabase select for id:', this.userId);
             const selectPromise = supabase
@@ -442,6 +454,7 @@ export default class NetworkManager {
                 };
                 this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user));
                 this.loggedIn = true;
+                this._statsSyncEnabled = false;
                 this.core.uiManager.updateAccountButton();
 
                 this.core.uiManager.updateAccount();
@@ -475,6 +488,7 @@ export default class NetworkManager {
                 };
                 console.log('User data from table:', this.userData);
                 console.log('Nickname from table:', this.userData?.nickname);
+                this._statsSyncEnabled = true;
                 try {
                     // persist minimal userData for instant restore on reload
                     const minimal = {
@@ -504,6 +518,7 @@ export default class NetworkManager {
                         const ensured = await ensureUserRow(authUser, authUser?.user_metadata?.nickname || "");
                         if (ensured?.success && ensured?.data) {
                             this.userData = ensured.data;
+                            this._statsSyncEnabled = true;
                             this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(authUser)) || this.isOwnerRole(this.userData?.role);
                         } else {
                             const { data: retryData, error: retryError } = await supabase
@@ -513,6 +528,7 @@ export default class NetworkManager {
                                 .maybeSingle();
                             if (!retryError && retryData) {
                                 this.userData = retryData;
+                                this._statsSyncEnabled = true;
                                 this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(authUser)) || this.isOwnerRole(this.userData?.role);
                             }
                         }
@@ -569,13 +585,14 @@ export default class NetworkManager {
                         statistics: this.userData?.statistics || { highscore: 0, playtime: 0, kills: 0 },
                         progression: this.userData?.progression || { level: 1, xp: 0 }
                     };
-                    this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user)) || this.isOwnerRole(this.userData?.role);
-                    this.core.uiManager.updateAccountButton();
-                    this.core.uiManager.updateAccount();
-                }
-            } catch (fallbackErr) {
-                console.error("Fallback user recovery failed:", fallbackErr);
+                this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user)) || this.isOwnerRole(this.userData?.role);
+                this.core.uiManager.updateAccountButton();
+                this.core.uiManager.updateAccount();
+                this._statsSyncEnabled = false;
             }
+        } catch (fallbackErr) {
+            console.error("Fallback user recovery failed:", fallbackErr);
+        }
         }
         })();
 
@@ -612,6 +629,7 @@ export default class NetworkManager {
                         if (sess && sess.user && sess.user.id) {
                             this.loggedIn = true;
                             this.userId = sess.user.id;
+                            this._statsSyncEnabled = false;
                             this.ownerAccountActive = this.isOwnerEmail(this.extractEmailFromAuthUser(sess.user));
                             console.log('Restored session quick (local):', this.userId);
                             if (rawUser) {
@@ -655,7 +673,28 @@ export default class NetworkManager {
                                         }
                                         await this.hydrateAuthenticatedSession(restored);
                                     } else {
-                                        await this.getUserData();
+                                        // Validate live auth state; if no real session exists,
+                                        // clear stale local login so UI and publish permissions stay consistent.
+                                        const { data: liveSessionData } = await supabase.auth.getSession();
+                                        const liveSession = liveSessionData?.session || null;
+                                        if (liveSession?.user?.id) {
+                                            await this.hydrateAuthenticatedSession(liveSession);
+                                        } else {
+                                            const liveAuthUser = await getCurrentUser().catch(() => null);
+                                            if (liveAuthUser?.id) {
+                                                await this.hydrateAuthenticatedSession({ user: liveAuthUser });
+                                            } else {
+                                                this.loggedIn = false;
+                                                this.userId = null;
+                                                this.userData = null;
+                                                this._statsSyncEnabled = false;
+                                                this.ownerAccountActive = false;
+                                                clearLocalAuthState();
+                                                try { localStorage.removeItem('blobl_user_data'); } catch (e) {}
+                                                this.core.uiManager.updateAccount();
+                                                this.core.uiManager.updateAccountButton();
+                                            }
+                                        }
                                     }
                                 } catch (e) {
                                     console.warn('Background restore failed:', e);
@@ -680,17 +719,20 @@ export default class NetworkManager {
                 } else {
                     this.loggedIn = false;
                     this.userData = null;
+                    this._statsSyncEnabled = false;
                     this.ownerAccountActive = false;
                 }
             } catch (e) {
                 console.error('Error during checkLoginStatus flow:', e);
                 this.loggedIn = false;
                 this.userData = null;
+                this._statsSyncEnabled = false;
                 this.ownerAccountActive = false;
             }
         } catch (error) {
             console.error("Error checking login status:", error);
             this.loggedIn = false;
+            this._statsSyncEnabled = false;
             this.ownerAccountActive = false;
         }
         this.core.uiManager.updateAccountButton();
@@ -701,6 +743,7 @@ export default class NetworkManager {
             await signOut();
             this.loggedIn = false;
             this.userData = null;
+            this._statsSyncEnabled = false;
             this.ownerAccountActive = false;
             this.core.uiManager.updateAccount();
             this.core.uiManager.updateAccountButton();

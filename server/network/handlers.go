@@ -14,7 +14,7 @@ import (
 )
 
 var PORT = os.Getenv("PORT")
-var DISABLE_MULTIBOX_CHECK = true // Temporary: allow multiple clients from same IP/fingerprint/account
+var DISABLE_MULTIBOX_CHECK = false // Enforce multibox check by default (admins are still exempt).
 
 func hasActiveUnits(player *game.Player) bool {
 	if player == nil {
@@ -128,8 +128,10 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	permission := MapRoleToPermission(userData.Role)
+	isSuperAdmin := permission == game.PERMISSION_ADMIN
+	enforceMultiboxCheck := !DISABLE_MULTIBOX_CHECK && !isSuperAdmin
 
-	if !DISABLE_MULTIBOX_CHECK {
+	if enforceMultiboxCheck {
 		// Check if the fingerprint is already used for the client's IP
 		isUsed := IsFingerprintUsedForIP(userData.ClientIP, fingerprint)
 		if isUsed {
@@ -373,6 +375,10 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	minRadiusNeutralBase := game.NEUTRAL_BASE_MIN_BUILDING_RADIUS
 	maxRadiusByType := maxRadius
 	maxRadiusNeutralByType := maxRadiusNeutralBase
+	// Small visual safety so polygon/stroke edges stay inside the white helper ring.
+	const innerRingVisualMargin = 4
+	innerHelperRingRadius := game.PLAYER_MAX_BUILDING_RADIUS + game.WALL_OUTER_RING_OFFSET - game.GetBuildingSize(game.WALL)
+	neutralInnerHelperRingRadius := game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + game.WALL_OUTER_RING_OFFSET - game.GetBuildingSize(game.WALL)
 
 	switch buildingType {
 	case game.BARRACKS:
@@ -389,12 +395,13 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS + game.WALL_OUTER_RING_OFFSET
 		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS + game.WALL_OUTER_RING_OFFSET
 	case game.SIMPLE_TURRET, game.SNIPER_TURRET, game.ARMORY, game.GENERATOR, game.HOUSE:
-		// These must remain inside ring: building edge cannot cross max radius.
+		// These must remain inside the white helper ring.
+		// Clamp center radius so the outer edge never crosses that ring.
 		size := game.GetBuildingSize(buildingType)
 		minRadius += size
 		minRadiusNeutralBase += size
-		maxRadiusByType = game.PLAYER_MAX_BUILDING_RADIUS - size
-		maxRadiusNeutralByType = game.NEUTRAL_BASE_MAX_BUILDING_RADIUS - size
+		maxRadiusByType = innerHelperRingRadius - size - innerRingVisualMargin
+		maxRadiusNeutralByType = neutralInnerHelperRingRadius - size - innerRingVisualMargin
 	default:
 		// Circular shape (Wall, turret, etc.)
 		size := game.GetBuildingSize(buildingType)
@@ -406,6 +413,10 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	if buildingType == game.BARRACKS {
 		// Extra buffer for fixed outer-ring placement.
 		tolerance = 12
+	} else if buildingType == game.SIMPLE_TURRET || buildingType == game.SNIPER_TURRET ||
+		buildingType == game.ARMORY || buildingType == game.GENERATOR || buildingType == game.HOUSE {
+		// Strict clamp for inner-ring buildings so they never cross white ring.
+		tolerance = 0
 	}
 
 	// Validation for building placement
@@ -417,8 +428,8 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 			uint16(math.Ceil(distance)) <= uint16(maxRadiusByType+tolerance)
 	} else {
 		// Other buildings can be within the valid range, including the border
-		isPlayerRadiusValid = !(uint16(math.Floor(distance)) > uint16(maxRadiusByType+tolerance) ||
-			uint16(math.Ceil(distance)) < uint16(minRadius-tolerance))
+		isPlayerRadiusValid = !(distance > float64(maxRadiusByType+tolerance) ||
+			distance < float64(minRadius-tolerance))
 	}
 
 	player.RLock()

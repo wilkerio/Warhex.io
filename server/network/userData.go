@@ -1,4 +1,4 @@
-﻿package network
+package network
 
 import (
 	"bytes"
@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"server/game"
-	"sync"
 	"os"
+	"server/game"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -19,6 +19,7 @@ import (
 type UserData struct {
 	ClientIP    string
 	Fingerprint *uint32
+	ID          string         `json:"id"`
 	Role        string         `json:"role"`
 	Discord     DiscordDetails `json:"discord"`
 	Skins       SkinDetails    `json:"skins"`
@@ -31,6 +32,16 @@ type DiscordDetails struct {
 
 type SkinDetails struct {
 	Unlocked []int `json:"unlocked"`
+}
+
+func (u UserData) ProgressUserID() string {
+	if u.ID != "" {
+		return u.ID
+	}
+	if u.Discord.ID != "" {
+		return u.Discord.ID
+	}
+	return ""
 }
 
 // UserConnection holds user data associated with a WebSocket connection.
@@ -249,6 +260,8 @@ func MapRoleToPermission(role string) game.Permission {
 	switch role {
 	case "admin":
 		return game.PERMISSION_ADMIN
+	case "super_admin":
+		return game.PERMISSION_ADMIN
 	case "moderator":
 		return game.PERMISSION_MODERATOR
 	default:
@@ -263,6 +276,7 @@ func getAuthAPIBaseURL() string {
 	}
 	return baseURL
 }
+
 type UserStatsPayload struct {
 	UserId string `json:"userId"`
 	Data   struct {
@@ -350,5 +364,3 @@ func UpdateUserStats(userId string, score uint32, kills uint32, playtime time.Du
 	// Return the newly unlocked skins
 	return response.NewlyUnlockedSkins, true
 }
-
-
