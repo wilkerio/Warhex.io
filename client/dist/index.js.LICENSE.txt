@@ -8,6 +8,4 @@
 
 //! Normal turrets get rotation updates from the server
 
-//! Should prob. use building sizes 
-
 //! To handle turrets with multiple guns

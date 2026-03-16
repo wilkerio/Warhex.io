@@ -19,21 +19,33 @@ export default class BuildingPreview extends Renderable {
     checkCollision (buildings, units) {
         this.buildable = true; // Assume it's buildable initially
         let polygonTransformed = false;
+        const selfSize = Number(this.building?.size) || 0;
 
         // Loop through each building
         for (const otherBuilding of buildings) {
             if (!otherBuilding || otherBuilding.removeFlag) {
                 continue;
             }
-            if (otherBuilding !== this) { // Make sure not to check collision with itself
+            if (otherBuilding !== this.building) { // Make sure not to check collision with itself
+                if (!otherBuilding.polygon && typeof otherBuilding.initPolygon === "function") {
+                    otherBuilding.initPolygon();
+                }
+                if (!otherBuilding.polygon) {
+                    continue;
+                }
+                if (typeof otherBuilding.updatePolygonTransform === "function") {
+                    otherBuilding.updatePolygonTransform();
+                }
+
                 // Calculate the distance between the centers of the buildings
                 const distance = this._getDistance(
                     this.building.position.x, this.building.position.y,
                     otherBuilding.position.x, otherBuilding.position.y
                 );
 
-                // Set a minimum distance threshold to avoid unnecessary collision checks
-                const minimumDistance = 80; //! Should prob. use building sizes 
+                // Set a dynamic threshold using both sizes to avoid missing rotated overlaps.
+                const otherSize = Number(otherBuilding.size) || 0;
+                const minimumDistance = Math.max(40, selfSize + otherSize + 6);
 
                 if (distance > minimumDistance) {
                     continue; // Skip further checks if the buildings are too far apart

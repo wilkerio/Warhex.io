@@ -1733,7 +1733,14 @@ export default class NetworkManager {
                 `Portal is on cooldown. Wait about ${mins} min to buy again.`,
                 "#ffcc66"
             );
+            return;
         }
+
+        this.core.uiManager.addChatMessage(
+            "System",
+            "Placement failed (invalid position/collision).",
+            "#ffcc66"
+        );
     }
 
     handleBuildingsUpgraded (payload) {

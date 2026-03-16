@@ -334,23 +334,23 @@ func legacySpeedToPerSecond(legacy float64) float64 {
 }
 
 var unitTypes = map[UnitType]map[UnitVariant]UnitStats{
-	SOLDIER: {
-		BASIC_UNIT: {
-			Variant:            BASIC_UNIT,
-			Health:             Health{Current: 30, Max: 30},
-			Damage:             10,
-			Speed:              legacySpeedToPerSecond(0.18),
-			Size:               18,
-			RequiredPopulation: 2,
+		SOLDIER: {
+			BASIC_UNIT: {
+				Variant:            BASIC_UNIT,
+				Health:             Health{Current: 30, Max: 30},
+				Damage:             6,
+				Speed:              legacySpeedToPerSecond(0.18),
+				Size:               18,
+				RequiredPopulation: 2,
+			},
+			LIGHT_ARMOR_SOLDIER: {
+				Variant: LIGHT_ARMOR_SOLDIER,
+				Health:  Health{Current: 50, Max: 50},
+				Damage:  6,
+				Speed:   legacySpeedToPerSecond(0.18),
+				Size:    18,
+			},
 		},
-		LIGHT_ARMOR_SOLDIER: {
-			Variant: LIGHT_ARMOR_SOLDIER,
-			Health:  Health{Current: 50, Max: 50},
-			Damage:  10,
-			Speed:   legacySpeedToPerSecond(0.18),
-			Size:    18,
-		},
-	},
 	TANK: {
 		BASIC_UNIT: {
 			Variant:            BASIC_UNIT,
@@ -441,16 +441,16 @@ var unitTypes = map[UnitType]map[UnitVariant]UnitStats{
 			Size:    40,
 		},
 	},
-	COMMANDER: {
-		BASIC_UNIT: {
-			Variant:            BASIC_UNIT,
-			Health:             Health{Current: 700, Max: 700},
-			Damage:             100,
-			Speed:              legacySpeedToPerSecond(0.16),
-			Size:               32,
-			RequiredPopulation: 0,
+		COMMANDER: {
+			BASIC_UNIT: {
+				Variant:            BASIC_UNIT,
+				Health:             Health{Current: 1000, Max: 1000},
+				Damage:             130,
+				Speed:              legacySpeedToPerSecond(0.16),
+				Size:               32,
+				RequiredPopulation: 0,
+			},
 		},
-	},
 }
 
 var unitPolygons = map[UnitType]map[UnitVariant]Polygon{

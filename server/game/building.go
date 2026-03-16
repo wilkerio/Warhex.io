@@ -54,14 +54,14 @@ type BuildingUpgrade struct {
 }
 
 var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
-	WALL: {
-		BASIC_BUILDING: {
-			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 100, Max: 100},
-			Damage:  50,
-			Next:    []BuildingVariant{MICRO_GENERATOR, BOULDER},
-			Cost:    60,
-		},
+		WALL: {
+			BASIC_BUILDING: {
+				Variant: BASIC_BUILDING,
+				Health:  Health{Current: 100, Max: 100},
+				Damage:  50,
+				Next:    []BuildingVariant{MICRO_GENERATOR, BOULDER},
+				Cost:    60,
+			},
 		MICRO_GENERATOR: {
 			Variant: MICRO_GENERATOR,
 			Health:  Health{Current: 50, Max: 50},
@@ -69,21 +69,21 @@ var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
 			Next:    nil,
 			Cost:    30,
 		},
-		BOULDER: {
-			Variant: BOULDER,
-			Health:  Health{Current: 150, Max: 150},
-			Damage:  50,
-			Next:    []BuildingVariant{SPIKE},
-			Cost:    60,
+			BOULDER: {
+				Variant: BOULDER,
+				Health:  Health{Current: 180, Max: 180},
+				Damage:  60,
+				Next:    []BuildingVariant{SPIKE},
+				Cost:    60,
+			},
+			SPIKE: {
+				Variant: SPIKE,
+				Health:  Health{Current: 300, Max: 300},
+				Damage:  130,
+				Next:    nil,
+				Cost:    200,
+			},
 		},
-		SPIKE: {
-			Variant: SPIKE,
-			Health:  Health{Current: 200, Max: 200},
-			Damage:  100,
-			Next:    nil,
-			Cost:    200,
-		},
-	},
 	SIMPLE_TURRET: {
 		BASIC_BUILDING: {
 			Variant: BASIC_BUILDING,

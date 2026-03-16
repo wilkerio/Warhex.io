@@ -6648,76 +6648,88 @@ export default class UIManager {
         save.style.borderRadius = "10px";
         save.style.cursor = "pointer";
         save.style.fontWeight = "800";
-        const withTimeout = (promise, ms = 12000) => Promise.race([
-            promise,
-            new Promise((_, reject) => {
-                setTimeout(() => reject(new Error("publish_timeout")), ms);
-            })
-        ]);
+        const withTimeout = (promise, ms = 12000) => {
+            let timeoutId = null;
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => {
+                    timeoutId = setTimeout(() => reject(new Error("publish_timeout")), ms);
+                })
+            ]).finally(() => {
+                if (timeoutId) clearTimeout(timeoutId);
+            });
+        };
         save.addEventListener("click", async () => {
             if (save.disabled) return;
             const wasPublishing = publishCheckbox.checked;
             const originalButtonText = save.textContent;
             save.disabled = true;
             save.textContent = wasPublishing ? "Saving + Publishing..." : "Saving...";
-
-            // Always center + capture on Save, as requested.
-            const snapshot = this.captureCurrentBaseSnapshot({ forceCenter: true })
-                || this.captureCurrentBaseSnapshot({ forceCenter: false });
-
-            const layout = this.core.buildingManager.exportCurrentBaseLayout(input.value, snapshot);
-            if (!layout) {
-                this.addChatMessage("System", "Could not save base right now.", "#ffcc66");
+            const watchdogId = setTimeout(() => {
                 save.disabled = false;
                 save.textContent = originalButtonText;
-                return;
-            }
-            const existing = this.getSavedBaseLayouts().slice(0, 29);
-            this.setSavedBaseLayouts([layout, ...existing]);
-            this.addChatMessage("System", `Base "${layout.name}" saved.`, "#60c1ff");
+            }, 16000);
+            try {
+                // Always center + capture on Save, as requested.
+                const snapshot = this.captureCurrentBaseSnapshot({ forceCenter: true })
+                    || this.captureCurrentBaseSnapshot({ forceCenter: false });
 
-            if (wasPublishing) {
-                const userId = this.core.networkManager?.userId || this.core.networkManager?.userData?.id || null;
-                const authorName = this.core.networkManager?.userData?.nickname || this.core.gameManager?.player?.name || "Guest";
-                let result = null;
-                try {
-                    result = await withTimeout(publishBaseLayout({
-                        userId,
-                        authorName,
-                        name: layout.name,
-                        snapshot: layout.snapshot,
-                        buildings: layout.buildings,
-                        isPublic: true
-                    }), 12000);
-                } catch (error) {
-                    const timeout = String(error?.message || "").toLowerCase().includes("publish_timeout");
-                    this.addChatMessage(
-                        "System",
-                        timeout ? "Publish timed out. Try again." : "Could not publish base (network error).",
-                        "#ffcc66"
-                    );
+                const layout = this.core.buildingManager.exportCurrentBaseLayout(input.value, snapshot);
+                if (!layout) {
+                    this.addChatMessage("System", "Could not save base right now.", "#ffcc66");
                     save.disabled = false;
                     save.textContent = originalButtonText;
                     return;
                 }
-                if (result?.success) {
-                    this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
-                } else {
-                    const reason = String(result?.error?.message || result?.error?.details || result?.error || "").trim();
-                    this.addChatMessage(
-                        "System",
-                        reason ? `Could not publish base: ${reason}` : "Could not publish base (check DB table/config).",
-                        "#ffcc66"
-                    );
-                    save.disabled = false;
-                    save.textContent = originalButtonText;
-                    return;
-                }
-            }
+                const existing = this.getSavedBaseLayouts().slice(0, 29);
+                this.setSavedBaseLayouts([layout, ...existing]);
+                this.addChatMessage("System", `Base "${layout.name}" saved.`, "#60c1ff");
 
-            this.hideBaseLayoutDialog();
-            save.disabled = false;
-            save.textContent = originalButtonText;
+                if (wasPublishing) {
+                    const userId = this.core.networkManager?.userId || this.core.networkManager?.userData?.id || null;
+                    const authorName = this.core.networkManager?.userData?.nickname || this.core.gameManager?.player?.name || "Guest";
+                    let result = null;
+                    try {
+                        result = await withTimeout(publishBaseLayout({
+                            userId,
+                            authorName,
+                            name: layout.name,
+                            snapshot: layout.snapshot,
+                            buildings: layout.buildings,
+                            isPublic: true
+                        }), 12000);
+                    } catch (error) {
+                        const timeout = String(error?.message || "").toLowerCase().includes("publish_timeout");
+                        this.addChatMessage(
+                            "System",
+                            timeout ? "Publish timed out. Try again." : "Could not publish base (network error).",
+                            "#ffcc66"
+                        );
+                        save.disabled = false;
+                        save.textContent = originalButtonText;
+                        return;
+                    }
+                    if (result?.success) {
+                        this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
+                    } else {
+                        const reason = String(result?.error?.message || result?.error?.details || result?.error || "").trim();
+                        this.addChatMessage(
+                            "System",
+                            reason ? `Could not publish base: ${reason}` : "Could not publish base (check DB table/config).",
+                            "#ffcc66"
+                        );
+                        save.disabled = false;
+                        save.textContent = originalButtonText;
+                        return;
+                    }
+                }
+
+                this.hideBaseLayoutDialog();
+                save.disabled = false;
+                save.textContent = originalButtonText;
+            } finally {
+                clearTimeout(watchdogId);
+            }
         });
 
         actions.appendChild(cancel);
@@ -7163,15 +7175,27 @@ export default class UIManager {
                     publishBtn.style.cursor = "pointer";
                     publishBtn.style.fontWeight = "700";
                     publishBtn.addEventListener("click", async () => {
-                        const withTimeout = (promise, ms = 12000) => Promise.race([
-                            promise,
-                            new Promise((_, reject) => {
-                                setTimeout(() => reject(new Error("publish_timeout")), ms);
-                            })
-                        ]);
+                        if (publishBtn.dataset.publishBusy === "1") return;
+                        const withTimeout = (promise, ms = 12000) => {
+                            let timeoutId = null;
+                            return Promise.race([
+                                promise,
+                                new Promise((_, reject) => {
+                                    timeoutId = setTimeout(() => reject(new Error("publish_timeout")), ms);
+                                })
+                            ]).finally(() => {
+                                if (timeoutId) clearTimeout(timeoutId);
+                            });
+                        };
+                        publishBtn.dataset.publishBusy = "1";
                         publishBtn.disabled = true;
                         const oldText = publishBtn.textContent;
                         publishBtn.textContent = "Publishing...";
+                        const watchdogId = setTimeout(() => {
+                            publishBtn.disabled = false;
+                            publishBtn.textContent = oldText;
+                            publishBtn.dataset.publishBusy = "0";
+                        }, 16000);
                         try {
                             const userId = this.core.networkManager?.userId || this.core.networkManager?.userData?.id || null;
                             const authorName = this.core.networkManager?.userData?.nickname || this.core.gameManager?.player?.name || "Guest";
@@ -7192,6 +7216,7 @@ export default class UIManager {
                             }), 12000);
                             if (result?.success) {
                                 this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
+                                await renderLayouts(searchInput.value);
                             } else {
                                 const reason = String(result?.error?.message || result?.error?.details || result?.error || "").trim();
                                 this.addChatMessage(
@@ -7208,8 +7233,10 @@ export default class UIManager {
                                 "#ffcc66"
                             );
                         } finally {
+                            clearTimeout(watchdogId);
                             publishBtn.disabled = false;
                             publishBtn.textContent = oldText;
+                            publishBtn.dataset.publishBusy = "0";
                         }
                     });
 

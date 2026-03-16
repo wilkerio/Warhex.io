@@ -24,7 +24,9 @@ export default class Portal extends Building {
     }
 
     initPolygon () {
-        this.polygon = new Polygon(this.polygonPoints, this.position);
+        // Match server-side circle collision envelope (+2 for non-wall circles).
+        const collisionOffset = 2;
+        this.polygon = new Polygon(Shapes.getCirclePoints(this.size + collisionOffset, 20), this.position);
         this.updatePolygonRotation();
     }
 

@@ -267,6 +267,56 @@ export class BuildingManager {
         return this.placementRotationStep;
     }
 
+    getPlacementRadiusToleranceForType (buildingType) {
+        if (buildingType === BuildingTypes.BARRACKS) return 12;
+        if (
+            buildingType === BuildingTypes.SIMPLE_TURRET ||
+            buildingType === BuildingTypes.SNIPER_TURRET ||
+            buildingType === BuildingTypes.ARMORY ||
+            buildingType === BuildingTypes.GENERATOR ||
+            buildingType === BuildingTypes.HOUSE
+        ) {
+            return 1;
+        }
+        return 4;
+    }
+
+    isPlacementDistanceValidForType (distance, minRadius, maxRadius, buildingType, tolerance) {
+        if (buildingType === BuildingTypes.BARRACKS) {
+            return distance >= (maxRadius - tolerance) && distance <= (maxRadius + tolerance);
+        }
+        return distance >= (minRadius - tolerance) && distance <= (maxRadius + tolerance);
+    }
+
+    resolvePlacementBaseForPosition (position, buildingType, buildingSize) {
+        const playerBase = this.core.gameManager.player;
+        if (!playerBase || !position) return null;
+
+        const tolerance = this.getPlacementRadiusToleranceForType(buildingType);
+        const isValidForBase = (base) => {
+            if (!base?.position) return false;
+            const { minRadius, maxRadius } = this.getPlacementRadiusRangeForType(base, buildingType, buildingSize);
+            const dx = position.x - base.position.x;
+            const dy = position.y - base.position.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return this.isPlacementDistanceValidForType(distance, minRadius, maxRadius, buildingType, tolerance);
+        };
+
+        // Match server priority: player base first, then captured neutrals.
+        if (isValidForBase(playerBase)) {
+            return playerBase;
+        }
+
+        const neutrals = this.core.gameManager.capturedNeutrals || [];
+        for (const neutralBase of neutrals) {
+            if (isValidForBase(neutralBase)) {
+                return neutralBase;
+            }
+        }
+
+        return null;
+    }
+
     isPortalTooCloseToAnyBase (position, portalSize) {
         const gameManager = this.core.gameManager;
         const extraPortalBaseGap = 120;
@@ -880,22 +930,29 @@ export class BuildingManager {
             // Set the position of the selected building
             this.buildingToPlace.building.setPosition(mousePosition);
 
+            const resolvedPlacementBase = this.resolvePlacementBaseForPosition(
+                mousePosition,
+                buildingType,
+                this.buildingToPlace.building.size
+            );
+            const placementBase = resolvedPlacementBase || closestBase;
+
             // Calculate the direction vector from the player to the building
-            const directionX = this.buildingToPlace.building.position.x - closestBase.position.x;
-            const directionY = this.buildingToPlace.building.position.y - closestBase.position.y;
+            const directionX = this.buildingToPlace.building.position.x - placementBase.position.x;
+            const directionY = this.buildingToPlace.building.position.y - placementBase.position.y;
 
             // Calculate the inverted position by reversing the direction and scaling it
             const invertedPosition = {
-                x: closestBase.position.x + directionX * 1.5,
-                y: closestBase.position.y + directionY * 1.5
+                x: placementBase.position.x + directionX * 1.5,
+                y: placementBase.position.y + directionY * 1.5
             };
             if (typeof this.buildingToPlace.building.applyPlacementTargetFromBase === "function") {
-                this.buildingToPlace.building.applyPlacementTargetFromBase(closestBase.position, 1.5);
+                this.buildingToPlace.building.applyPlacementTargetFromBase(placementBase.position, 1.5);
             } else {
                 this.buildingToPlace.building.setTargetPoint(invertedPosition);
             }
 
-            const allBuildings = closestBase.buildings;
+            const allBuildings = placementBase.buildings;
             let allUnits = [];
             this.core.gameManager.players.forEach(p => {
                 allUnits.push(...p.units);
@@ -903,6 +960,9 @@ export class BuildingManager {
 
             // Check for collisions with other buildings
             this.buildingToPlace.buildingPreview.checkCollision(allBuildings, allUnits);
+            if (!resolvedPlacementBase) {
+                this.buildingToPlace.buildingPreview.buildable = false;
+            }
 
         }
     }
@@ -910,6 +970,7 @@ export class BuildingManager {
     // Place the selected building on the map
     placeBuilding () {
         if (this.buildingToPlace) {
+            this.updateBuildingPosition();
             if (!this.buildingToPlace.buildingPreview.buildable) return;
             const buildingType = this.buildingToPlace.building.type;
             if (buildingType === BuildingTypes.PORTAL && this.isPortalOnCooldown()) {
@@ -929,14 +990,53 @@ export class BuildingManager {
                 return;
             }
             const position = this.buildingToPlace.building.position;
+            const resolvedPlacementBase = this.resolvePlacementBaseForPosition(
+                position,
+                buildingType,
+                this.buildingToPlace.building.size
+            );
+            if (!resolvedPlacementBase) {
+                this.buildingToPlace.buildingPreview.buildable = false;
+                return;
+            }
+            const placementRotationStep = this.getCurrentPlacementRotationStep();
+            let allUnits = [];
+            this.core.gameManager.players.forEach(p => {
+                allUnits.push(...p.units);
+            });
+            const snappedPosition = this.findNearestValidPlacementPosition(
+                resolvedPlacementBase,
+                position,
+                allUnits,
+                buildingType,
+                this.buildingToPlace.building.size,
+                placementRotationStep
+            );
+            if (!snappedPosition) {
+                this.buildingToPlace.buildingPreview.buildable = false;
+                this.core.uiManager?.addChatMessage?.(
+                    "System",
+                    "Invalid placement after rotation. Try a slightly different position.",
+                    "#ffcc66"
+                );
+                return;
+            }
+            if (snappedPosition.x !== position.x || snappedPosition.y !== position.y) {
+                this.buildingToPlace.building.setPosition(snappedPosition);
+            }
 
             const ok = this.core.gameManager.increaseBuildingLimit(buildingType);
             if (!ok) {
+                this.core.uiManager?.addChatMessage?.(
+                    "System",
+                    "Building limit reached for this type.",
+                    "#ffcc66"
+                );
                 return
             }
 
-            const placementRotationStep = this.getCurrentPlacementRotationStep();
-            this.core.networkManager.placeBuilding(buildingType, position, false, placementRotationStep);
+            const finalPosition = this.buildingToPlace.building.position;
+            this.core.networkManager.placeBuilding(buildingType, finalPosition, false, placementRotationStep);
 
             // Client prediction
             this.core.gameManager.player.setBuildingCache(this.buildingToPlace.building);
@@ -2529,6 +2629,41 @@ export class BuildingManager {
             BuildingTypes.GENERATOR,
             generatorSize
         );
+    }
+
+    findNearestValidPlacementPosition (base, position, allUnits, buildingType, buildingSize, rotationStep = 0, maxSnap = 3) {
+        if (!base || !position) return null;
+        const isValid = (candidate) => this.canAutoPlaceBuilding(
+            base,
+            candidate,
+            allUnits,
+            [],
+            buildingType,
+            buildingSize,
+            { rotationStep }
+        );
+
+        if (isValid(position)) {
+            return position;
+        }
+
+        for (let r = 1; r <= maxSnap; r++) {
+            const offsets = [
+                { x: r, y: 0 }, { x: -r, y: 0 }, { x: 0, y: r }, { x: 0, y: -r },
+                { x: r, y: r }, { x: r, y: -r }, { x: -r, y: r }, { x: -r, y: -r }
+            ];
+            for (const offset of offsets) {
+                const candidate = {
+                    x: position.x + offset.x,
+                    y: position.y + offset.y
+                };
+                if (isValid(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
     }
 
     getClickedRelocationSlot (worldPosition) {

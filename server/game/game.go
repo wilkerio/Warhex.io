@@ -1327,8 +1327,13 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					}
 
 					damage := bulletHealth
-					if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
-						damage *= uint16(bullet.DamageMultiplier)
+					if bullet.Behavior == AntiTankBullet {
+						if unit.Type == TANK || unit.Type == SIEGE_TANK {
+							damage *= uint16(bullet.DamageMultiplier)
+						} else if unit.Type == COMMANDER {
+							// Keep legacy feeling: anti-tank should punish commanders heavily.
+							damage *= 7
+						}
 					}
 
 					isAlive = unit.TakeDamage(damage)
@@ -1526,8 +1531,13 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					}
 
 					damage := bulletHealth
-					if bullet.Behavior == AntiTankBullet && (unit.Type == TANK || unit.Type == SIEGE_TANK) {
-						damage *= uint16(bullet.DamageMultiplier)
+					if bullet.Behavior == AntiTankBullet {
+						if unit.Type == TANK || unit.Type == SIEGE_TANK {
+							damage *= uint16(bullet.DamageMultiplier)
+						} else if unit.Type == COMMANDER {
+							// Keep legacy feeling: anti-tank should punish commanders heavily.
+							damage *= 7
+						}
 					}
 
 					isAlive = unit.TakeDamage(damage)

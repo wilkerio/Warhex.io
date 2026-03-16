@@ -1187,7 +1187,11 @@ async function insertBaseLayout(payload, visibilityColumn, isPublic = true) {
     let authToken = await getCurrentAccessToken();
     if (!authToken) {
         try {
-            const restored = await restoreSessionFromStorage();
+            const restored = await withTimeoutPromise(
+                restoreSessionFromStorage(),
+                3200,
+                "auth_restore_timeout"
+            );
             if (restored?.access_token) {
                 authToken = restored.access_token;
             } else {
@@ -1255,11 +1259,15 @@ async function fetchPublicLayoutsWithVisibility(searchText = "", limit = 30, vis
 }
 
 export async function publishBaseLayout({ userId, authorName, name, snapshot, buildings, isPublic = true }) {
-    try {
+    const runPublish = async () => {
         let resolvedUserId = userId || null;
         let resolvedAuthorName = authorName || "";
         try {
-            const authUser = await getCurrentUser();
+            const authUser = await withTimeoutPromise(
+                getCurrentUser(),
+                3500,
+                "auth_user_timeout"
+            );
             if (!resolvedUserId && authUser?.id) {
                 resolvedUserId = authUser.id;
             }
@@ -1310,7 +1318,23 @@ export async function publishBaseLayout({ userId, authorName, name, snapshot, bu
 
         console.error("Error publishing base layout:", lastError);
         return { success: false, error: lastError };
+    };
+
+    try {
+        return await withTimeoutPromise(runPublish(), 14000, "publish_timeout");
     } catch (error) {
+        const timedOut = String(error?.message || "").toLowerCase().includes("publish_timeout");
+        if (timedOut) {
+            return {
+                success: false,
+                error: {
+                    code: "publish_timeout",
+                    message: "Publish timed out. Try again.",
+                    details: "",
+                    hint: ""
+                }
+            };
+        }
         console.error("Error in publishBaseLayout:", error);
         return { success: false, error };
     }

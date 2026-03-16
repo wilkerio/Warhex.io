@@ -34,6 +34,7 @@ export default class Polygon {
 
   // Check if two polygons intersect using the Separating Axis Theorem (SAT)
   static doPolygonsIntersect(polygon1, polygon2) {
+    const SAT_EPSILON = 0.0001;
     const polygons = [polygon1, polygon2];
 
     for (const polygon of polygons) {
@@ -46,14 +47,20 @@ export default class Polygon {
         const p2 = globalVertices[i2];
 
         // Find the line perpendicular to this edge
-        const normal = { x: p2.y - p1.y, y: p1.x - p2.x }; // Fixed indexing to use {x, y}
+        const normal = { x: p2.y - p1.y, y: p1.x - p2.x };
+        const axisLength = Math.hypot(normal.x, normal.y);
+        if (axisLength === 0) continue;
+        const axis = {
+          x: normal.x / axisLength,
+          y: normal.y / axisLength
+        };
 
         // Project all vertices of both polygons onto the normal
-        const [minA, maxA] = this.projectPolygon(normal, polygon1);
-        const [minB, maxB] = this.projectPolygon(normal, polygon2);
+        const [minA, maxA] = this.projectPolygon(axis, polygon1);
+        const [minB, maxB] = this.projectPolygon(axis, polygon2);
 
-        // If there is no overlap between the projections, the polygons do not intersect
-        if (maxA < minB || maxB < minA) {
+        // Keep a tiny epsilon so near-touching edges are treated conservatively.
+        if (maxA < (minB - SAT_EPSILON) || maxB < (minA - SAT_EPSILON)) {
           return false;
         }
       }
