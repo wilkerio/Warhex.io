@@ -161,6 +161,16 @@ func startProtectionCheckLoop() {
 	for range ticker.C {
 		State.RLock()
 		for _, player := range State.Players {
+			if player == nil || player.IsMarkedForRemoval() {
+				continue
+			}
+
+			// Spawn protection now ends only when one of the player's combat units
+			// actually crosses the green protection ring.
+			if player.HasProtection() && isCombatUnitOutsideSpawnProtectionArea(player) {
+				player.RemoveProtection()
+			}
+
 			// Self-heal stale duel state to avoid combat lock.
 			player.RLock()
 			inDuel := player.InDuel
@@ -476,7 +486,11 @@ func startResourceUpdateLoop() {
 	}
 }
 
-func isCommanderOutsideSpawnProtectionArea(player *Player) bool {
+func isProtectionBreakingUnitType(unitType UnitType) bool {
+	return unitType == SOLDIER || unitType == TANK || unitType == SIEGE_TANK || unitType == COMMANDER
+}
+
+func isCombatUnitOutsideSpawnProtectionArea(player *Player) bool {
 	if player == nil || player.Base == nil {
 		return false
 	}
@@ -488,14 +502,11 @@ func isCommanderOutsideSpawnProtectionArea(player *Player) bool {
 	defer player.RUnlock()
 
 	for _, unit := range player.Units {
-		if unit == nil || unit.IsMarkedForRemoval() || unit.Type != COMMANDER {
+		if unit == nil || unit.IsMarkedForRemoval() || !isProtectionBreakingUnitType(unit.Type) {
 			continue
 		}
-		allowedRadius := protectionRadius - float32(unit.Size)
-		if allowedRadius < 0 {
-			allowedRadius = 0
-		}
-		if !unit.IsWithinRadius(basePosition, allowedRadius) {
+		// Unit center crossed the line: protection must end.
+		if !unit.IsWithinRadius(basePosition, protectionRadius) {
 			return true
 		}
 	}
@@ -1700,8 +1711,8 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 		hasSpawnProtection := otherPlayer.HasProtection()
 		basePosition := otherPlayer.Base.Position
 
-		// Same player: spawn protection leave is controlled by explicit move command
-		// (handled in network/handlers.go), not by passive unit position checks.
+		// Same player: spawn protection leave is handled by
+		// startProtectionCheckLoop() based on real unit position.
 		if otherPlayer.ID == player.ID {
 			continue
 		}
