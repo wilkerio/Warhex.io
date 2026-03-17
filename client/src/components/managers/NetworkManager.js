@@ -13,7 +13,7 @@ import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
-import { clearLocalAuthState, consumeOAuthCallbackSession, ensureUserRow, fetchSkins, invalidateGlobalLeaderboardCache, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
+import { clearLocalAuthState, consumeOAuthCallbackSession, ensureUserRow, fetchSkins, fetchUserRowById, invalidateGlobalLeaderboardCache, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -108,7 +108,7 @@ export default class NetworkManager {
 
         this._statsSyncIntervalId = setInterval(() => {
             this._runStatsSyncFiveStep();
-        }, 5000);
+        }, 1500);
     }
 
     _buildStatsSignature (statistics = {}) {
@@ -437,6 +437,57 @@ export default class NetworkManager {
         }
         this._statsSyncEnabled = false;
         try {
+            // Fast primary path: REST fetch (usually faster/more stable than SDK select here).
+            const restPrimary = await fetchUserRowById(this.userId).catch(() => ({ success: false, data: null }));
+            if (restPrimary?.success && restPrimary?.data) {
+                this.userData = restPrimary.data;
+                this.userData.statistics = {
+                    ...(this.userData.statistics || {}),
+                    highscore: Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0),
+                    kills: Number(this.userData.total_kills ?? this.userData.statistics?.kills ?? 0),
+                    playtime: Number(this.userData.playtime ?? this.userData.statistics?.playtime ?? 0)
+                };
+                this.userData.progression = {
+                    ...(this.userData.progression || {}),
+                    level: Number(this.userData.level ?? this.userData.progression?.level ?? 1),
+                    xp: Number(this.userData.xp ?? this.userData.progression?.xp ?? 0)
+                };
+                this._statsSyncEnabled = true;
+                try {
+                    const minimal = {
+                        id: this.userData.id,
+                        email: this.userData.email || this.getCurrentKnownEmail() || null,
+                        nickname: this.userData.nickname,
+                        role: this.userData.role || "user",
+                        skins: this.userData.skins || {},
+                        progression: this.userData.progression,
+                        statistics: this.userData.statistics,
+                        highscore: this.userData.statistics.highscore,
+                        total_kills: this.userData.statistics.kills,
+                        playtime: this.userData.statistics.playtime,
+                        level: this.userData.progression.level,
+                        xp: this.userData.progression.xp
+                    };
+                    localStorage.setItem('blobl_user_data', JSON.stringify(minimal));
+                } catch (e) {}
+
+                const user = await getCurrentUser().catch(() => null);
+                if (user && !this.userData.email) {
+                    this.userData.email = this.extractEmailFromAuthUser(user) || null;
+                }
+                if (user && user.user_metadata && user.user_metadata.nickname && !this.userData.nickname) {
+                    this.userData.nickname = user.user_metadata.nickname;
+                }
+                if (!this.userData?.nickname) {
+                    this.userData.nickname = this.extractEmailFromAuthUser(user).split("@")[0] || "Player";
+                }
+                this.ownerAccountActive = this.isOwnerEmail(this.getCurrentKnownEmail()) || this.isOwnerRole(this.userData?.role);
+                await this.ensureOwnerRolePersisted();
+                this._lastSyncedStatsSignature = this._buildStatsSignature(this.userData.statistics);
+                this.core.uiManager.updateAccount();
+                return;
+            }
+
             console.log('Starting supabase select for id:', this.userId);
             const selectPromise = supabase
                 .from('users')
@@ -452,22 +503,47 @@ export default class NetworkManager {
                 return { timedOut: result === timeoutToken, result };
             };
 
-            const firstTry = await runWithTimeout(selectPromise, 15000);
+            const firstTry = await runWithTimeout(selectPromise, 6000);
             let raceResult = firstTry.result;
 
             if (firstTry.timedOut) {
-                console.warn("Supabase select timed out after 15000ms. Retrying once...");
+                console.warn("Supabase select timed out after 6000ms. Retrying once...");
                 const secondSelectPromise = supabase
                     .from('users')
                     .select('*')
                     .eq('id', this.userId)
                     .maybeSingle();
 
-                const secondTry = await runWithTimeout(secondSelectPromise, 10000);
+                const secondTry = await runWithTimeout(secondSelectPromise, 4000);
                 raceResult = secondTry.result;
 
                 if (secondTry.timedOut) {
-                    console.warn("Supabase select timed out again after 10000ms; using cached/local data fallback.");
+                    console.warn("Supabase select timed out again after 4000ms; trying REST fallback before local cache.");
+
+                const restFallback = await fetchUserRowById(this.userId).catch(() => ({ success: false, data: null }));
+                if (restFallback?.success && restFallback?.data) {
+                    this.userData = restFallback.data;
+                    this.userData.statistics = {
+                        ...(this.userData.statistics || {}),
+                        highscore: Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0),
+                        kills: Number(this.userData.total_kills ?? this.userData.statistics?.kills ?? 0),
+                        playtime: Number(this.userData.playtime ?? this.userData.statistics?.playtime ?? 0)
+                    };
+                    this.userData.progression = {
+                        ...(this.userData.progression || {}),
+                        level: Number(this.userData.level ?? this.userData.progression?.level ?? 1),
+                        xp: Number(this.userData.xp ?? this.userData.progression?.xp ?? 0)
+                    };
+                    this.loggedIn = true;
+                    this._statsSyncEnabled = true;
+                    this._lastSyncedStatsSignature = "";
+                    this.ownerAccountActive = this.isOwnerEmail(this.getCurrentKnownEmail()) || this.isOwnerRole(this.userData?.role);
+                    this.core.uiManager.updateAccountButton();
+                    this.core.uiManager.updateAccount();
+                    return;
+                }
+
+                console.warn("REST fallback also failed; using cached/local data fallback.");
 
                 const user = await getCurrentUser();
                 const fallbackNickname = user?.user_metadata?.nickname || user?.email?.split("@")[0] || "Player";
@@ -477,11 +553,23 @@ export default class NetworkManager {
                     email: this.extractEmailFromAuthUser(user) || null,
                     nickname: this.userData?.nickname || fallbackNickname
                 };
+                this.userData.statistics = {
+                    ...(this.userData.statistics || {}),
+                    highscore: Math.max(0, Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0)),
+                    kills: Math.max(0, Number(this.userData.total_kills ?? this.userData.statistics?.kills ?? 0)),
+                    playtime: Math.max(0, Number(this.userData.playtime ?? this.userData.statistics?.playtime ?? 0))
+                };
+                this.userData.progression = {
+                    ...(this.userData.progression || {}),
+                    level: Math.max(1, Number(this.userData.level ?? this.userData.progression?.level ?? 1)),
+                    xp: Math.max(0, Number(this.userData.xp ?? this.userData.progression?.xp ?? 0))
+                };
                 this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user));
                 this.loggedIn = true;
-                this._statsSyncEnabled = false;
+                this._statsSyncEnabled = true;
+                // Fallback path can be based on stale local/auth cache; force first remote sync.
+                this._lastSyncedStatsSignature = "";
                 this.core.uiManager.updateAccountButton();
-
                 this.core.uiManager.updateAccount();
                 return;
                 }
@@ -614,9 +702,22 @@ export default class NetworkManager {
                         progression: this.userData?.progression || { level: 1, xp: 0 }
                     };
                 this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user)) || this.isOwnerRole(this.userData?.role);
+                this.userData.statistics = {
+                    ...(this.userData.statistics || {}),
+                    highscore: Math.max(0, Number(this.userData.highscore ?? this.userData.statistics?.highscore ?? 0)),
+                    kills: Math.max(0, Number(this.userData.total_kills ?? this.userData.statistics?.kills ?? 0)),
+                    playtime: Math.max(0, Number(this.userData.playtime ?? this.userData.statistics?.playtime ?? 0))
+                };
+                this.userData.progression = {
+                    ...(this.userData.progression || {}),
+                    level: Math.max(1, Number(this.userData.level ?? this.userData.progression?.level ?? 1)),
+                    xp: Math.max(0, Number(this.userData.xp ?? this.userData.progression?.xp ?? 0))
+                };
+                this._statsSyncEnabled = true;
+                // Error fallback may not reflect DB state; force one remote reconciliation sync.
+                this._lastSyncedStatsSignature = "";
                 this.core.uiManager.updateAccountButton();
                 this.core.uiManager.updateAccount();
-                this._statsSyncEnabled = false;
             }
         } catch (fallbackErr) {
             console.error("Fallback user recovery failed:", fallbackErr);
@@ -684,7 +785,8 @@ export default class NetworkManager {
                                         this.userData.nickname = sess.user.user_metadata?.nickname || this.extractEmailFromAuthUser(sess.user).split("@")[0] || "Player";
                                     }
                                     this.ownerAccountActive = this.isOwnerEmail(this.getCurrentKnownEmail()) || this.isOwnerRole(this.userData?.role);
-                                    this._lastSyncedStatsSignature = this._buildStatsSignature(this.userData.statistics);
+                                    // Local restore is only a visual fast-path; keep signature empty so DB sync runs.
+                                    this._lastSyncedStatsSignature = "";
                                     console.log('Restored userData quick (local):', this.userData);
                                     this.core.uiManager.updateAccount();
                                 } catch (e) {
@@ -1983,6 +2085,8 @@ export default class NetworkManager {
     handleLeaderboardUpdate (payload) {
         const { changes } = payload;
         this.core.leaderboard.updateEntries(changes);
+        // Trigger near-real-time account stats sync whenever leaderboard score ticks.
+        this._runStatsSyncFiveStep();
     }
 
     handleRemoveSpawnProtection (payload) {

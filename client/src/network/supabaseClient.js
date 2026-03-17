@@ -883,10 +883,38 @@ export async function updateSelectedSkin(userId, skinName) {
     }
 }
 
+export async function fetchUserRowById(userId) {
+    try {
+        if (!userId) return { success: false, error: "missing_user_id", data: null };
+        const authToken = await getCurrentAccessToken(4200);
+        if (!authToken) return { success: false, error: "missing_auth_token", data: null };
+
+        const path = `/rest/v1/users?select=*&id=eq.${encodeURIComponent(userId)}&limit=1`;
+        const result = await postgrestRequestWithRetry(path, {
+            timeoutMs: 9000,
+            authToken
+        }, 1);
+
+        if (!result?.ok) {
+            return { success: false, error: result?.error || "user_fetch_failed", data: null };
+        }
+
+        const row = Array.isArray(result.data) ? (result.data[0] || null) : (result.data || null);
+        return { success: Boolean(row), error: row ? null : "user_not_found", data: row };
+    } catch (error) {
+        return { success: false, error, data: null };
+    }
+}
+
 // Persist user progression/stats after a round ends.
 export async function updateUserProgressStats(userId, progression, statistics) {
     try {
         if (!userId) return { success: false, error: "missing_user_id" };
+
+        const authToken = await getCurrentAccessToken();
+        if (!authToken) {
+            return { success: false, error: "missing_auth_token" };
+        }
 
         // Keep this payload aligned with the current public.users schema.
         const payload = {
@@ -895,15 +923,41 @@ export async function updateUserProgressStats(userId, progression, statistics) {
             playtime: Math.max(0, Number(statistics?.playtime ?? statistics?.time_played ?? 0))
         };
 
-        const authToken = await getCurrentAccessToken();
+        // Guard against stale local cache: never send lower lifetime stats than the DB already has.
+        try {
+            const readPath = `/rest/v1/users?select=highscore,total_kills,playtime&id=eq.${encodeURIComponent(userId)}&limit=1`;
+            const currentResult = await postgrestRequestWithRetry(readPath, { timeoutMs: 7000, authToken }, 1);
+            if (currentResult?.ok) {
+                const currentRow = Array.isArray(currentResult.data) ? currentResult.data[0] : currentResult.data;
+                if (currentRow) {
+                    payload.highscore = Math.max(payload.highscore, Math.max(0, Number(currentRow.highscore || 0)));
+                    payload.total_kills = Math.max(payload.total_kills, Math.max(0, Number(currentRow.total_kills || 0)));
+                    payload.playtime = Math.max(payload.playtime, Math.max(0, Number(currentRow.playtime || 0)));
+                }
+            }
+        } catch {}
+
         const path = `/rest/v1/users?id=eq.${encodeURIComponent(userId)}`;
-        const result = await postgrestRequestWithRetry(path, {
+        const sendPatch = () => postgrestRequestWithRetry(path, {
             method: "PATCH",
             body: payload,
-            prefer: "return=minimal",
+            prefer: "return=representation",
             timeoutMs: 10000,
             authToken
         }, 2);
+        let result = await sendPatch();
+
+        // If row is missing (or silently filtered by policy), ensure row once and retry.
+        const emptyWrite = result?.ok && Array.isArray(result?.data) && result.data.length === 0;
+        if (!result?.ok || emptyWrite) {
+            try {
+                const authUser = await getCurrentUser();
+                if (authUser?.id === userId) {
+                    await ensureUserRow(authUser, authUser?.user_metadata?.nickname || "");
+                    result = await sendPatch();
+                }
+            } catch {}
+        }
 
         if (!result?.ok) {
             console.error("Error updating user progression/stats:", result?.error || "unknown_error");
@@ -928,13 +982,14 @@ export async function updateUserProgressStatsKeepalive(userId, statistics, progr
             playtime: Math.max(0, Number(statistics?.playtime ?? statistics?.time_played ?? 0))
         };
 
+        const authToken = await getCurrentAccessToken(1200);
         const url = `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`;
         const resp = await fetch(url, {
             method: "PATCH",
             keepalive: true,
             headers: {
                 "apikey": supabaseKey,
-                "Authorization": `Bearer ${supabaseKey}`,
+                "Authorization": `Bearer ${authToken || supabaseKey}`,
                 "Content-Type": "application/json",
                 "Prefer": "return=minimal"
             },
@@ -1196,6 +1251,25 @@ function isMissingColumnError(error, columnName) {
     return haystack.includes(String(columnName).toLowerCase());
 }
 
+function decodeJwtPayload(token) {
+    try {
+        const parts = String(token || "").split(".");
+        if (parts.length < 2) return null;
+        const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+        const raw = atob(padded);
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+function getUserIdFromAccessToken(token) {
+    const payload = decodeJwtPayload(token);
+    const sub = payload?.sub;
+    return typeof sub === "string" && sub.trim() ? sub.trim() : null;
+}
+
 function buildPublicLayoutsQuery(searchText = "", limit = 30, visibilityColumn = "is_public") {
     let query = supabase
         .from(BASE_LAYOUTS_TABLE)
@@ -1249,21 +1323,26 @@ async function insertBaseLayout(payload, visibilityColumn, isPublic = true) {
         };
     }
 
-    const selectQuery = encodeURIComponent(BASE_LAYOUTS_SELECT_FIELDS);
+    // Align with RLS policies that require user_id = auth.uid().
+    const tokenUserId = getUserIdFromAccessToken(authToken);
+    if (tokenUserId) {
+        insertPayload.user_id = tokenUserId;
+    }
+
     const restResult = await postgrestRequestWithRetry(
-        `/rest/v1/${BASE_LAYOUTS_TABLE}?select=${selectQuery}`,
+        `/rest/v1/${BASE_LAYOUTS_TABLE}`,
         {
             method: "POST",
             body: insertPayload,
             timeoutMs: 7000,
-            prefer: "return=representation",
+            // Avoid requiring immediate SELECT permission on the inserted row.
+            prefer: "return=minimal",
             authToken
         },
         0
     );
     if (restResult.ok) {
-        const row = Array.isArray(restResult.data) ? restResult.data[0] : restResult.data;
-        return { data: row || null, error: null };
+        return { data: null, error: null };
     }
     return { data: null, error: restResult.error };
 }
@@ -1329,7 +1408,11 @@ export async function publishBaseLayout({ userId, authorName, name, snapshot, bu
 
         const preferredRaw = readPreferredVisibilityColumn();
         const preferredColumn = preferredRaw === "none" ? null : preferredRaw;
-        const attempts = [preferredColumn, "is_public", "public", null].filter((value, index, self) => self.indexOf(value) === index);
+        const baseAttempts = ["is_public", "public", null];
+        const attempts = [
+            ...(preferredColumn ? [preferredColumn] : []),
+            ...baseAttempts
+        ].filter((value, index, self) => self.indexOf(value) === index);
         let lastError = null;
 
         for (const visibilityColumn of attempts) {
@@ -1488,6 +1571,7 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
 
     const fetchRowsViaRest = async () => {
         const readLimit = 120;
+        const authToken = await getCurrentAccessToken(1200);
         const paths = [
             `/rest/v1/users?select=nickname,email,role,highscore,playtime,total_kills,statistics&order=highscore.desc.nullslast,total_kills.desc.nullslast,playtime.desc.nullslast&limit=${readLimit}`,
             `/rest/v1/users?select=nickname,email,statistics&limit=${readLimit}`,
@@ -1500,7 +1584,7 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
             try {
                 // Keep leaderboard independent from user auth session state.
                 result = await withTimeoutPromise(
-                    postgrestRequestWithRetry(path, { timeoutMs: 11000, authToken: null }, 1),
+                    postgrestRequestWithRetry(path, { timeoutMs: 11000, authToken: authToken || null }, 1),
                     13000,
                     "leaderboard_timeout"
                 );
