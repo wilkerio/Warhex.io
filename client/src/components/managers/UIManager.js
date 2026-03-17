@@ -2,7 +2,7 @@ import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBu
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
 import * as supabaseClientApi from "../../network/supabaseClient.js";
-import { signUp, signIn, signInWithDiscord, signInWithGoogle, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings, resendSignupConfirmation } from "../../network/supabaseClient.js";
+import { signUp, signIn, signInWithDiscord, updateAuthNickname, getCurrentUser, fetchSkins, updateSelectedSkin, publishBaseLayout, fetchPublicBaseLayouts, fetchGlobalAccountLeaderboard, fetchUserHudSettings, upsertUserHudSettings, resendSignupConfirmation } from "../../network/supabaseClient.js";
 import { BuildingManager } from "./BuildingManager.js";
 import ThemeManager from "./ThemeManager.js";
 import UnitManager from "./UnitManager.js";
@@ -72,6 +72,7 @@ export default class UIManager {
         this.hideMenuSecondaryPanels = false;
         this.discordOnboardingInProgress = false;
         this.soldierSelectionCounterElement = null;
+        this._globalLeaderboardRefreshTimer = null;
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -105,8 +106,21 @@ export default class UIManager {
         this.loadHudConfigFromAccount();
         this.setupLanguageSelector();
         this.applyLanguage({ refreshLeaderboard: true });
+        this.startGlobalLeaderboardAutoRefresh();
         this.maybeShowOAuthError();
         this.maybeHandlePendingSocialOnboarding();
+    }
+
+    startGlobalLeaderboardAutoRefresh () {
+        if (this._globalLeaderboardRefreshTimer) {
+            clearInterval(this._globalLeaderboardRefreshTimer);
+        }
+
+        this._globalLeaderboardRefreshTimer = setInterval(() => {
+            if (this.core?.gameManager?.player) return;
+            if (!document.getElementById("global-leaderboard")) return;
+            this._populateGlobalLeaderboard();
+        }, 15000);
     }
 
     t (key, vars = {}) {
@@ -114,9 +128,21 @@ export default class UIManager {
     }
 
     isLogoutLikeLabel (value = "") {
-        const normalized = String(value).trim().toLowerCase();
-        const logoutLocalized = this.t("menu.logout").toLowerCase();
-        return normalized === "logout" || normalized === "sair" || normalized === "cerrar sesion" || normalized === logoutLocalized;
+        const normalize = (text = "") => String(text || "")
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+        const normalized = normalize(value);
+        const logoutLocalized = normalize(this.t("menu.logout"));
+        return normalized === "logout"
+            || normalized === "log out"
+            || normalized === "sign out"
+            || normalized === "sair"
+            || normalized === "sair da conta"
+            || normalized === "cerrar sesion"
+            || normalized === "encerrar sessao"
+            || normalized === logoutLocalized;
     }
 
     isExternalAuthDisabled () {
@@ -292,21 +318,13 @@ export default class UIManager {
         setPlaceholder("#signup-nickname", "dialog.nickname");
         setPlaceholder("#signup-password", "dialog.password");
         const defaultDiscordLabel = lang === "pt" ? "Cadastrar com Discord" : (lang === "es" ? "Registrarse con Discord" : "Sign up with Discord");
-        const defaultGoogleLabel = lang === "pt" ? "Cadastrar com Google" : (lang === "es" ? "Registrarse con Google" : "Sign up with Google");
         const defaultSigninDiscordLabel = lang === "pt" ? "Entrar com Discord" : (lang === "es" ? "Iniciar con Discord" : "Continue with Discord");
-        const defaultSigninGoogleLabel = lang === "pt" ? "Entrar com Google" : (lang === "es" ? "Iniciar con Google" : "Continue with Google");
         const discordLabel = this.t("dialog.signUpDiscord");
-        const googleLabel = this.t("dialog.signUpGoogle");
         const signinDiscordLabel = this.t("dialog.signInDiscord");
-        const signinGoogleLabel = this.t("dialog.signInGoogle");
         const discordBtn = document.querySelector("#signup-discord");
-        const googleBtn = document.querySelector("#signup-google");
         const signinDiscordBtn = document.querySelector("#signin-discord");
-        const signinGoogleBtn = document.querySelector("#signin-google");
         if (discordBtn) discordBtn.textContent = (!discordLabel || discordLabel === "dialog.signUpDiscord") ? defaultDiscordLabel : discordLabel;
-        if (googleBtn) googleBtn.textContent = (!googleLabel || googleLabel === "dialog.signUpGoogle") ? defaultGoogleLabel : googleLabel;
         if (signinDiscordBtn) signinDiscordBtn.textContent = (!signinDiscordLabel || signinDiscordLabel === "dialog.signInDiscord") ? defaultSigninDiscordLabel : signinDiscordLabel;
-        if (signinGoogleBtn) signinGoogleBtn.textContent = (!signinGoogleLabel || signinGoogleLabel === "dialog.signInGoogle") ? defaultSigninGoogleLabel : signinGoogleLabel;
         setText("#signup-submit", "dialog.createAccountBtn");
         setText("#signup-cancel", "dialog.cancel");
         setText("#signin-dialog h2", "dialog.loginTitle");
@@ -1655,14 +1673,12 @@ export default class UIManager {
                 signupNickname: "signup-nickname",
                 signupPassword: "signup-password",
                 signupDiscord: "signup-discord",
-                signupGoogle: "signup-google",
                 signupSubmit: "signup-submit",
                 signupCancel: "signup-cancel",
                 // Signin dialog inputs
                 signinEmail: "signin-email",
                 signinPassword: "signin-password",
                 signinDiscord: "signin-discord",
-                signinGoogle: "signin-google",
                 signinSubmit: "signin-submit",
                 signinCancel: "signin-cancel",
                 progression: {
@@ -2058,9 +2074,7 @@ export default class UIManager {
         const signupSubmit = this.DOM.account.signupSubmit || document.getElementById("signup-submit");
         const signupCancel = this.DOM.account.signupCancel || document.getElementById("signup-cancel");
         const signupDiscord = this.DOM.account.signupDiscord || document.getElementById("signup-discord");
-        const signupGoogle = this.DOM.account.signupGoogle || document.getElementById("signup-google");
         const signinDiscord = this.DOM.account.signinDiscord || document.getElementById("signin-discord");
-        const signinGoogle = this.DOM.account.signinGoogle || document.getElementById("signin-google");
         const signinSubmit = this.DOM.account.signinSubmit || document.getElementById("signin-submit");
         const signinCancel = this.DOM.account.signinCancel || document.getElementById("signin-cancel");
 
@@ -2209,24 +2223,10 @@ export default class UIManager {
             });
         }
 
-        if (signupGoogle && !signupGoogle.dataset.boundSignupGoogle) {
-            signupGoogle.dataset.boundSignupGoogle = "1";
-            signupGoogle.addEventListener("click", async () => {
-                await this.startSocialOAuth("google");
-            });
-        }
-
         if (signinDiscord && !signinDiscord.dataset.boundSigninDiscord) {
             signinDiscord.dataset.boundSigninDiscord = "1";
             signinDiscord.addEventListener("click", async () => {
                 await this.startSocialOAuth("discord");
-            });
-        }
-
-        if (signinGoogle && !signinGoogle.dataset.boundSigninGoogle) {
-            signinGoogle.dataset.boundSigninGoogle = "1";
-            signinGoogle.addEventListener("click", async () => {
-                await this.startSocialOAuth("google");
             });
         }
 
@@ -2309,11 +2309,23 @@ export default class UIManager {
         if (this.isExternalAuthDisabled()) return;
 
         const accountButton = buttonElement || this.DOM.account.accountButton || document.getElementById("account-button");
+        const actionFromDataset = String(accountButton?.dataset?.authAction || "").toLowerCase();
         const buttonText = (accountButton?.textContent || "").trim().toLowerCase();
         const logoutLikeLabel = this.isLogoutLikeLabel(buttonText);
-        const shouldLogout = Boolean(this.core?.networkManager?.loggedIn) || logoutLikeLabel;
+        const shouldLogout = actionFromDataset === "logout" || Boolean(this.core?.networkManager?.loggedIn) || logoutLikeLabel;
         if (shouldLogout) {
-            this.core?.networkManager?.logout?.();
+            const networkManager = this.core?.networkManager;
+            let fallbackTimer = null;
+            const forceLocalLogout = () => {
+                try { supabaseClientApi.clearLocalAuthState?.(); } catch (e) {}
+                try { localStorage.removeItem("blobl_user_data"); } catch (e) {}
+                window.location.reload();
+            };
+            fallbackTimer = setTimeout(forceLocalLogout, 3000);
+            Promise.resolve(networkManager?.logout?.())
+                .finally(() => {
+                    if (fallbackTimer) clearTimeout(fallbackTimer);
+                });
         } else {
             this.showSigninDialog(true);
         }
@@ -2411,16 +2423,16 @@ export default class UIManager {
 
     async startSocialOAuth (provider = "discord") {
         const normalizedProvider = String(provider || "").toLowerCase();
+        if (normalizedProvider === "google") {
+            alert(this.t("error.googleProviderDisabled"));
+            return;
+        }
         try {
             localStorage.setItem("warhex_oauth_pending_provider", normalizedProvider);
         } catch (e) {}
 
         try {
-            if (normalizedProvider === "google") {
-                await signInWithGoogle();
-            } else {
-                await signInWithDiscord();
-            }
+            await signInWithDiscord();
         } catch (error) {
             try { localStorage.removeItem("warhex_oauth_pending_provider"); } catch (e) {}
             const rawMessage = String(error?.message || "");
@@ -2710,6 +2722,7 @@ export default class UIManager {
                 // Clear any existing classes before setting the "Logout" state
                 this.DOM.account.accountButton.classList.remove("login");
                 this.DOM.account.accountButton.textContent = this.t("menu.logout");
+                this.DOM.account.accountButton.dataset.authAction = "logout";
                 if (myProfileButton) {
                     applyLoggedButtonStyle(myProfileButton);
                     myProfileButton.style.display = "flex";
@@ -2725,6 +2738,7 @@ export default class UIManager {
             } else {
                 this.DOM.account.accountButton.classList.remove("login");
                 this.DOM.account.accountButton.textContent = this.t("menu.login");
+                this.DOM.account.accountButton.dataset.authAction = "login";
                 // Keep same visual language as My Profile/Logout while logged out.
                 applyLoggedButtonStyle(this.DOM.account.accountButton);
                 if (myProfileButton) myProfileButton.style.display = "none";
@@ -6657,7 +6671,7 @@ export default class UIManager {
             const watchdogId = setTimeout(() => {
                 save.disabled = false;
                 save.textContent = originalButtonText;
-            }, 35000);
+            }, 12000);
             try {
                 // Always center + capture on Save, as requested.
                 const snapshot = this.captureCurrentBaseSnapshot({ forceCenter: true })
@@ -6677,39 +6691,43 @@ export default class UIManager {
                 if (wasPublishing) {
                     const userId = this.core.networkManager?.userId || this.core.networkManager?.userData?.id || null;
                     const authorName = this.core.networkManager?.userData?.nickname || this.core.gameManager?.player?.name || "Guest";
-                    let result = null;
-                    try {
-                        result = await publishBaseLayout({
-                            userId,
-                            authorName,
-                            name: layout.name,
-                            snapshot: layout.snapshot,
-                            buildings: layout.buildings,
-                            isPublic: true
-                        });
-                    } catch (error) {
-                        this.addChatMessage(
-                            "System",
-                            "Could not publish base (network error).",
-                            "#ffcc66"
-                        );
-                        save.disabled = false;
-                        save.textContent = originalButtonText;
-                        return;
-                    }
-                    if (result?.success) {
-                        this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
-                    } else {
-                        const reason = String(result?.error?.message || result?.error?.details || result?.error || "").trim();
-                        this.addChatMessage(
-                            "System",
-                            reason ? `Could not publish base: ${reason}` : "Could not publish base (check DB table/config).",
-                            "#ffcc66"
-                        );
-                        save.disabled = false;
-                        save.textContent = originalButtonText;
-                        return;
-                    }
+                    this.addChatMessage("System", `Publishing "${layout.name}"...`, "#60c1ff");
+                    this.hideBaseLayoutDialog();
+                    save.disabled = false;
+                    save.textContent = originalButtonText;
+
+                    (async () => {
+                        let result = null;
+                        try {
+                            result = await publishBaseLayout({
+                                userId,
+                                authorName,
+                                name: layout.name,
+                                snapshot: layout.snapshot,
+                                buildings: layout.buildings,
+                                isPublic: true
+                            });
+                        } catch (error) {
+                            this.addChatMessage(
+                                "System",
+                                "Could not publish base (network error).",
+                                "#ffcc66"
+                            );
+                            return;
+                        }
+
+                        if (result?.success) {
+                            this.addChatMessage("System", `Base "${layout.name}" published.`, "#7CFC00");
+                        } else {
+                            const reason = String(result?.error?.message || result?.error?.details || result?.error || "").trim();
+                            this.addChatMessage(
+                                "System",
+                                reason ? `Could not publish base: ${reason}` : "Could not publish base (check DB table/config).",
+                                "#ffcc66"
+                            );
+                        }
+                    })();
+                    return;
                 }
 
                 this.hideBaseLayoutDialog();

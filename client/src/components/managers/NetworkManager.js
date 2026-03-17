@@ -13,7 +13,7 @@ import Bush from "../../entities/Bush.js";
 import Rock from "../../entities/Rock.js";
 import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
-import { clearLocalAuthState, consumeOAuthCallbackSession, ensureUserRow, fetchSkins, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
+import { clearLocalAuthState, consumeOAuthCallbackSession, ensureUserRow, fetchSkins, invalidateGlobalLeaderboardCache, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -37,6 +37,8 @@ export default class NetworkManager {
         this._statsSyncInFlight = false;
         this._statsSyncTick = 0;
         this._statsSyncEnabled = false;
+        this._lastSyncedStatsSignature = "";
+        this._logoutInProgress = false;
         this._lastPlaytimeTickAt = Date.now();
         this.spawnLeaveWatchers = new Map(); // playerID -> playerName
         this.discordInviteUrl = "https://discord.gg/Q337spAqR7";
@@ -106,7 +108,15 @@ export default class NetworkManager {
 
         this._statsSyncIntervalId = setInterval(() => {
             this._runStatsSyncFiveStep();
-        }, 1000);
+        }, 5000);
+    }
+
+    _buildStatsSignature (statistics = {}) {
+        return JSON.stringify({
+            h: Math.max(0, Number(statistics?.highscore || 0)),
+            k: Math.max(0, Number(statistics?.kills || 0)),
+            p: Math.max(0, Number(statistics?.playtime || 0))
+        });
     }
 
     async _runStatsSyncFiveStep () {
@@ -136,6 +146,11 @@ export default class NetworkManager {
             statistics.kills = Math.max(0, Number(statistics.kills || 0));
             statistics.playtime = Math.max(0, Number(statistics.playtime || 0));
 
+            const statsSignature = this._buildStatsSignature(statistics);
+            if (statsSignature === this._lastSyncedStatsSignature) {
+                return;
+            }
+
             // Step 4: persist local snapshot for immediate F5 recovery
             try {
                 const minimal = {
@@ -160,7 +175,7 @@ export default class NetworkManager {
             // Step 5: persist remote snapshot with retries
             let synced = false;
             let lastError = null;
-            for (let attempt = 1; attempt <= 5; attempt++) {
+            for (let attempt = 1; attempt <= 3; attempt++) {
                 const result = await updateUserProgressStats(this.userId, progression, statistics);
                 if (result?.success) {
                     synced = true;
@@ -171,9 +186,16 @@ export default class NetworkManager {
 
             this._statsSyncTick++;
             if (!synced) {
-                console.warn("Stats auto-sync remote failed after 5 attempts.", lastError);
-            } else if (this._statsSyncTick % 10 === 0) {
-                console.log("Stats auto-sync OK.");
+                console.warn("Stats auto-sync remote failed after 3 attempts.", lastError);
+            } else {
+                this._lastSyncedStatsSignature = statsSignature;
+                invalidateGlobalLeaderboardCache();
+                if (!this.core?.gameManager?.player && typeof this.core?.uiManager?._populateGlobalLeaderboard === "function") {
+                    this.core.uiManager._populateGlobalLeaderboard();
+                }
+                if (this._statsSyncTick % 10 === 0) {
+                    console.log("Stats auto-sync OK.");
+                }
             }
         } finally {
             this._statsSyncInFlight = false;
@@ -355,6 +377,7 @@ export default class NetworkManager {
         this.loggedIn = true;
         this.userId = sessionUser.id;
         this._statsSyncEnabled = false;
+        this._lastSyncedStatsSignature = "";
         this.ownerAccountActive = this.isOwnerEmail(this.extractEmailFromAuthUser(authUser));
 
         try {
@@ -377,8 +400,10 @@ export default class NetworkManager {
                 this.core.uiManager.updateAccountButton();
             } else if (event === 'SIGNED_OUT') {
                 this.loggedIn = false;
+                this.userId = null;
                 this.userData = null;
                 this._statsSyncEnabled = false;
+                this._lastSyncedStatsSignature = "";
                 this.ownerAccountActive = false;
                 this.core.uiManager.updateAccount();
                 this.core.uiManager.updateAccountButton();
@@ -562,6 +587,9 @@ export default class NetworkManager {
             this.ownerAccountActive = this.isOwnerEmail(this.getCurrentKnownEmail()) || this.isOwnerRole(this.userData?.role);
             await this.ensureOwnerRolePersisted();
             if (this.userData) {
+                if (this.userData.statistics) {
+                    this._lastSyncedStatsSignature = this._buildStatsSignature(this.userData.statistics);
+                }
                 // Ensure skins and unlocked properties exist before accessing them
                 const equippedSkin = Number(localStorage.getItem("equippedSkin")) || 0;
                 if (this.userData.skins && Array.isArray(this.userData.skins.unlocked) && this.userData.skins.unlocked.includes(equippedSkin)) {
@@ -656,6 +684,7 @@ export default class NetworkManager {
                                         this.userData.nickname = sess.user.user_metadata?.nickname || this.extractEmailFromAuthUser(sess.user).split("@")[0] || "Player";
                                     }
                                     this.ownerAccountActive = this.isOwnerEmail(this.getCurrentKnownEmail()) || this.isOwnerRole(this.userData?.role);
+                                    this._lastSyncedStatsSignature = this._buildStatsSignature(this.userData.statistics);
                                     console.log('Restored userData quick (local):', this.userData);
                                     this.core.uiManager.updateAccount();
                                 } catch (e) {
@@ -688,6 +717,7 @@ export default class NetworkManager {
                                                 this.userId = null;
                                                 this.userData = null;
                                                 this._statsSyncEnabled = false;
+                                                this._lastSyncedStatsSignature = "";
                                                 this.ownerAccountActive = false;
                                                 clearLocalAuthState();
                                                 try { localStorage.removeItem('blobl_user_data'); } catch (e) {}
@@ -718,39 +748,56 @@ export default class NetworkManager {
                     await this.hydrateAuthenticatedSession(session);
                 } else {
                     this.loggedIn = false;
+                    this.userId = null;
                     this.userData = null;
                     this._statsSyncEnabled = false;
+                    this._lastSyncedStatsSignature = "";
                     this.ownerAccountActive = false;
                 }
             } catch (e) {
                 console.error('Error during checkLoginStatus flow:', e);
                 this.loggedIn = false;
+                this.userId = null;
                 this.userData = null;
                 this._statsSyncEnabled = false;
+                this._lastSyncedStatsSignature = "";
                 this.ownerAccountActive = false;
             }
         } catch (error) {
             console.error("Error checking login status:", error);
             this.loggedIn = false;
+            this.userId = null;
             this._statsSyncEnabled = false;
+            this._lastSyncedStatsSignature = "";
             this.ownerAccountActive = false;
         }
         this.core.uiManager.updateAccountButton();
     }
 
     async logout () {
+        if (this._logoutInProgress) return;
+        this._logoutInProgress = true;
         try {
-            await signOut();
-            this.loggedIn = false;
-            this.userData = null;
-            this._statsSyncEnabled = false;
-            this.ownerAccountActive = false;
-            this.core.uiManager.updateAccount();
-            this.core.uiManager.updateAccountButton();
-            try { localStorage.removeItem('blobl_user_data'); } catch(e) {}
-            window.location.reload();
+            await Promise.race([
+                signOut(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("logout_timeout")), 2500))
+            ]);
         } catch (error) {
             console.error("Error during logout:", error);
+        } finally {
+            // Always clear local auth/UI state even if remote signOut fails.
+            this.loggedIn = false;
+            this.userId = null;
+            this.userData = null;
+            this._statsSyncEnabled = false;
+            this._lastSyncedStatsSignature = "";
+            this.ownerAccountActive = false;
+            clearLocalAuthState();
+            try { localStorage.removeItem('blobl_user_data'); } catch (e) {}
+            this.core.uiManager.updateAccount();
+            this.core.uiManager.updateAccountButton();
+            this._logoutInProgress = false;
+            window.location.reload();
         }
     }
 
@@ -1596,6 +1643,15 @@ export default class NetworkManager {
         const result = await updateUserProgressStats(this.userId, progression, statistics);
         if (!result?.success) {
             console.warn("Remote stats sync failed; local stats were kept.");
+            return;
+        }
+
+        this._lastSyncedStatsSignature = this._buildStatsSignature(statistics);
+
+        // Force next global-rank read to use fresh DB values after successful sync.
+        invalidateGlobalLeaderboardCache();
+        if (typeof this.core?.uiManager?._populateGlobalLeaderboard === "function") {
+            this.core.uiManager._populateGlobalLeaderboard();
         }
     }
 

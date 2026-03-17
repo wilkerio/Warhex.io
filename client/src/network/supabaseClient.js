@@ -23,11 +23,12 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 
 const LOCAL_SESSION_KEY = 'blobl_supabase_session';
 const SKINS_CACHE_TTL_MS = 10 * 60 * 1000;
-const LEADERBOARD_CACHE_TTL_MS = 60 * 1000;
+const LEADERBOARD_CACHE_TTL_MS = 15 * 1000;
 const STORAGE_LIST_PAGE_SIZE = 100;
 const STORAGE_LIST_MAX_REQUESTS = 20;
 const GLOBAL_RANK_CACHE_KEY = "warhex_global_rank_cache_v1";
 const PUBLIC_BASES_CACHE_KEY = "warhex_public_bases_cache_v1";
+const BASE_LAYOUTS_VISIBILITY_PREF_KEY = "warhex_base_layout_visibility_pref_v1";
 
 let skinsCache = {
     data: [],
@@ -41,6 +42,18 @@ let leaderboardCache = {
     fetchedAt: 0,
     inFlight: null
 };
+
+export function invalidateGlobalLeaderboardCache() {
+    leaderboardCache = {
+        key: "",
+        data: [],
+        fetchedAt: 0,
+        inFlight: null
+    };
+    try {
+        localStorage.removeItem(GLOBAL_RANK_CACHE_KEY);
+    } catch {}
+}
 
 function readCachedJson(key, fallbackValue) {
     try {
@@ -56,6 +69,23 @@ function readCachedJson(key, fallbackValue) {
 function writeCachedJson(key, value) {
     try {
         localStorage.setItem(key, JSON.stringify(value));
+    } catch {}
+}
+
+function readPreferredVisibilityColumn() {
+    try {
+        const raw = String(localStorage.getItem(BASE_LAYOUTS_VISIBILITY_PREF_KEY) || "").trim();
+        if (raw === "is_public" || raw === "public" || raw === "none") {
+            return raw;
+        }
+    } catch {}
+    return "";
+}
+
+function writePreferredVisibilityColumn(columnName = null) {
+    try {
+        const value = columnName === "is_public" || columnName === "public" ? columnName : "none";
+        localStorage.setItem(BASE_LAYOUTS_VISIBILITY_PREF_KEY, value);
     } catch {}
 }
 
@@ -602,10 +632,18 @@ export async function signOut() {
     let authError = null;
     try {
         // Local scope guarantees client-side session cleanup even if revoke fails remotely.
-        const { error } = await supabase.auth.signOut({ scope: "local" });
+        const signOutResult = await withTimeoutPromise(
+            supabase.auth.signOut({ scope: "local" }),
+            1800,
+            "signout_timeout"
+        );
+        const { error } = signOutResult || {};
         if (error) authError = error;
     } catch (error) {
-        authError = error;
+        const isTimeout = String(error?.message || "").toLowerCase().includes("signout_timeout");
+        if (!isTimeout) {
+            authError = error;
+        }
     } finally {
         clearLocalAuthState();
     }
@@ -852,9 +890,9 @@ export async function updateUserProgressStats(userId, progression, statistics) {
 
         // Keep this payload aligned with the current public.users schema.
         const payload = {
-            highscore: Number(statistics?.highscore || 0),
-            total_kills: Number(statistics?.kills || 0),
-            playtime: Number(statistics?.playtime || 0)
+            highscore: Math.max(0, Number(statistics?.highscore ?? statistics?.score ?? 0)),
+            total_kills: Math.max(0, Number(statistics?.kills ?? statistics?.total_kills ?? 0)),
+            playtime: Math.max(0, Number(statistics?.playtime ?? statistics?.time_played ?? 0))
         };
 
         const authToken = await getCurrentAccessToken();
@@ -885,9 +923,9 @@ export async function updateUserProgressStatsKeepalive(userId, statistics, progr
         if (!userId) return { success: false, error: "missing_user_id" };
 
         const payload = {
-            highscore: Number(statistics?.highscore || 0),
-            total_kills: Number(statistics?.kills || 0),
-            playtime: Number(statistics?.playtime || 0)
+            highscore: Math.max(0, Number(statistics?.highscore ?? statistics?.score ?? 0)),
+            total_kills: Math.max(0, Number(statistics?.kills ?? statistics?.total_kills ?? 0)),
+            playtime: Math.max(0, Number(statistics?.playtime ?? statistics?.time_played ?? 0))
         };
 
         const url = `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`;
@@ -1184,18 +1222,18 @@ async function insertBaseLayout(payload, visibilityColumn, isPublic = true) {
     if (visibilityColumn) {
         insertPayload[visibilityColumn] = Boolean(isPublic);
     }
-    let authToken = await getCurrentAccessToken();
+    let authToken = await getCurrentAccessToken(1800);
     if (!authToken) {
         try {
             const restored = await withTimeoutPromise(
                 restoreSessionFromStorage(),
-                3200,
+                1800,
                 "auth_restore_timeout"
             );
             if (restored?.access_token) {
                 authToken = restored.access_token;
             } else {
-                authToken = await getCurrentAccessToken(3200);
+                authToken = await getCurrentAccessToken(1800);
             }
         } catch {}
     }
@@ -1217,11 +1255,11 @@ async function insertBaseLayout(payload, visibilityColumn, isPublic = true) {
         {
             method: "POST",
             body: insertPayload,
-            timeoutMs: 18000,
+            timeoutMs: 7000,
             prefer: "return=representation",
             authToken
         },
-        2
+        0
     );
     if (restResult.ok) {
         const row = Array.isArray(restResult.data) ? restResult.data[0] : restResult.data;
@@ -1262,22 +1300,24 @@ export async function publishBaseLayout({ userId, authorName, name, snapshot, bu
     const runPublish = async () => {
         let resolvedUserId = userId || null;
         let resolvedAuthorName = authorName || "";
-        try {
-            const authUser = await withTimeoutPromise(
-                getCurrentUser(),
-                3500,
-                "auth_user_timeout"
-            );
-            if (!resolvedUserId && authUser?.id) {
-                resolvedUserId = authUser.id;
-            }
-            if (!resolvedAuthorName) {
-                resolvedAuthorName =
-                    authUser?.user_metadata?.nickname
-                    || resolveAuthEmail(authUser)?.split("@")[0]
-                    || "";
-            }
-        } catch {}
+        if (!resolvedUserId || !resolvedAuthorName) {
+            try {
+                const authUser = await withTimeoutPromise(
+                    getCurrentUser(),
+                    1800,
+                    "auth_user_timeout"
+                );
+                if (!resolvedUserId && authUser?.id) {
+                    resolvedUserId = authUser.id;
+                }
+                if (!resolvedAuthorName) {
+                    resolvedAuthorName =
+                        authUser?.user_metadata?.nickname
+                        || resolveAuthEmail(authUser)?.split("@")[0]
+                        || "";
+                }
+            } catch {}
+        }
 
         const payload = {
             user_id: resolvedUserId || null,
@@ -1287,12 +1327,18 @@ export async function publishBaseLayout({ userId, authorName, name, snapshot, bu
             layout_json: { buildings: Array.isArray(buildings) ? buildings : [] }
         };
 
-        const attempts = ["is_public", "public", null];
+        const preferredRaw = readPreferredVisibilityColumn();
+        const preferredColumn = preferredRaw === "none" ? null : preferredRaw;
+        const attempts = [preferredColumn, "is_public", "public", null].filter((value, index, self) => self.indexOf(value) === index);
         let lastError = null;
 
         for (const visibilityColumn of attempts) {
             const { data, error } = await insertBaseLayout(payload, visibilityColumn, isPublic);
             if (!error) {
+                writePreferredVisibilityColumn(visibilityColumn);
+                try {
+                    localStorage.removeItem(PUBLIC_BASES_CACHE_KEY);
+                } catch {}
                 return { success: true, data };
             }
 
