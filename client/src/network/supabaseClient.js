@@ -602,18 +602,13 @@ export async function ensureUserRow(authUser, preferredNickname = "") {
 
         let lastError = null;
         for (const payload of payloadCandidates) {
-            const { data, error } = await supabase
+            const { error } = await supabase
                 .from("users")
                 // Ignore existing rows to avoid overwriting progression/stats on every login.
-                .upsert(payload, { onConflict: "id", ignoreDuplicates: true })
-                .select("*")
-                .maybeSingle();
+                .upsert(payload, { onConflict: "id", ignoreDuplicates: true });
 
             if (!error) {
-                if (data) {
-                    return { success: true, data: normalizeUserRow(data) };
-                }
-                // Row likely already existed and was ignored by upsert.
+                // Row may already exist (ignored duplicate). Read current row once.
                 const { data: existingRow, error: existingError } = await supabase
                     .from("users")
                     .select("*")
@@ -704,8 +699,8 @@ export async function restoreSessionFromStorage() {
     }
 }
 
-// Recursively list all files in the Supabase storage bucket (supports nested folders)
-async function listAllStorageFiles(prefix = '', state = { requests: 0 }) {
+// Recursively list all files in a Supabase storage bucket (supports nested folders)
+async function listAllStorageFiles(bucketName = "skins", prefix = '', state = { requests: 0 }) {
     if (state.requests >= STORAGE_LIST_MAX_REQUESTS) {
         return [];
     }
@@ -720,7 +715,7 @@ async function listAllStorageFiles(prefix = '', state = { requests: 0 }) {
         }
 
         state.requests += 1;
-        const { data, error } = await retryWithBackoff(() => supabase.storage.from('skins').list(prefix, {
+        const { data, error } = await retryWithBackoff(() => supabase.storage.from(bucketName).list(prefix, {
             limit: pageSize,
             offset: page * pageSize,
             sortBy: { column: 'name', order: 'asc' }
@@ -741,7 +736,7 @@ async function listAllStorageFiles(prefix = '', state = { requests: 0 }) {
                 files.push({ ...entry, fullPath });
             } else {
                 // Treat as folder and recurse
-                const nested = await listAllStorageFiles(fullPath, state);
+                const nested = await listAllStorageFiles(bucketName, fullPath, state);
                 files.push(...nested);
             }
         }
@@ -768,7 +763,7 @@ export async function fetchSkins() {
 
     skinsCache.inFlight = (async () => {
     try {
-        const files = await listAllStorageFiles('');
+        const files = await listAllStorageFiles("skins", '');
 
         // Filter only PNG or SVG files, sort alphabetically (by base name), and create skin objects with URLs
         const skins = files
@@ -829,6 +824,26 @@ export async function fetchGameMusicTracks(limit = 40) {
     musicCache.inFlight = (async () => {
         try {
             let tracks = [];
+            const normalizePathKey = (value) => String(value || "")
+                .trim()
+                .replace(/\\/g, "/")
+                .replace(/^\/+/, "")
+                .toLowerCase();
+            const hasAudioExtension = (path) => /\.(mp3|ogg|wav|m4a)$/i.test(String(path || ""));
+            let bucketFiles = [];
+            try {
+                bucketFiles = await listAllStorageFiles(MUSIC_BUCKET, "");
+            } catch (storageListError) {
+                bucketFiles = [];
+            }
+            const bucketAudioFiles = bucketFiles
+                .filter((file) => hasAudioExtension(file?.fullPath))
+                .map((file) => String(file.fullPath || "").trim())
+                .filter(Boolean);
+            const bucketPathByKey = new Map(bucketAudioFiles.map((path) => [normalizePathKey(path), path]));
+            const bucketPathByBaseName = new Map(
+                bucketAudioFiles.map((path) => [normalizePathKey(path.split("/").pop()), path])
+            );
 
             // Preferred source: database-managed playlist.
             const { data, error } = await supabase
@@ -842,15 +857,24 @@ export async function fetchGameMusicTracks(limit = 40) {
             if (!error) {
                 tracks = (Array.isArray(data) ? data : [])
                     .map((row) => {
-                        const filePath = String(row?.file_path || "").trim();
-                        if (!filePath) return null;
-                        const publicUrl = supabase.storage.from(MUSIC_BUCKET).getPublicUrl(filePath)?.data?.publicUrl || "";
+                        const rawPath = String(row?.file_path || "").trim();
+                        if (!rawPath) return null;
+
+                        let resolvedPath = rawPath;
+                        if (bucketAudioFiles.length > 0) {
+                            const directMatch = bucketPathByKey.get(normalizePathKey(rawPath));
+                            const byNameMatch = bucketPathByBaseName.get(normalizePathKey(rawPath.split("/").pop()));
+                            resolvedPath = directMatch || byNameMatch || "";
+                            if (!resolvedPath) return null;
+                        }
+
+                        const publicUrl = supabase.storage.from(MUSIC_BUCKET).getPublicUrl(resolvedPath)?.data?.publicUrl || "";
                         if (!publicUrl) return null;
 
                         return {
                             id: Number(row?.id || 0),
-                            title: String(row?.title || filePath),
-                            filePath,
+                            title: String(row?.title || resolvedPath),
+                            filePath: resolvedPath,
                             url: publicUrl,
                             volume: Math.max(0, Math.min(1, Number(row?.volume ?? 0.3) || 0.3)),
                             sortOrder: Number(row?.sort_order || 0)
@@ -864,28 +888,17 @@ export async function fetchGameMusicTracks(limit = 40) {
 
             // Fallback source: files directly from storage bucket root.
             if (tracks.length === 0) {
-                const { data: storageRows, error: storageError } = await supabase.storage
-                    .from(MUSIC_BUCKET)
-                    .list("", {
-                        limit: safeLimit,
-                        offset: 0,
-                        sortBy: { column: "name", order: "asc" }
-                    });
+                const fallbackPaths = bucketAudioFiles
+                    .slice()
+                    .sort((a, b) => a.localeCompare(b))
+                    .slice(0, safeLimit);
 
-                if (storageError) {
-                    return { success: false, error: storageError, data: [] };
-                }
-
-                tracks = (Array.isArray(storageRows) ? storageRows : [])
-                    .filter((row) => {
-                        const name = String(row?.name || "");
-                        return /\.(mp3|ogg|wav|m4a)$/i.test(name);
-                    })
-                    .map((row, index) => {
-                        const filePath = String(row?.name || "").trim();
+                tracks = fallbackPaths
+                    .map((filePath, index) => {
                         const publicUrl = supabase.storage.from(MUSIC_BUCKET).getPublicUrl(filePath)?.data?.publicUrl || "";
                         if (!filePath || !publicUrl) return null;
-                        const title = filePath
+                        const fileName = filePath.split("/").pop() || filePath;
+                        const title = fileName
                             .replace(/\.[^.]+$/, "")
                             .replace(/^\d+\s*/, "")
                             .trim();
@@ -1378,6 +1391,17 @@ function isMissingColumnError(error, columnName) {
     return haystack.includes(String(columnName).toLowerCase());
 }
 
+function isMissingTableOrEndpointError(error) {
+    if (!error) return false;
+    const code = String(error?.code || "").toUpperCase();
+    const status = Number(error?.status || 0);
+    const message = String(error?.message || "").toLowerCase();
+    return code === "42P01"
+        || code === "PGRST205"
+        || status === 404
+        || (message.includes("relation") && message.includes("does not exist"));
+}
+
 let lastExpiredAuthCleanupAt = 0;
 
 function isAuthTokenExpired(token, skewSeconds = 30) {
@@ -1849,6 +1873,9 @@ export async function fetchUserHudSettings(userId) {
             .maybeSingle();
 
         if (error) {
+            if (isMissingTableOrEndpointError(error)) {
+                return { success: false, error: "hud_settings_unavailable", data: null };
+            }
             console.error("Error fetching user HUD settings:", error);
             return { success: false, error, data: null };
         }
@@ -1878,6 +1905,9 @@ export async function upsertUserHudSettings(userId, config) {
             .upsert(payload, { onConflict: "user_id" });
 
         if (error) {
+            if (isMissingTableOrEndpointError(error)) {
+                return { success: false, error: "hud_settings_unavailable" };
+            }
             console.error("Error upserting user HUD settings:", error);
             return { success: false, error };
         }

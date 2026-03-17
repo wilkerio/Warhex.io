@@ -15,6 +15,7 @@ export default class MusicManager {
         this.masterVolume = this.readStoredVolume();
         this.muted = this.readStoredMuted();
         this.autoplayUnlocked = false;
+        this.onStateChange = null;
     }
 
     initialize () {
@@ -33,6 +34,7 @@ export default class MusicManager {
                 if (this.userInteracted) {
                     this.tryStartPlayback();
                 }
+                this.emitStateChange();
             })
             .catch((error) => {
                 console.warn("Music playlist init failed:", error);
@@ -45,7 +47,13 @@ export default class MusicManager {
         audio.preload = "auto";
         audio.loop = false;
         audio.addEventListener("ended", () => this.playNext());
-        audio.addEventListener("error", () => this.playNext());
+        audio.addEventListener("error", () => {
+            const track = this.getCurrentTrack();
+            console.warn("Music track failed to load/play:", track?.title || "unknown_track", track?.url || this.audio?.src || "");
+            this.playNext();
+        });
+        audio.addEventListener("play", () => this.emitStateChange());
+        audio.addEventListener("pause", () => this.emitStateChange());
         this.audio = audio;
         this.applyVolume();
         return audio;
@@ -96,12 +104,41 @@ export default class MusicManager {
         this.muted = Boolean(muted);
         this.applyVolume();
         this.persistAudioPrefs();
+        this.emitStateChange();
     }
 
     setMasterVolume (volume) {
         this.masterVolume = Math.max(0, Math.min(1, Number(volume) || 0));
         this.applyVolume();
         this.persistAudioPrefs();
+        this.emitStateChange();
+    }
+
+    setOnStateChange (callback) {
+        this.onStateChange = typeof callback === "function" ? callback : null;
+    }
+
+    getState () {
+        const track = this.getCurrentTrack();
+        const isPlaying = Boolean(this.audio && !this.audio.paused && !this.audio.ended);
+        return {
+            hasPlaylist: this.playlist.length > 0,
+            playlistLength: this.playlist.length,
+            currentIndex: this.currentIndex,
+            trackTitle: track?.title || "",
+            trackUrl: track?.url || "",
+            playing: isPlaying,
+            muted: Boolean(this.muted),
+            masterVolume: Math.max(0, Math.min(1, Number(this.masterVolume) || 0)),
+            effectiveVolume: Number(this.audio?.volume || 0)
+        };
+    }
+
+    emitStateChange () {
+        if (typeof this.onStateChange !== "function") return;
+        try {
+            this.onStateChange(this.getState());
+        } catch {}
     }
 
     async loadPlaylist (force = false) {
@@ -123,6 +160,7 @@ export default class MusicManager {
                 console.warn("No active music tracks found.");
             }
             this.applyVolume();
+            this.emitStateChange();
             return this.playlist;
         })();
 
@@ -150,13 +188,16 @@ export default class MusicManager {
         }
         this.audio.currentTime = 0;
         this.applyVolume();
+        this.emitStateChange();
 
         if (!autoPlay) return true;
 
         try {
             await this.audio.play();
+            this.emitStateChange();
             return true;
         } catch (error) {
+            this.emitStateChange();
             return false;
         }
     }
@@ -165,6 +206,48 @@ export default class MusicManager {
         if (!this.playlist.length) return false;
         const nextIndex = (this.currentIndex + 1) % this.playlist.length;
         return this.playTrackAt(nextIndex, true);
+    }
+
+    async playPrevious () {
+        if (!this.playlist.length) return false;
+        const previousIndex = (this.currentIndex - 1 + this.playlist.length) % this.playlist.length;
+        return this.playTrackAt(previousIndex, true);
+    }
+
+    pause () {
+        if (!this.audio) return;
+        this.audio.pause();
+        this.emitStateChange();
+    }
+
+    async resume () {
+        this.ensureAudioElement();
+        if (this.playlist.length === 0) {
+            await this.loadPlaylist();
+        }
+        if (this.playlist.length === 0) return false;
+        if (!this.audio.src) {
+            const currentTrack = this.getCurrentTrack();
+            if (!currentTrack?.url) return false;
+            this.audio.src = currentTrack.url;
+        }
+        try {
+            await this.audio.play();
+            this.emitStateChange();
+            return true;
+        } catch (error) {
+            this.emitStateChange();
+            return false;
+        }
+    }
+
+    async togglePlayPause () {
+        const state = this.getState();
+        if (state.playing) {
+            this.pause();
+            return true;
+        }
+        return this.resume();
     }
 
     async tryStartPlayback () {
@@ -184,9 +267,11 @@ export default class MusicManager {
         try {
             await this.audio.play();
             console.log("MusicManager playing:", this.getCurrentTrack()?.title || this.audio.src, "volume:", this.audio.volume);
+            this.emitStateChange();
             return true;
         } catch (error) {
             console.warn("MusicManager play blocked/failed:", error?.message || error);
+            this.emitStateChange();
             return false;
         }
     }
@@ -231,5 +316,6 @@ export default class MusicManager {
         this.persistAudioPrefs();
         await this.unlockAutoplay();
         await this.tryStartPlayback();
+        this.emitStateChange();
     }
 }

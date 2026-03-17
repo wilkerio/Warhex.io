@@ -73,6 +73,12 @@ export default class UIManager {
         this.discordOnboardingInProgress = false;
         this.soldierSelectionCounterElement = null;
         this._globalLeaderboardRefreshTimer = null;
+        this.musicControlsElement = null;
+        this.musicControlsTrackLabel = null;
+        this.musicControlsVolumeLabel = null;
+        this.musicControlsPlayPauseButton = null;
+        this.musicControlsMuteButton = null;
+        this._musicControlsResizeHandler = null;
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -101,6 +107,7 @@ export default class UIManager {
         this.addChatButtonElementListener();
         this.addUnitControlsListener();
         this.addAutoBuildMenuButtons();
+        this.addMusicControls();
         this.placeGroupTroopsBesidePower();
         this.applyHudConfig();
         this.loadHudConfigFromAccount();
@@ -4779,6 +4786,206 @@ export default class UIManager {
         gameContainer.appendChild(container);
     }
 
+    addMusicControls () {
+        const gameContainer = this.DOM?.game?.container;
+        if (!gameContainer) return;
+        if (document.getElementById("music-controls-container")) return;
+
+        const container = document.createElement("div");
+        container.id = "music-controls-container";
+        container.style.position = "absolute";
+        container.style.left = "10px";
+        container.style.bottom = "10px";
+        container.style.zIndex = "35";
+        container.style.display = "none";
+        container.style.flexDirection = "column";
+        container.style.alignItems = "flex-start";
+        container.style.gap = "6px";
+        container.style.pointerEvents = "auto";
+
+        const launcher = document.createElement("button");
+        launcher.type = "button";
+        launcher.textContent = "MUSIC";
+        launcher.style.height = "28px";
+        launcher.style.padding = "0 12px";
+        launcher.style.borderRadius = "999px";
+        launcher.style.border = "1px solid rgba(180, 160, 255, 0.38)";
+        launcher.style.background = "rgba(20, 10, 40, 0.74)";
+        launcher.style.color = "#e5dcff";
+        launcher.style.fontSize = "11px";
+        launcher.style.fontWeight = "800";
+        launcher.style.letterSpacing = "0.4px";
+        launcher.style.cursor = "pointer";
+        launcher.style.boxShadow = "0 6px 16px rgba(0, 0, 0, 0.35)";
+
+        const panel = document.createElement("div");
+        panel.style.display = "none";
+        panel.style.gridTemplateColumns = "repeat(3, minmax(0, 1fr))";
+        panel.style.gap = "6px";
+        panel.style.width = "220px";
+        panel.style.padding = "10px";
+        panel.style.borderRadius = "12px";
+        panel.style.border = "1px solid rgba(180, 160, 255, 0.30)";
+        panel.style.background = "rgba(12, 6, 26, 0.86)";
+        panel.style.backdropFilter = "blur(8px)";
+        panel.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.36)";
+
+        const trackLabel = document.createElement("div");
+        trackLabel.style.gridColumn = "1 / span 3";
+        trackLabel.style.fontSize = "11px";
+        trackLabel.style.fontWeight = "700";
+        trackLabel.style.color = "#f0e7ff";
+        trackLabel.style.whiteSpace = "nowrap";
+        trackLabel.style.overflow = "hidden";
+        trackLabel.style.textOverflow = "ellipsis";
+        trackLabel.textContent = "Track: loading";
+
+        const volumeLabel = document.createElement("div");
+        volumeLabel.style.gridColumn = "1 / span 3";
+        volumeLabel.style.fontSize = "10px";
+        volumeLabel.style.fontWeight = "700";
+        volumeLabel.style.color = "#c7b7f4";
+        volumeLabel.textContent = "VOL 0%";
+
+        const createControlButton = (label, onClick) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = label;
+            button.style.height = "24px";
+            button.style.borderRadius = "8px";
+            button.style.border = "1px solid rgba(180, 160, 255, 0.28)";
+            button.style.background = "rgba(22, 12, 42, 0.74)";
+            button.style.color = "#e0d6ff";
+            button.style.fontSize = "10px";
+            button.style.fontWeight = "700";
+            button.style.cursor = "pointer";
+            button.style.transition = "background 0.15s ease, border-color 0.15s ease";
+            button.addEventListener("mouseenter", () => {
+                button.style.background = "rgba(34, 18, 64, 0.88)";
+                button.style.borderColor = "rgba(180, 160, 255, 0.42)";
+            });
+            button.addEventListener("mouseleave", () => {
+                button.style.background = "rgba(22, 12, 42, 0.74)";
+                button.style.borderColor = "rgba(180, 160, 255, 0.28)";
+            });
+            button.addEventListener("click", onClick);
+            return button;
+        };
+
+        const runMusicAction = async (action) => {
+            const musicManager = this.core?.musicManager;
+            if (!musicManager) return;
+            await musicManager.handleUserGestureStart();
+            await action(musicManager);
+            this.refreshMusicControls();
+        };
+
+        const prevButton = createControlButton("PREV", () => runMusicAction((musicManager) => musicManager.playPrevious()));
+        const playPauseButton = createControlButton("PLAY", () => runMusicAction((musicManager) => musicManager.togglePlayPause()));
+        const nextButton = createControlButton("NEXT", () => runMusicAction((musicManager) => musicManager.playNext()));
+        const volDownButton = createControlButton("VOL-", () => runMusicAction((musicManager) => {
+            musicManager.setMasterVolume((musicManager.masterVolume || 0) - 0.1);
+        }));
+        const muteButton = createControlButton("MUTE", () => runMusicAction((musicManager) => {
+            musicManager.setMuted(!musicManager.muted);
+        }));
+        const volUpButton = createControlButton("VOL+", () => runMusicAction((musicManager) => {
+            musicManager.setMasterVolume((musicManager.masterVolume || 0) + 0.1);
+        }));
+
+        launcher.addEventListener("click", () => {
+            panel.style.display = panel.style.display === "none" ? "grid" : "none";
+            this.refreshMusicControls();
+        });
+
+        panel.appendChild(trackLabel);
+        panel.appendChild(volumeLabel);
+        panel.appendChild(prevButton);
+        panel.appendChild(playPauseButton);
+        panel.appendChild(nextButton);
+        panel.appendChild(volDownButton);
+        panel.appendChild(muteButton);
+        panel.appendChild(volUpButton);
+
+        container.appendChild(panel);
+        container.appendChild(launcher);
+        gameContainer.appendChild(container);
+
+        this.musicControlsElement = container;
+        this.musicControlsTrackLabel = trackLabel;
+        this.musicControlsVolumeLabel = volumeLabel;
+        this.musicControlsPlayPauseButton = playPauseButton;
+        this.musicControlsMuteButton = muteButton;
+
+        const musicManager = this.core?.musicManager;
+        if (musicManager?.setOnStateChange) {
+            musicManager.setOnStateChange(() => this.refreshMusicControls());
+        }
+        if (!this._musicControlsResizeHandler) {
+            this._musicControlsResizeHandler = () => this.updateMusicControlsPosition();
+            window.addEventListener("resize", this._musicControlsResizeHandler);
+        }
+        this.updateMusicControlsPosition();
+        this.refreshMusicControls();
+    }
+
+    refreshMusicControls () {
+        if (!this.musicControlsTrackLabel || !this.musicControlsVolumeLabel) return;
+        const musicManager = this.core?.musicManager;
+        if (!musicManager || typeof musicManager.getState !== "function") {
+            this.musicControlsTrackLabel.textContent = "Track: unavailable";
+            this.musicControlsVolumeLabel.textContent = "VOL 0%";
+            if (this.musicControlsPlayPauseButton) this.musicControlsPlayPauseButton.textContent = "PLAY";
+            if (this.musicControlsMuteButton) this.musicControlsMuteButton.textContent = "MUTE";
+            return;
+        }
+
+        const state = musicManager.getState();
+        const rawTitle = state?.trackTitle || "";
+        const clippedTitle = rawTitle.length > 30 ? `${rawTitle.slice(0, 27)}...` : rawTitle;
+        this.musicControlsTrackLabel.textContent = clippedTitle ? `Track: ${clippedTitle}` : "Track: none";
+        this.musicControlsTrackLabel.title = rawTitle || "";
+        this.musicControlsVolumeLabel.textContent = `VOL ${Math.round((state?.masterVolume || 0) * 100)}%`;
+
+        if (this.musicControlsPlayPauseButton) {
+            this.musicControlsPlayPauseButton.textContent = state?.playing ? "PAUSE" : "PLAY";
+        }
+        if (this.musicControlsMuteButton) {
+            this.musicControlsMuteButton.textContent = state?.muted ? "UNMUTE" : "MUTE";
+        }
+    }
+
+    updateMusicControlsPosition () {
+        const musicControls = this.musicControlsElement || document.getElementById("music-controls-container");
+        if (!musicControls) return;
+        const gameContainer = this.DOM?.game?.container;
+        const resources = this.DOM?.game?.resources?.container || document.getElementById("resource-container");
+        if (!gameContainer || !resources) {
+            musicControls.style.left = "10px";
+            musicControls.style.right = "auto";
+            musicControls.style.bottom = "10px";
+            return;
+        }
+
+        const resourcesStyle = window.getComputedStyle(resources);
+        const resourcesVisible = resourcesStyle.display !== "none" && resources.offsetWidth > 0 && resources.offsetHeight > 0;
+        if (!resourcesVisible) {
+            musicControls.style.left = "10px";
+            musicControls.style.right = "auto";
+            musicControls.style.bottom = "10px";
+            return;
+        }
+
+        const gameRect = gameContainer.getBoundingClientRect();
+        const resourceRect = resources.getBoundingClientRect();
+        const leftOffset = Math.max(10, Math.round(resourceRect.left - gameRect.left));
+        const bottomOffset = Math.max(10, Math.round(gameRect.bottom - resourceRect.top - 43));
+
+        musicControls.style.left = `${leftOffset}px`;
+        musicControls.style.right = "auto";
+        musicControls.style.bottom = `${bottomOffset}px`;
+    }
+
     positionSettingsPanelForTopMenu (anchorElement) {
         if (!this.DOM?.settings?.panel || !anchorElement) return;
 
@@ -5444,6 +5651,7 @@ export default class UIManager {
 
     showChat (show) {
         this.DOM.chat.container.style.display = show ? "flex" : "none";
+        this.updateMusicControlsPosition();
     }
 
     showUnitControls (show) {
@@ -5540,9 +5748,15 @@ export default class UIManager {
         if (autoBuildMenu) {
             autoBuildMenu.style.display = show ? "flex" : "none";
         }
+        const musicControls = document.getElementById("music-controls-container");
+        if (musicControls) {
+            musicControls.style.display = show ? "flex" : "none";
+        }
         if (show) {
             this.ensureHudCollapseControls();
             this.applyHudCollapsedStates();
+            this.updateMusicControlsPosition();
+            this.refreshMusicControls();
         }
         if (typeof this.core?.setGameplayActive === "function") {
             this.core.setGameplayActive(show);
