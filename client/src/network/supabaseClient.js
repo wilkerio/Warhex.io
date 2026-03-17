@@ -24,11 +24,13 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 const LOCAL_SESSION_KEY = 'blobl_supabase_session';
 const SKINS_CACHE_TTL_MS = 10 * 60 * 1000;
 const LEADERBOARD_CACHE_TTL_MS = 15 * 1000;
+const MUSIC_CACHE_TTL_MS = 60 * 1000;
 const STORAGE_LIST_PAGE_SIZE = 100;
 const STORAGE_LIST_MAX_REQUESTS = 20;
 const GLOBAL_RANK_CACHE_KEY = "warhex_global_rank_cache_v1";
 const PUBLIC_BASES_CACHE_KEY = "warhex_public_bases_cache_v1";
 const BASE_LAYOUTS_VISIBILITY_PREF_KEY = "warhex_base_layout_visibility_pref_v1";
+const MUSIC_BUCKET = "music";
 
 let skinsCache = {
     data: [],
@@ -38,6 +40,12 @@ let skinsCache = {
 
 let leaderboardCache = {
     key: "",
+    data: [],
+    fetchedAt: 0,
+    inFlight: null
+};
+
+let musicCache = {
     data: [],
     fetchedAt: 0,
     inFlight: null
@@ -667,13 +675,26 @@ export async function restoreSessionFromStorage() {
         if (!raw) return null;
         const session = JSON.parse(raw);
         if (!session || (!session.access_token && !session.refresh_token)) return null;
+        if (session.access_token && isAuthTokenExpired(session.access_token)) {
+            clearLocalAuthState();
+            return null;
+        }
         // setSession accepts an object with access_token and refresh_token
         const { data, error } = await supabase.auth.setSession({
             access_token: session.access_token,
             refresh_token: session.refresh_token
         });
         if (error) {
-            console.error('Error restoring session via setSession:', error);
+            const message = String(error?.message || "").toLowerCase();
+            if (
+                message.includes("expired")
+                || message.includes("invalid jwt")
+                || message.includes("refresh token")
+            ) {
+                clearLocalAuthState();
+            } else {
+                console.error('Error restoring session via setSession:', error);
+            }
             return null;
         }
         return data.session || null;
@@ -792,6 +813,112 @@ export async function fetchSkins() {
     })();
 
     return skinsCache.inFlight;
+}
+
+export async function fetchGameMusicTracks(limit = 40) {
+    const now = Date.now();
+    const safeLimit = Math.max(1, Math.min(200, Number(limit) || 40));
+    if (musicCache.data.length > 0 && (now - musicCache.fetchedAt) < MUSIC_CACHE_TTL_MS) {
+        return { success: true, data: musicCache.data };
+    }
+
+    if (musicCache.inFlight) {
+        return musicCache.inFlight;
+    }
+
+    musicCache.inFlight = (async () => {
+        try {
+            let tracks = [];
+
+            // Preferred source: database-managed playlist.
+            const { data, error } = await supabase
+                .from("game_music_tracks")
+                .select("id,title,file_path,volume,sort_order,is_active")
+                .eq("is_active", true)
+                .order("sort_order", { ascending: true })
+                .order("id", { ascending: true })
+                .limit(safeLimit);
+
+            if (!error) {
+                tracks = (Array.isArray(data) ? data : [])
+                    .map((row) => {
+                        const filePath = String(row?.file_path || "").trim();
+                        if (!filePath) return null;
+                        const publicUrl = supabase.storage.from(MUSIC_BUCKET).getPublicUrl(filePath)?.data?.publicUrl || "";
+                        if (!publicUrl) return null;
+
+                        return {
+                            id: Number(row?.id || 0),
+                            title: String(row?.title || filePath),
+                            filePath,
+                            url: publicUrl,
+                            volume: Math.max(0, Math.min(1, Number(row?.volume ?? 0.3) || 0.3)),
+                            sortOrder: Number(row?.sort_order || 0)
+                        };
+                    })
+                    .filter(Boolean);
+                if (tracks.length > 0) {
+                    console.log("Music tracks loaded from DB:", tracks.length);
+                }
+            }
+
+            // Fallback source: files directly from storage bucket root.
+            if (tracks.length === 0) {
+                const { data: storageRows, error: storageError } = await supabase.storage
+                    .from(MUSIC_BUCKET)
+                    .list("", {
+                        limit: safeLimit,
+                        offset: 0,
+                        sortBy: { column: "name", order: "asc" }
+                    });
+
+                if (storageError) {
+                    return { success: false, error: storageError, data: [] };
+                }
+
+                tracks = (Array.isArray(storageRows) ? storageRows : [])
+                    .filter((row) => {
+                        const name = String(row?.name || "");
+                        return /\.(mp3|ogg|wav|m4a)$/i.test(name);
+                    })
+                    .map((row, index) => {
+                        const filePath = String(row?.name || "").trim();
+                        const publicUrl = supabase.storage.from(MUSIC_BUCKET).getPublicUrl(filePath)?.data?.publicUrl || "";
+                        if (!filePath || !publicUrl) return null;
+                        const title = filePath
+                            .replace(/\.[^.]+$/, "")
+                            .replace(/^\d+\s*/, "")
+                            .trim();
+
+                        return {
+                            id: index + 1,
+                            title: title || filePath,
+                            filePath,
+                            url: publicUrl,
+                            volume: 0.3,
+                            sortOrder: index + 1
+                        };
+                    })
+                    .filter(Boolean);
+                if (tracks.length > 0) {
+                    console.log("Music tracks loaded from storage listing:", tracks.length);
+                }
+            }
+
+            musicCache = {
+                data: tracks,
+                fetchedAt: Date.now(),
+                inFlight: null
+            };
+            return { success: true, data: tracks };
+        } catch (error) {
+            return { success: false, error, data: [] };
+        } finally {
+            musicCache.inFlight = null;
+        }
+    })();
+
+    return musicCache.inFlight;
 }
 
 // Fetch skins catalog from database (includes level/shop skins)
@@ -1108,7 +1235,7 @@ async function getCurrentAccessToken(timeoutMs = 2500) {
     };
 
     // 1) Fast path: current in-memory/auth session.
-    let token = await readSessionToken(timeoutMs);
+    let token = await sanitizeAccessToken(await readSessionToken(timeoutMs));
     if (token) return token;
 
     // 2) Recovery path: restore from local fallback and retry.
@@ -1118,12 +1245,12 @@ async function getCurrentAccessToken(timeoutMs = 2500) {
             Math.max(2200, timeoutMs),
             "auth_restore_timeout"
         );
-        token = restored?.access_token || null;
+        token = await sanitizeAccessToken(restored?.access_token || null);
         if (token) return token;
     } catch {}
 
     // 3) Retry getSession once more after restore attempt.
-    token = await readSessionToken(Math.max(2200, timeoutMs));
+    token = await sanitizeAccessToken(await readSessionToken(Math.max(2200, timeoutMs)));
     if (token) return token;
 
     // 4) Last-resort fallback from persisted local session.
@@ -1131,7 +1258,7 @@ async function getCurrentAccessToken(timeoutMs = 2500) {
         const raw = localStorage.getItem(LOCAL_SESSION_KEY);
         if (!raw) return null;
         const parsed = JSON.parse(raw);
-        return parsed?.access_token || null;
+        return await sanitizeAccessToken(parsed?.access_token || null);
     } catch {
         return null;
     }
@@ -1249,6 +1376,38 @@ function isMissingColumnError(error, columnName) {
     if (code === "42703") return true;
     const haystack = String(error?.message || error?.details || error?.hint || "").toLowerCase();
     return haystack.includes(String(columnName).toLowerCase());
+}
+
+let lastExpiredAuthCleanupAt = 0;
+
+function isAuthTokenExpired(token, skewSeconds = 30) {
+    const payload = decodeJwtPayload(token);
+    const exp = Number(payload?.exp || 0);
+    if (!Number.isFinite(exp) || exp <= 0) return false;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    return nowSeconds >= (exp - Math.max(0, Number(skewSeconds) || 0));
+}
+
+async function cleanupExpiredAuthSession() {
+    const now = Date.now();
+    if ((now - lastExpiredAuthCleanupAt) < 5000) return;
+    lastExpiredAuthCleanupAt = now;
+
+    try {
+        await withTimeoutPromise(
+            supabase.auth.signOut({ scope: "local" }),
+            1200,
+            "signout_timeout"
+        );
+    } catch {}
+    clearLocalAuthState();
+}
+
+async function sanitizeAccessToken(token) {
+    if (!token) return null;
+    if (!isAuthTokenExpired(token)) return token;
+    await cleanupExpiredAuthSession();
+    return null;
 }
 
 function decodeJwtPayload(token) {

@@ -23,6 +23,7 @@ import Tank from "../entities/units/Tank.js";
 import SiegeTank from "../entities/units/SiegeTank.js";
 import Soldier from "../entities/units/Soldier.js";
 import ExitPromptManager from "./managers/ExitPromptManager.js";
+import MusicManager from "./managers/MusicManager.js";
 
 export default class Core {
     constructor (loadBalancerAddress, requiredServerVersion, platform = null) {
@@ -206,13 +207,15 @@ export default class Core {
     initializeManagers (loadBalancerAddress) {
         this.gameManager = new GameManager(this);
         this.themeManager = new ThemeManager();
-        this.uiManager = new UIManager(this);
         this.networkManager = new NetworkManager(loadBalancerAddress, this);
+        this.uiManager = new UIManager(this);
+        this.musicManager = new MusicManager(this);
         this.inputManager = new InputManager(this);
         this.buildingManager = new BuildingManager(this);
         this.eventManager = new EventManager(this);
         this.unitManager = new UnitMananger(this);
         this.networkManager.initialize();
+        this.musicManager.initialize();
     }
 
     createCanvas () {

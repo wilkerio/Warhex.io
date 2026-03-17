@@ -282,6 +282,7 @@ export default class UIManager {
         setText("#account-button", this.core?.networkManager?.loggedIn ? "menu.logout" : "menu.login");
         setText("#signup-button", "menu.signUp");
         setText("#discord-button", "menu.discord");
+        setText("#discord-open-button", "menu.discord");
         setText("#shop-button", "menu.shop");
         setText("#skin-name-display", "menu.default");
         setText("#skin-use-button", "menu.use");
@@ -379,6 +380,8 @@ export default class UIManager {
         setText("#top-menu-pulltab", "game.menu");
         const topThemeBtn = document.getElementById("top-theme-btn");
         if (topThemeBtn) topThemeBtn.textContent = this.t("game.theme").replace(":", "");
+        const topDiscordBtn = document.getElementById("top-discord-btn");
+        if (topDiscordBtn) topDiscordBtn.textContent = this.t("menu.discord");
         const statsLabels = document.querySelectorAll("#stats-container > div > p:first-child");
         if (statsLabels[0]) statsLabels[0].textContent = `${this.t("stats.highscore")}:`;
         if (statsLabels[1]) statsLabels[1].textContent = `${this.t("stats.playtime")}:`;
@@ -3542,6 +3545,7 @@ export default class UIManager {
         const { persistRemote = true, refreshLibrary = true } = options;
         const currentSkin = this.availableSkins[this.currentSkinIndex];
         if (!currentSkin) return;
+        const networkManager = this.core && this.core.networkManager;
         
         const skinName = currentSkin.name === 'Default' ? null : currentSkin.name;
         const rawSkinNumeric = currentSkin.numericId ?? currentSkin.id ?? 0;
@@ -3561,8 +3565,8 @@ export default class UIManager {
         await this.updateToolbarAccentForSkin(currentSkin);
         
         // If logged in, save to database
-        const isLoggedIn = this.core.networkManager.loggedIn;
-        const userId = this.core.networkManager.userId;
+        const isLoggedIn = Boolean(networkManager && networkManager.loggedIn);
+        const userId = networkManager ? networkManager.userId : null;
         
         if (persistRemote && isLoggedIn && userId) {
             if (this.skinPersistTimeout) {
@@ -3572,10 +3576,10 @@ export default class UIManager {
                 try {
                     await updateSelectedSkin(userId, skinName);
                     console.log('Skin saved to database');
-                    if (this.core.networkManager.userData) {
-                        this.core.networkManager.userData.selected_skin = skinName;
-                        if (this.core.networkManager.userData.skins) {
-                            this.core.networkManager.userData.skins.equipped = skinNumeric;
+                    if (networkManager && networkManager.userData) {
+                        networkManager.userData.selected_skin = skinName;
+                        if (networkManager.userData.skins) {
+                            networkManager.userData.skins.equipped = skinNumeric;
                         }
                     }
                 } catch (error) {
@@ -4508,8 +4512,10 @@ export default class UIManager {
 
     addUnitControlsListener() {
         if (!this.DOM.game.unitControls.groupUnitsButton) return;
+        const networkManager = this.core && this.core.networkManager;
 
         this.groupUnitsActive = false;
+        this.DOM.game.unitControls.groupUnitsButton.classList.remove("active");
         this.DOM.game.unitControls.groupUnitsButton.innerText = this.t("game.groupTroopsOff");
 
         const syncTopGroupToggleVisual = () => {
@@ -4531,6 +4537,11 @@ export default class UIManager {
         };
         syncTopGroupToggleVisual();
 
+        // Guarantee default state as OFF when entering the game/menu.
+        if (networkManager && typeof networkManager.sendToggleGroupUnits === "function") {
+            networkManager.sendToggleGroupUnits(false);
+        }
+
         this.DOM.game.unitControls.groupUnitsButton.addEventListener("click", () => {
             this.groupUnitsActive = !this.groupUnitsActive;
             if (this.groupUnitsActive) {
@@ -4540,8 +4551,10 @@ export default class UIManager {
                 this.DOM.game.unitControls.groupUnitsButton.classList.remove("active");
                 this.DOM.game.unitControls.groupUnitsButton.innerText = this.t("game.groupTroopsOff");
             }
-    
-            this.core.networkManager.sendToggleGroupUnits(this.groupUnitsActive);
+
+            if (networkManager && typeof networkManager.sendToggleGroupUnits === "function") {
+                networkManager.sendToggleGroupUnits(this.groupUnitsActive);
+            }
             syncTopGroupToggleVisual();
         });
     }
@@ -4688,11 +4701,10 @@ export default class UIManager {
         const loadBaseBtn = createActionButton("Load Base", () => {
             this.showLoadBaseLayoutDialog();
         });
-        const groupTroopsBtn = createActionButton(this.groupUnitsActive ? this.t("game.groupTroopsOn") : this.t("game.groupTroopsOff"), () => {
-            this.DOM?.game?.unitControls?.groupUnitsButton?.click();
+        const topDiscordBtn = createActionButton(this.t("menu.discord"), () => {
+            window.open("https://discord.gg/YAEG9qJGMh", "_blank", "noopener,noreferrer");
         });
-        groupTroopsBtn.id = "top-group-toggle-btn";
-
+        topDiscordBtn.id = "top-discord-btn";
         const themeBtn = createActionButton(this.t("game.theme").replace(":", ""), () => {
             this.positionSettingsPanelForTopMenu(themeBtn);
             this._pinAutoBuildMenuOpen = true;
@@ -4760,7 +4772,7 @@ export default class UIManager {
         actionsPanel.appendChild(defendBtn);
         actionsPanel.appendChild(saveBaseBtn);
         actionsPanel.appendChild(loadBaseBtn);
-        actionsPanel.appendChild(groupTroopsBtn);
+        actionsPanel.appendChild(topDiscordBtn);
         actionsPanel.appendChild(themeBtn);
         container.appendChild(pullTab);
         container.appendChild(actionsPanel);
@@ -4890,8 +4902,10 @@ export default class UIManager {
         if (!this.DOM.menu.playButton) return;
 
         this.DOM.menu.playButton.addEventListener("click", async () => {
+            this.core?.musicManager?.handleUserGestureStart?.();
             const confirmed = await this.showPrePlaySkinPrompt();
             if (!confirmed) return;
+            this.core?.musicManager?.handleUserGestureStart?.();
             await this.startGameWithSelectedSkin();
         });
     }
@@ -5083,12 +5097,17 @@ export default class UIManager {
     }
 
     addMenuShortcutLinks () {
-        const discordButton = document.getElementById("discord-button");
-        if (discordButton) {
-            discordButton.addEventListener("click", () => {
+        const bindDiscordLink = (id) => {
+            const button = document.getElementById(id);
+            if (!button || button.dataset.boundDiscordLink) return;
+            button.dataset.boundDiscordLink = "1";
+            button.addEventListener("click", () => {
                 window.open("https://discord.gg/YAEG9qJGMh", "_blank", "noopener,noreferrer");
             });
-        }
+        };
+
+        bindDiscordLink("discord-button");
+        bindDiscordLink("discord-open-button");
     }
 
     addLegalDialogListeners () {
