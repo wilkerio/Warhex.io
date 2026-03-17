@@ -118,6 +118,21 @@ export default class Player extends Renderable {
         this.hasSpawnProtection = false;
     }
 
+    hasUnitOutsideSpawnProtection () {
+        if (!this.hasSpawnProtection) return false;
+
+        const protectionRadiusSquared = this.spawnProtectionRadius * this.spawnProtectionRadius;
+        const isOutsideProtection = (unit) => {
+            if (!unit || !unit.position || unit.isFadingOut) return false;
+
+            const dx = unit.position.x - this.position.x;
+            const dy = unit.position.y - this.position.y;
+            return (dx * dx + dy * dy) > protectionRadiusSquared;
+        };
+
+        return this.units.some(isOutsideProtection) || this.spawningUnits.some(isOutsideProtection);
+    }
+
     setHealth (health) {
         const safeHealth = Number.isFinite(health) ? health : this.targetHealth;
         this.targetHealth = Math.max(0, Math.min(safeHealth, this.health.max));
@@ -338,6 +353,12 @@ export default class Player extends Renderable {
             }
             return remainingBullets;
         }, []);
+
+        // Instant visual feedback on client: hide the green protection ring
+        // in the same frame a unit crosses the protection radius.
+        if (this.isClient && this.hasSpawnProtection && this.hasUnitOutsideSpawnProtection()) {
+            this.removeSpawnProtection();
+        }
 
         if (this.isClient && this.buildingCache) {
             // Check if the building cache is older than 500 milliseconds and clear it if so
