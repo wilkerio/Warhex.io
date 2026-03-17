@@ -4544,7 +4544,8 @@ export default class UIManager {
 
         if (syncServer) {
             const networkManager = this.core?.networkManager;
-            if (networkManager && typeof networkManager.sendToggleGroupUnits === "function") {
+            const inMatch = Boolean(this.core?.gameManager?.player);
+            if (inMatch && networkManager && typeof networkManager.sendToggleGroupUnits === "function") {
                 networkManager.sendToggleGroupUnits(this.groupUnitsActive);
             }
         }
@@ -4556,8 +4557,8 @@ export default class UIManager {
         if (groupUnitsButton.dataset.groupToggleBound === "1") return;
         groupUnitsButton.dataset.groupToggleBound = "1";
 
-        // Guarantee default state as OFF when entering the game/menu.
-        this.syncGroupTroopsState(false, true);
+        // Guarantee default state as OFF in UI without sending gameplay packet pre-join.
+        this.syncGroupTroopsState(false, false);
 
         groupUnitsButton.addEventListener("click", (event) => {
             event.stopPropagation();
@@ -5126,8 +5127,9 @@ export default class UIManager {
     }
 
     async startGameWithSelectedSkin () {
-        // Always start each match with Group Troops OFF.
-        this.syncGroupTroopsState(false, true);
+        // Always start each match with Group Troops OFF in UI.
+        // Do not send this packet before join; server can disconnect pre-join gameplay messages.
+        this.syncGroupTroopsState(false, false);
 
         const playerName = this.extractPlayerName();
         localStorage.setItem("playerName", playerName);
