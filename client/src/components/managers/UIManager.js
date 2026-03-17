@@ -379,11 +379,7 @@ export default class UIManager {
         setText("#chat-messages .message .text", "game.chatWelcome");
         setPlaceholder("#chat-message-input", "game.message");
         setText("#chat-button", "game.send");
-        setText("#group-units-button", "game.group");
-        const topGroupBtn = document.getElementById("top-group-toggle-btn");
-        if (topGroupBtn) {
-            topGroupBtn.textContent = this.groupUnitsActive ? this.t("game.groupTroopsOn") : this.t("game.groupTroopsOff");
-        }
+        this.syncGroupTroopsState(Boolean(this.groupUnitsActive), false);
         setText("#top-menu-pulltab", "game.menu");
         const topThemeBtn = document.getElementById("top-theme-btn");
         if (topThemeBtn) topThemeBtn.textContent = this.t("game.theme").replace(":", "");
@@ -4517,19 +4513,22 @@ export default class UIManager {
         this.core.camera.setPosition(player.position, true);
     }
 
-    addUnitControlsListener() {
-        if (!this.DOM.game.unitControls.groupUnitsButton) return;
-        const networkManager = this.core && this.core.networkManager;
+    syncGroupTroopsState (active = false, syncServer = false) {
+        this.groupUnitsActive = Boolean(active);
 
-        this.groupUnitsActive = false;
-        this.DOM.game.unitControls.groupUnitsButton.classList.remove("active");
-        this.DOM.game.unitControls.groupUnitsButton.innerText = this.t("game.groupTroopsOff");
+        const groupUnitsButton = this.DOM?.game?.unitControls?.groupUnitsButton;
+        if (groupUnitsButton) {
+            groupUnitsButton.classList.toggle("active", this.groupUnitsActive);
+            groupUnitsButton.innerText = this.groupUnitsActive
+                ? this.t("game.groupTroopsOn")
+                : this.t("game.groupTroopsOff");
+        }
 
-        const syncTopGroupToggleVisual = () => {
-            const topGroupToggle = document.getElementById("top-group-toggle-btn");
-            if (!topGroupToggle) return;
-
-            topGroupToggle.textContent = this.groupUnitsActive ? this.t("game.groupTroopsOn") : this.t("game.groupTroopsOff");
+        const topGroupToggle = document.getElementById("top-group-toggle-btn");
+        if (topGroupToggle) {
+            topGroupToggle.textContent = this.groupUnitsActive
+                ? this.t("game.groupTroopsOn")
+                : this.t("game.groupTroopsOff");
             if (this.groupUnitsActive) {
                 topGroupToggle.style.background = "rgba(44, 22, 76, 0.78)";
                 topGroupToggle.style.borderColor = "rgba(180, 160, 255, 0.55)";
@@ -4541,28 +4540,28 @@ export default class UIManager {
                 topGroupToggle.style.boxShadow = "0 4px 12px rgba(180, 160, 255, 0.14)";
                 topGroupToggle.style.color = "#e0d6ff";
             }
-        };
-        syncTopGroupToggleVisual();
-
-        // Guarantee default state as OFF when entering the game/menu.
-        if (networkManager && typeof networkManager.sendToggleGroupUnits === "function") {
-            networkManager.sendToggleGroupUnits(false);
         }
 
-        this.DOM.game.unitControls.groupUnitsButton.addEventListener("click", () => {
-            this.groupUnitsActive = !this.groupUnitsActive;
-            if (this.groupUnitsActive) {
-                this.DOM.game.unitControls.groupUnitsButton.classList.add("active");
-                this.DOM.game.unitControls.groupUnitsButton.innerText = this.t("game.groupTroopsOn");
-            } else {
-                this.DOM.game.unitControls.groupUnitsButton.classList.remove("active");
-                this.DOM.game.unitControls.groupUnitsButton.innerText = this.t("game.groupTroopsOff");
-            }
-
+        if (syncServer) {
+            const networkManager = this.core?.networkManager;
             if (networkManager && typeof networkManager.sendToggleGroupUnits === "function") {
                 networkManager.sendToggleGroupUnits(this.groupUnitsActive);
             }
-            syncTopGroupToggleVisual();
+        }
+    }
+
+    addUnitControlsListener() {
+        const groupUnitsButton = this.DOM?.game?.unitControls?.groupUnitsButton;
+        if (!groupUnitsButton) return;
+        if (groupUnitsButton.dataset.groupToggleBound === "1") return;
+        groupUnitsButton.dataset.groupToggleBound = "1";
+
+        // Guarantee default state as OFF when entering the game/menu.
+        this.syncGroupTroopsState(false, true);
+
+        groupUnitsButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.syncGroupTroopsState(!this.groupUnitsActive, true);
         });
     }
 
@@ -4793,15 +4792,17 @@ export default class UIManager {
 
         const container = document.createElement("div");
         container.id = "music-controls-container";
-        container.style.position = "absolute";
-        container.style.left = "10px";
-        container.style.bottom = "10px";
+        container.style.position = "static";
         container.style.zIndex = "35";
         container.style.display = "none";
         container.style.flexDirection = "column";
         container.style.alignItems = "flex-start";
         container.style.gap = "6px";
         container.style.pointerEvents = "auto";
+        const swallowMusicEvent = (event) => event.stopPropagation();
+        ["pointerdown", "mousedown", "touchstart", "click"].forEach((eventName) => {
+            container.addEventListener(eventName, swallowMusicEvent);
+        });
 
         const launcher = document.createElement("button");
         launcher.type = "button";
@@ -4925,6 +4926,7 @@ export default class UIManager {
             this._musicControlsResizeHandler = () => this.updateMusicControlsPosition();
             window.addEventListener("resize", this._musicControlsResizeHandler);
         }
+        this.anchorMusicControlsToPower();
         this.updateMusicControlsPosition();
         this.refreshMusicControls();
     }
@@ -4955,35 +4957,41 @@ export default class UIManager {
         }
     }
 
+    anchorMusicControlsToPower () {
+        const musicControls = this.musicControlsElement || document.getElementById("music-controls-container");
+        const resourceContainer = this.DOM?.game?.resources?.container || document.getElementById("resource-container");
+        const powerElement = this.DOM?.game?.resources?.power || document.getElementById("power");
+        if (!musicControls || !resourceContainer || !powerElement) return;
+
+        let powerStack = document.getElementById("resource-power-stack");
+        if (!powerStack) {
+            powerStack = document.createElement("div");
+            powerStack.id = "resource-power-stack";
+            powerStack.style.display = "flex";
+            powerStack.style.flexDirection = "column";
+            powerStack.style.alignItems = "flex-start";
+            powerStack.style.gap = "0.45rem";
+            resourceContainer.insertBefore(powerStack, resourceContainer.firstChild);
+        }
+
+        if (powerElement.parentElement !== powerStack) {
+            powerStack.appendChild(powerElement);
+        }
+        if (musicControls.parentElement !== powerStack) {
+            powerStack.insertBefore(musicControls, powerElement);
+        }
+
+        // Keep music controls in normal flow, anchored by the resource layout.
+        musicControls.style.position = "static";
+        musicControls.style.left = "auto";
+        musicControls.style.right = "auto";
+        musicControls.style.bottom = "auto";
+    }
+
     updateMusicControlsPosition () {
         const musicControls = this.musicControlsElement || document.getElementById("music-controls-container");
         if (!musicControls) return;
-        const gameContainer = this.DOM?.game?.container;
-        const resources = this.DOM?.game?.resources?.container || document.getElementById("resource-container");
-        if (!gameContainer || !resources) {
-            musicControls.style.left = "10px";
-            musicControls.style.right = "auto";
-            musicControls.style.bottom = "10px";
-            return;
-        }
-
-        const resourcesStyle = window.getComputedStyle(resources);
-        const resourcesVisible = resourcesStyle.display !== "none" && resources.offsetWidth > 0 && resources.offsetHeight > 0;
-        if (!resourcesVisible) {
-            musicControls.style.left = "10px";
-            musicControls.style.right = "auto";
-            musicControls.style.bottom = "10px";
-            return;
-        }
-
-        const gameRect = gameContainer.getBoundingClientRect();
-        const resourceRect = resources.getBoundingClientRect();
-        const leftOffset = Math.max(10, Math.round(resourceRect.left - gameRect.left));
-        const bottomOffset = Math.max(10, Math.round(gameRect.bottom - resourceRect.top - 43));
-
-        musicControls.style.left = `${leftOffset}px`;
-        musicControls.style.right = "auto";
-        musicControls.style.bottom = `${bottomOffset}px`;
+        this.anchorMusicControlsToPower();
     }
 
     positionSettingsPanelForTopMenu (anchorElement) {
@@ -5118,6 +5126,9 @@ export default class UIManager {
     }
 
     async startGameWithSelectedSkin () {
+        // Always start each match with Group Troops OFF.
+        this.syncGroupTroopsState(false, true);
+
         const playerName = this.extractPlayerName();
         localStorage.setItem("playerName", playerName);
         

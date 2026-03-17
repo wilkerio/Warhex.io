@@ -21,6 +21,15 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     }
 });
 
+// Public-only client used for data that must not depend on the current user session/JWT.
+const supabasePublic = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+    }
+});
+
 const LOCAL_SESSION_KEY = 'blobl_supabase_session';
 const SKINS_CACHE_TTL_MS = 10 * 60 * 1000;
 const LEADERBOARD_CACHE_TTL_MS = 15 * 1000;
@@ -700,7 +709,7 @@ export async function restoreSessionFromStorage() {
 }
 
 // Recursively list all files in a Supabase storage bucket (supports nested folders)
-async function listAllStorageFiles(bucketName = "skins", prefix = '', state = { requests: 0 }) {
+async function listAllStorageFiles(bucketName = "skins", prefix = '', state = { requests: 0 }, client = supabase) {
     if (state.requests >= STORAGE_LIST_MAX_REQUESTS) {
         return [];
     }
@@ -715,7 +724,7 @@ async function listAllStorageFiles(bucketName = "skins", prefix = '', state = { 
         }
 
         state.requests += 1;
-        const { data, error } = await retryWithBackoff(() => supabase.storage.from(bucketName).list(prefix, {
+        const { data, error } = await retryWithBackoff(() => client.storage.from(bucketName).list(prefix, {
             limit: pageSize,
             offset: page * pageSize,
             sortBy: { column: 'name', order: 'asc' }
@@ -736,7 +745,7 @@ async function listAllStorageFiles(bucketName = "skins", prefix = '', state = { 
                 files.push({ ...entry, fullPath });
             } else {
                 // Treat as folder and recurse
-                const nested = await listAllStorageFiles(bucketName, fullPath, state);
+                const nested = await listAllStorageFiles(bucketName, fullPath, state, client);
                 files.push(...nested);
             }
         }
@@ -824,6 +833,32 @@ export async function fetchGameMusicTracks(limit = 40) {
     musicCache.inFlight = (async () => {
         try {
             let tracks = [];
+            const normalizeMusicDbPath = (value) => {
+                let path = String(value || "").trim();
+                if (!path) return "";
+
+                // Accept full Supabase public URLs and extract object path.
+                if (/^https?:\/\//i.test(path)) {
+                    try {
+                        const url = new URL(path);
+                        const marker = `/storage/v1/object/public/${MUSIC_BUCKET}/`;
+                        const idx = url.pathname.toLowerCase().indexOf(marker.toLowerCase());
+                        if (idx >= 0) {
+                            path = decodeURIComponent(url.pathname.slice(idx + marker.length));
+                        } else {
+                            path = decodeURIComponent(url.pathname.split("/").pop() || "");
+                        }
+                    } catch {
+                        // Keep raw path fallback.
+                    }
+                }
+
+                path = path.replace(/\\/g, "/").replace(/^\/+/, "");
+                if (path.toLowerCase().startsWith(`${MUSIC_BUCKET.toLowerCase()}/`)) {
+                    path = path.slice(MUSIC_BUCKET.length + 1);
+                }
+                return path.trim();
+            };
             const normalizePathKey = (value) => String(value || "")
                 .trim()
                 .replace(/\\/g, "/")
@@ -832,7 +867,7 @@ export async function fetchGameMusicTracks(limit = 40) {
             const hasAudioExtension = (path) => /\.(mp3|ogg|wav|m4a)$/i.test(String(path || ""));
             let bucketFiles = [];
             try {
-                bucketFiles = await listAllStorageFiles(MUSIC_BUCKET, "");
+                bucketFiles = await listAllStorageFiles(MUSIC_BUCKET, "", { requests: 0 }, supabasePublic);
             } catch (storageListError) {
                 bucketFiles = [];
             }
@@ -846,7 +881,7 @@ export async function fetchGameMusicTracks(limit = 40) {
             );
 
             // Preferred source: database-managed playlist.
-            const { data, error } = await supabase
+            const { data, error } = await supabasePublic
                 .from("game_music_tracks")
                 .select("id,title,file_path,volume,sort_order,is_active")
                 .eq("is_active", true)
@@ -857,7 +892,7 @@ export async function fetchGameMusicTracks(limit = 40) {
             if (!error) {
                 tracks = (Array.isArray(data) ? data : [])
                     .map((row) => {
-                        const rawPath = String(row?.file_path || "").trim();
+                        const rawPath = normalizeMusicDbPath(row?.file_path || "");
                         if (!rawPath) return null;
 
                         let resolvedPath = rawPath;
@@ -868,7 +903,7 @@ export async function fetchGameMusicTracks(limit = 40) {
                             if (!resolvedPath) return null;
                         }
 
-                        const publicUrl = supabase.storage.from(MUSIC_BUCKET).getPublicUrl(resolvedPath)?.data?.publicUrl || "";
+                        const publicUrl = supabasePublic.storage.from(MUSIC_BUCKET).getPublicUrl(resolvedPath)?.data?.publicUrl || "";
                         if (!publicUrl) return null;
 
                         return {
@@ -895,7 +930,7 @@ export async function fetchGameMusicTracks(limit = 40) {
 
                 tracks = fallbackPaths
                     .map((filePath, index) => {
-                        const publicUrl = supabase.storage.from(MUSIC_BUCKET).getPublicUrl(filePath)?.data?.publicUrl || "";
+                        const publicUrl = supabasePublic.storage.from(MUSIC_BUCKET).getPublicUrl(filePath)?.data?.publicUrl || "";
                         if (!filePath || !publicUrl) return null;
                         const fileName = filePath.split("/").pop() || filePath;
                         const title = fileName
