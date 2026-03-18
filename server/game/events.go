@@ -26,6 +26,12 @@ const (
 	Kick
 	PlayerInactiveWarning
 	WildPortalsUpdate
+	PlayerJoined
+	PlayerLeft
+	ChatMessage
+	BuildingsUpgraded
+	CommanderSpawn
+	DuelStarted
 	// Add more event types as needed
 )
 
@@ -40,6 +46,35 @@ type WildPortalSnapshot struct {
 
 type WildPortalsUpdateEvent struct {
 	Portals []WildPortalSnapshot
+}
+
+type PlayerJoinedEvent struct {
+	Player *Player
+}
+
+type PlayerLeftEvent struct {
+	PlayerID ID
+}
+
+type ChatMessageEvent struct {
+	PlayerID ID
+	Text     []byte
+}
+
+type BuildingsUpgradedEvent struct {
+	Base        *Base
+	BuildingIDs []ID
+}
+
+type CommanderSpawnEvent struct {
+	Owner Owner
+	Unit  *Unit
+}
+
+type DuelStartedEvent struct {
+	PlayerAID ID
+	PlayerBID ID
+	Arena     DuelArena
 }
 
 type LeaderboardUpdateEvent struct {
@@ -317,4 +352,55 @@ func TriggerWildPortalsUpdateEvent(portals []WildPortalSnapshot) {
 		Portals: portals,
 	}
 	eventChan <- Event{Type: WildPortalsUpdate, Payload: event}
+}
+
+func TriggerPlayerJoinedEvent(player *Player) {
+	event := &PlayerJoinedEvent{
+		Player: player,
+	}
+	eventChan <- Event{Type: PlayerJoined, Payload: event}
+}
+
+func TriggerPlayerLeftEvent(playerID ID) {
+	event := &PlayerLeftEvent{
+		PlayerID: playerID,
+	}
+	eventChan <- Event{Type: PlayerLeft, Payload: event}
+}
+
+func TriggerChatMessageEvent(playerID ID, text []byte) {
+	payload := make([]byte, len(text))
+	copy(payload, text)
+	event := &ChatMessageEvent{
+		PlayerID: playerID,
+		Text:     payload,
+	}
+	eventChan <- Event{Type: ChatMessage, Payload: event}
+}
+
+func TriggerBuildingsUpgradedEvent(base *Base, buildingIDs []ID) {
+	ids := make([]ID, len(buildingIDs))
+	copy(ids, buildingIDs)
+	event := &BuildingsUpgradedEvent{
+		Base:        base,
+		BuildingIDs: ids,
+	}
+	eventChan <- Event{Type: BuildingsUpgraded, Payload: event}
+}
+
+func TriggerCommanderSpawnEvent(owner Owner, unit *Unit) {
+	event := &CommanderSpawnEvent{
+		Owner: owner,
+		Unit:  unit,
+	}
+	eventChan <- Event{Type: CommanderSpawn, Payload: event}
+}
+
+func TriggerDuelStartedEvent(playerAID ID, playerBID ID, arena DuelArena) {
+	event := &DuelStartedEvent{
+		PlayerAID: playerAID,
+		PlayerBID: playerBID,
+		Arena:     arena,
+	}
+	eventChan <- Event{Type: DuelStarted, Payload: event}
 }

@@ -20,6 +20,7 @@ type Player struct {
 	// Identification & Connection
 	ID                      ID
 	Conn                    *websocket.Conn
+	IsBot                   bool
 	Permission              Permission
 	Name                    [12]byte
 	LastActivity            time.Time // Used for timeout
@@ -304,10 +305,10 @@ func (p *Player) AddCommander() (*Unit, bool) {
 		return nil, false
 	}
 	// Create the unit
-		unit := &Unit{
-			Player:         p,
-			ID:             unitID,
-			Type:           COMMANDER,
+	unit := &Unit{
+		Player:         p,
+		ID:             unitID,
+		Type:           COMMANDER,
 		Variant:        0,
 		Position:       IntToFloat(p.Base.Position),
 		Polygon:        polygon,
@@ -318,14 +319,14 @@ func (p *Player) AddCommander() (*Unit, bool) {
 		Size:           unitStats.Size,
 		Speed:          unitStats.Speed,
 
-			ExplosionRadius: int(unitStats.ExplosionRadius),
-			LastDamageTime:  time.Now(),
-		}
+		ExplosionRadius: int(unitStats.ExplosionRadius),
+		LastDamageTime:  time.Now(),
+	}
 
-		// Commander should spawn with an initial offset below the base.
-		unit.SetTargetPosition(PositionFloat{X: unit.TargetPosition.X, Y: unit.TargetPosition.Y + 200})
+	// Commander should spawn with an initial offset below the base.
+	unit.SetTargetPosition(PositionFloat{X: unit.TargetPosition.X, Y: unit.TargetPosition.Y + 200})
 
-		p.Lock()
+	p.Lock()
 	// Add the unit to the player's list of units
 	p.Units[unitID] = unit
 
@@ -371,12 +372,12 @@ func (p *Player) AddUnit(unitType UnitType, unitVariant UnitVariant, barracks *B
 		Variant:         unitVariant,
 		Position:        barracks.Position,
 		Polygon:         polygon,
-			TargetPosition:  unitTargetPosition,
-			TargetRotation:  UnitTargetRotation{float32(targetRotation), false},
-			Health:          unitStats.Health,
-			Damage:          unitStats.Damage,
-			Size:            unitStats.Size,
-			Speed:           unitStats.Speed,
+		TargetPosition:  unitTargetPosition,
+		TargetRotation:  UnitTargetRotation{float32(targetRotation), false},
+		Health:          unitStats.Health,
+		Damage:          unitStats.Damage,
+		Size:            unitStats.Size,
+		Speed:           unitStats.Speed,
 		ExplosionRadius: int(unitStats.ExplosionRadius),
 		LastDamageTime:  time.Now(),
 	}

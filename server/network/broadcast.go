@@ -3,7 +3,6 @@ package network
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"log"
 	"math"
 	"net"
@@ -19,8 +18,7 @@ var connMutex sync.Mutex
 
 func sendToClient(conn *websocket.Conn, message []byte, toRemove *[]*websocket.Conn) error {
 	if conn == nil {
-		log.Println("Connection is nil, cannot send message")
-		return errors.New("nil connection")
+		return nil
 	}
 
 	connMutex.Lock()
@@ -72,7 +70,7 @@ func broadcastToAll(message []byte) {
 	game.State.RLock()
 
 	for _, player := range game.State.Players {
-		if !player.IsMarkedForRemoval() {
+		if !player.IsMarkedForRemoval() && player.Conn != nil {
 			sendToClient(player.Conn, message, &toRemove)
 		}
 	}
@@ -91,7 +89,7 @@ func broadcastToAllExcept(message []byte, exceptPlayerID game.ID) {
 
 	for id, player := range game.State.Players {
 		if id != exceptPlayerID {
-			if !player.IsMarkedForRemoval() {
+			if !player.IsMarkedForRemoval() && player.Conn != nil {
 				sendToClient(player.Conn, message, &toRemove)
 			}
 		}
@@ -269,6 +267,10 @@ func broadcastPlayerLeft(playerID game.ID) {
 
 // Only send to killed player
 func sendKilledNotification(player *game.Player, killedByID game.ID) {
+	if player == nil || player.Conn == nil {
+		return
+	}
+
 	message := Message{
 		Type: MessageTypeKilled,
 	}
@@ -296,6 +298,10 @@ func sendKilledNotification(player *game.Player, killedByID game.ID) {
 }
 
 func sendKickNotification(player *game.Player, reason byte) {
+	if player == nil || player.Conn == nil {
+		return
+	}
+
 	message := Message{
 		Type: MessageTypeKickNotification,
 	}

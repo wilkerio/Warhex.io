@@ -90,13 +90,51 @@ func handleEvent(event game.Event) {
 		player := e.Player
 		unit := e.Unit
 		broadcastUnitHealthUpdate(player.ID, unit)
+	case game.PlayerJoined:
+		e := event.Payload.(*game.PlayerJoinedEvent)
+		if e.Player != nil {
+			broadcastPlayerJoined(e.Player)
+		}
+	case game.PlayerLeft:
+		e := event.Payload.(*game.PlayerLeftEvent)
+		broadcastPlayerLeft(e.PlayerID)
+		removePlayerMessageState(e.PlayerID)
+	case game.ChatMessage:
+		e := event.Payload.(*game.ChatMessageEvent)
+		game.RecordBotObservedChatMessage(e.PlayerID, string(e.Text))
+		broadcastChatMessage(e.PlayerID, e.Text)
+	case game.BuildingsUpgraded:
+		e := event.Payload.(*game.BuildingsUpgradedEvent)
+		broadcastBuildingsUpgraded(e.Base, e.BuildingIDs)
+	case game.CommanderSpawn:
+		e := event.Payload.(*game.CommanderSpawnEvent)
+		broadcastUnitSpawn(e.Owner, 255, e.Unit)
+	case game.DuelStarted:
+		e := event.Payload.(*game.DuelStartedEvent)
+		broadcastX1DuelArenaUpdate(e.PlayerAID, e.PlayerBID, e.Arena)
 	case game.PlayerKilled:
 		e := event.Payload.(*game.PlayerKilledEvent)
 		player := e.Player
 		killer := e.Killer
+		game.RecordBotObservedElimination(killer, player)
+		game.RecordBotMatchOutcome(player, killer)
+		killerID := game.ID(0)
+		if killer != nil {
+			killerID = killer.ID
+		}
 
-		sendKilledNotification(player, killer.ID)
+		if player.Conn != nil {
+			sendKilledNotification(player, killerID)
+		}
 		broadcastPlayerLeft(player.ID)
+
+		if player.Conn == nil {
+			game.RememberBotNameForCooldown(player)
+			game.ClearBotRuntimeIntent(player.ID)
+			game.RemovePlayerByID(player.ID)
+			removePlayerMessageState(player.ID)
+			break
+		}
 
 		userData, userOk := GetUserDataByConn(player.Conn)
 		_, playerScore, kills, playtime, _ := game.RemovePlayer(player.Conn)
@@ -124,8 +162,18 @@ func handleEvent(event game.Event) {
 		player := e.Player
 		reason := e.Reason
 
-		sendKickNotification(player, reason)
+		if player.Conn != nil {
+			sendKickNotification(player, reason)
+		}
 		broadcastPlayerLeft(player.ID)
+
+		if player.Conn == nil {
+			game.RememberBotNameForCooldown(player)
+			game.ClearBotRuntimeIntent(player.ID)
+			game.RemovePlayerByID(player.ID)
+			removePlayerMessageState(player.ID)
+			break
+		}
 
 		userData, userOk := GetUserDataByConn(player.Conn)
 		_, playerScore, kills, playtime, _ := game.RemovePlayer(player.Conn)

@@ -1,0 +1,6 @@
+# Local environment/secrets
+.env
+.env.local
+server/.env
+server/.env.local
+

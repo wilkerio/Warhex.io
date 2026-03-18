@@ -96,9 +96,16 @@ func Start() {
 
 	InitializeNonSkinColors()
 	loadSkins()
+	ResetBotSocialMatchData()
+	if err := initBotDB(); err != nil {
+		log.Printf("Bot DB unavailable, running with in-memory only: %v", err)
+	} else {
+		log.Println("Bot DB connected successfully")
+	}
 
 	Status = Running
 	log.Println("Game is running")
+	go startBotController()
 }
 
 func startRegenerationLoop() {
@@ -132,6 +139,9 @@ func startInactivityCheckLoop() {
 		State.RLock()
 		for _, player := range State.Players {
 			if player.IsMarkedForRemoval() {
+				continue
+			}
+			if player.IsBot {
 				continue
 			}
 
@@ -2254,7 +2264,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 	defer State.Unlock()
 
 	for _, player := range State.Players {
-		if player.Conn == conn {
+		if conn != nil && player.Conn == conn {
 			log.Println("Connection has already added a player")
 			return nil, false
 		}
@@ -2270,6 +2280,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 
 	player := &Player{
 		Conn:              conn,
+		IsBot:             conn == nil,
 		Permission:        permission,
 		Name:              [12]byte{},
 		SkinID:            skinID,
@@ -2347,30 +2358,10 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 	return player, true
 }
 
-func RemovePlayer(conn *websocket.Conn) (ID, uint32, uint32, time.Duration, bool) {
-	State.Lock()
-	defer State.Unlock()
-
-	var playerID ID
-	var player *Player
-
-	if conn == nil {
-		return 0, 0, 0, 0, false // Player not found
-	}
-
-	// Find the player associated with the connection
-	for id, p := range State.Players {
-		if p.Conn == conn {
-			playerID = id
-			player = p
-			break
-		}
-	}
-
+func removePlayerLocked(playerID ID, player *Player) (ID, uint32, uint32, time.Duration, bool) {
 	if player == nil {
-		return 0, 0, 0, 0, false // Player not found
+		return 0, 0, 0, 0, false
 	}
-
 	player.MarkForRemoval() // ! Just to be sure
 	if player.InDuel {
 		opponent := State.Players[player.DuelOpponentID]
@@ -2425,6 +2416,35 @@ func RemovePlayer(conn *websocket.Conn) (ID, uint32, uint32, time.Duration, bool
 	log.Printf("Player %d removed successfully", playerID)
 
 	return playerID, playerScore, kills, playtime, true // Player successfully removed
+}
+
+func RemovePlayer(conn *websocket.Conn) (ID, uint32, uint32, time.Duration, bool) {
+	State.Lock()
+	defer State.Unlock()
+
+	if conn == nil {
+		return 0, 0, 0, 0, false
+	}
+
+	for id, p := range State.Players {
+		if p.Conn == conn {
+			return removePlayerLocked(id, p)
+		}
+	}
+
+	return 0, 0, 0, 0, false
+}
+
+func RemovePlayerByID(playerID ID) (ID, uint32, uint32, time.Duration, bool) {
+	State.Lock()
+	defer State.Unlock()
+
+	player, ok := State.Players[playerID]
+	if !ok || player == nil {
+		return 0, 0, 0, 0, false
+	}
+
+	return removePlayerLocked(playerID, player)
 }
 
 // RelocatePlayerBaseTo moves a player's base to a selected free slot (or first free slot when target is nil).

@@ -1284,7 +1284,7 @@ func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
 	// Copy payload to avoid race conditions
 	message := payload[:]
 
-	broadcastChatMessage(player.ID, message)
+	game.TriggerChatMessageEvent(player.ID, message)
 }
 
 func handleClientActivity(conn *websocket.Conn, payload []byte) {

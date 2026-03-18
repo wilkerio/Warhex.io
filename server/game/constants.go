@@ -102,7 +102,7 @@ const (
 	// Player configuration
 	PLAYER_INITIAL_POPULATION = 8
 	PLAYER_INITIAL_HEALTH     = 2000
-	PLAYER_INITIAL_POWER      = 6000
+	PLAYER_INITIAL_POWER      = 1500
 	PLAYER_MAX_POWER          = 6000
 	// Base is considered defeated at or below this percentage of max health.
 	PLAYER_CORE_ELIMINATION_PERCENT = 35
