@@ -166,8 +166,21 @@ export default class Network {
 
     async connect() {
         if (this.isDev) {
-            this.serverAddress = '127.0.0.1:9090';
-            this.worker.postMessage({ type: 'connect', data: `ws://${this.serverAddress}` });
+            const forcedWs = (window.__WARHEX_WS_URL__ || '').trim();
+            if (forcedWs) {
+                const wsUrl = this.toWebSocketUrl(forcedWs);
+                if (wsUrl) {
+                    this.serverAddress = wsUrl;
+                    this.worker.postMessage({ type: 'connect', data: wsUrl });
+                    return;
+                }
+            }
+
+            const localHost = (window.location.hostname || '127.0.0.1').trim();
+            const localPort = String(window.__WARHEX_DEV_WS_PORT__ || '9090').trim();
+            const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            this.serverAddress = `${localHost}:${localPort}`;
+            this.worker.postMessage({ type: 'connect', data: `${scheme}://${this.serverAddress}` });
             return;
         }
 

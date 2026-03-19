@@ -87,11 +87,8 @@ export default class NetworkManager {
         this.spawnLeaveWatchers = new Map(); // playerID -> playerName
         this.discordInviteUrl = "https://discord.gg/Q337spAqR7";
         this.discordOnboardingSeenKey = "warhex_discord_onboarding_seen_v1";
-        this.ownerEmail = "wilkerfreelancertrabalho@gmail.com";
-        this.ownerEmails = [
-            "wilkerfreelancertrabalho@gmail.com",
-            "wilkerfreelancer@gmail.com"
-        ];
+        this.ownerEmail = "";
+        this.ownerEmails = [];
         this.ownerNamePrefix = "OWNER_";
         this.ownerAccountActive = false;
         this.pendingUnauthorizedJoinBlockNotice = false;
@@ -386,14 +383,7 @@ export default class NetworkManager {
     }
 
     isOwnerEmail (email = "") {
-        const normalized = this.normalizeEmail(email);
-        if (!normalized) return false;
-
-        const configured = Array.isArray(this.ownerEmails) && this.ownerEmails.length
-            ? this.ownerEmails
-            : [this.ownerEmail];
-
-        return configured.some((ownerEmail) => this.normalizeEmail(ownerEmail) === normalized);
+        return false;
     }
 
     extractEmailFromAuthUser (authUser = null) {
@@ -442,10 +432,7 @@ export default class NetworkManager {
 
     isOwnerAccount () {
         if (this.ownerAccountActive) return true;
-        if (this.isOwnerEmail(this.userData?.email)) return true;
         if (this.isOwnerRole(this.userData?.role)) return true;
-        if (this.isOwnerEmail(this.getStoredSessionEmail())) return true;
-        if (this.isOwnerEmail(this.getStoredUserEmail())) return true;
         return false;
     }
 
@@ -485,20 +472,7 @@ export default class NetworkManager {
     }
 
     async ensureOwnerRolePersisted () {
-        if (!this.loggedIn || !this.userId) return;
-        if (!this.isOwnerAccount()) return;
-        if (this.isOwnerRole(this.userData?.role)) return;
-
-        try {
-            const { error } = await supabase
-                .from("users")
-                .update({ role: "owner" })
-                .eq("id", this.userId);
-            if (error) return;
-
-            if (!this.userData) this.userData = {};
-            this.userData.role = "owner";
-        } catch (e) {}
+        return;
     }
 
     async hydrateAuthenticatedSession (session) {
@@ -517,7 +491,7 @@ export default class NetworkManager {
         this.userId = sessionUser.id;
         this._statsSyncEnabled = false;
         this._lastSyncedStatsSignature = "";
-        this.ownerAccountActive = this.isOwnerEmail(this.extractEmailFromAuthUser(authUser));
+        this.ownerAccountActive = this.isOwnerRole(this.userData?.role);
 
         try {
             const preferredNickname = this.userData?.nickname || authUser?.user_metadata?.nickname || "";
@@ -703,7 +677,7 @@ export default class NetworkManager {
                     level: Math.max(1, Number(this.userData.level ?? this.userData.progression?.level ?? 1)),
                     xp: Math.max(0, Number(this.userData.xp ?? this.userData.progression?.xp ?? 0))
                 };
-                this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user));
+                this.ownerAccountActive = this.isOwnerEmail(this.userData?.email || this.extractEmailFromAuthUser(user)) || this.isOwnerRole(this.userData?.role);
                 this.loggedIn = true;
                 this._statsSyncEnabled = true;
                 // Fallback path can be based on stale local/auth cache; force first remote sync.
@@ -898,7 +872,7 @@ export default class NetworkManager {
                             this.loggedIn = true;
                             this.userId = sess.user.id;
                             this._statsSyncEnabled = false;
-                            this.ownerAccountActive = this.isOwnerEmail(this.extractEmailFromAuthUser(sess.user));
+                            this.ownerAccountActive = this.isOwnerEmail(this.extractEmailFromAuthUser(sess.user)) || this.isOwnerRole(this.userData?.role);
                             console.log('Restored session quick (local):', this.userId);
                             if (rawUser) {
                                 try {

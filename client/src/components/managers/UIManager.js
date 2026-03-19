@@ -2011,8 +2011,6 @@ export default class UIManager {
                 row.className = "global-rank-row";
                 const isOwnerRow = Boolean(
                     this.core?.networkManager?.isOwnerDisplayName?.(entry.name)
-                    || this.core?.networkManager?.isOwnerEmail?.(entry.email)
-                    || this.core?.networkManager?.isOwnerRole?.(entry.role)
                 );
                 if (isOwnerRow) {
                     row.classList.add("owner-row");

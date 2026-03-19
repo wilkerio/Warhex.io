@@ -241,10 +241,19 @@
         }
     </script>
     <script>
+        window.WARHEX_CONFIG = window.WARHEX_CONFIG || {};
+        window.WARHEX_CONFIG.supabaseAnonKey = window.WARHEX_CONFIG.supabaseAnonKey || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNid290eWhvdG10aGxtdHlzbHRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY4NTQ3MzUsImV4cCI6MjA4MjQzMDczNX0.CFUB5XZy4SF5UybHtbci14OyZNwcb1i76u44S8qcGwg";
+        // Security note:
+        // Configure only the Supabase ANON/public key here (never service_role).
+        // Example (deploy-time): window.WARHEX_CONFIG.supabaseAnonKey = "eyJ...<anon>...";
+        // Quick local fallback for testing:
+        // localStorage.setItem("warhex_supabase_anon_key", "eyJ...<anon>...");
+    </script>
+    <script>
         (function () {
             const params = new URLSearchParams(window.location.search || "");
             const forceSrc = params.get("src") === "1" || window.WARHEX_CONFIG?.preferSrcBundle === true;
-            const distBundle = "dist/index.js?v=2026-03-19-supabase-fix-1";
+            const distBundle = "dist/index.js?v=2026-03-19-security-hardening-v1";
 
             const loadDistBundle = () => {
                 const distScript = document.createElement("script");

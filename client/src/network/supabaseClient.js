@@ -1,8 +1,53 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://sbwotyhotmthlmtysltl.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNid290eWhvdG10aGxtdHlzbHRsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2Njg1NDczNSwiZXhwIjoyMDgyNDMwNzM1fQ.M5na5xG06z_PptrSK5Uxgx9aKN4n7lBB3F6k2JEiST8';
-const SUPABASE_CLIENT_PATCH_VERSION = "2026-03-15-rank-bases-fix-v3";
+const SUPABASE_CLIENT_PATCH_VERSION = "2026-03-19-security-hardening-v1";
+
+function decodeJwtPayloadSafe(token) {
+    try {
+        const parts = String(token || "").split(".");
+        if (parts.length < 2) return null;
+        const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+        const raw = atob(padded);
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+function isSupabaseServiceRoleKey(value) {
+    const payload = decodeJwtPayloadSafe(value);
+    return String(payload?.role || "").toLowerCase() === "service_role";
+}
+
+function readSupabaseAnonKeyFromWindow() {
+    if (typeof window === "undefined") return "";
+    const config = window.WARHEX_CONFIG || {};
+    let localStorageKey = "";
+    try {
+        localStorageKey = String(localStorage.getItem("warhex_supabase_anon_key") || "").trim();
+    } catch {}
+    const keyCandidates = [
+        config.supabaseAnonKey,
+        window.__WARHEX_SUPABASE_ANON_KEY__,
+        window.WARHEX_SUPABASE_ANON_KEY,
+        localStorageKey
+    ];
+    for (const candidate of keyCandidates) {
+        const value = String(candidate || "").trim();
+        if (value) return value;
+    }
+    return "";
+}
+
+const supabaseKey = readSupabaseAnonKeyFromWindow();
+if (!supabaseKey) {
+    throw new Error("[WARHEX] Missing Supabase anon key. Set window.WARHEX_CONFIG.supabaseAnonKey.");
+}
+if (isSupabaseServiceRoleKey(supabaseKey)) {
+    throw new Error("[WARHEX] Unsafe Supabase key detected in client bundle (service_role). Use only anon/public key.");
+}
 
 if (typeof window !== "undefined") {
     window.__warhexSupabasePatchVersion = SUPABASE_CLIENT_PATCH_VERSION;
@@ -36,7 +81,7 @@ const LEADERBOARD_CACHE_TTL_MS = 15 * 1000;
 const MUSIC_CACHE_TTL_MS = 60 * 1000;
 const STORAGE_LIST_PAGE_SIZE = 100;
 const STORAGE_LIST_MAX_REQUESTS = 20;
-const GLOBAL_RANK_CACHE_KEY = "warhex_global_rank_cache_v1";
+const GLOBAL_RANK_CACHE_KEY = "warhex_global_rank_cache_v2";
 const PUBLIC_BASES_CACHE_KEY = "warhex_public_bases_cache_v1";
 const BASE_LAYOUTS_VISIBILITY_PREF_KEY = "warhex_base_layout_visibility_pref_v1";
 const MUSIC_BUCKET = "music";
@@ -1158,16 +1203,22 @@ export async function updateUserProgressStatsKeepalive(userId, statistics, progr
         };
 
         const authToken = await getCurrentAccessToken(1200);
+        if (!authToken) {
+            return { success: false, error: "missing_auth_token" };
+        }
         const url = `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`;
+        const headers = {
+            "apikey": supabaseKey,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        };
+        if (authToken) {
+            headers["Authorization"] = `Bearer ${authToken}`;
+        }
         const resp = await fetch(url, {
             method: "PATCH",
             keepalive: true,
-            headers: {
-                "apikey": supabaseKey,
-                "Authorization": `Bearer ${authToken || supabaseKey}`,
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal"
-            },
+            headers,
             body: JSON.stringify(payload)
         });
 
@@ -1324,9 +1375,11 @@ async function postgrestRequest(path, {
     try {
         timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         const headers = {
-            "apikey": supabaseKey,
-            "Authorization": `Bearer ${authToken || supabaseKey}`
+            "apikey": supabaseKey
         };
+        if (authToken) {
+            headers["Authorization"] = `Bearer ${authToken}`;
+        }
         if (body != null) headers["Content-Type"] = "application/json";
         if (prefer) headers["Prefer"] = prefer;
 
@@ -1772,15 +1825,12 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
                 || row?.name
                 || row?.discord_username
                 || row?.discord?.username
-                || (typeof row?.email === "string" ? row.email.split("@")[0] : null)
                 || "Player";
             return {
                 name: String(rawName),
-                email: typeof row?.email === "string" ? row.email : "",
-                role: typeof row?.role === "string" ? row.role : "",
                 highscore: Math.max(0, Number(row?.highscore ?? stats?.highscore ?? stats?.score ?? 0)),
                 playtime: Math.max(0, Number(row?.playtime ?? stats?.playtime ?? stats?.time_played ?? 0)),
-                kills: Math.max(0, Number(row?.total_kills ?? stats?.kills ?? stats?.total_kills ?? 0))
+                kills: Math.max(0, Number(row?.kills ?? row?.total_kills ?? stats?.kills ?? stats?.total_kills ?? 0))
             };
         })
             .sort((a, b) => (b.highscore - a.highscore) || (b.kills - a.kills) || (b.playtime - a.playtime))
@@ -1790,10 +1840,35 @@ export async function fetchGlobalAccountLeaderboard(limit = 10) {
     const fetchRowsViaRest = async () => {
         const readLimit = 120;
         const authToken = await getCurrentAccessToken(1200);
+        let rpcResult = null;
+        try {
+            rpcResult = await withTimeoutPromise(
+                postgrestRequestWithRetry("/rest/v1/rpc/get_public_leaderboard", {
+                    method: "POST",
+                    body: { p_limit: readLimit },
+                    timeoutMs: 11000
+                }, 1),
+                13000,
+                "leaderboard_timeout"
+            );
+        } catch (timeoutError) {
+            rpcResult = {
+                ok: false,
+                error: {
+                    code: "leaderboard_timeout",
+                    message: String(timeoutError?.message || "leaderboard_timeout")
+                }
+            };
+        }
+        if (rpcResult?.ok) {
+            return { rows: Array.isArray(rpcResult.data) ? rpcResult.data : [], error: null };
+        }
+
         const paths = [
-            `/rest/v1/users?select=nickname,email,role,highscore,playtime,total_kills,statistics&order=highscore.desc.nullslast,total_kills.desc.nullslast,playtime.desc.nullslast&limit=${readLimit}`,
-            `/rest/v1/users?select=nickname,email,statistics&limit=${readLimit}`,
-            "/rest/v1/users?select=*&limit=40"
+            `/rest/v1/users_public_leaderboard?select=name,highscore,playtime,kills&order=highscore.desc.nullslast,kills.desc.nullslast,playtime.desc.nullslast&limit=${readLimit}`,
+            `/rest/v1/users?select=nickname,username,display_name,name,discord_username,discord,highscore,playtime,total_kills,statistics&order=highscore.desc.nullslast,total_kills.desc.nullslast,playtime.desc.nullslast&limit=${readLimit}`,
+            `/rest/v1/users?select=nickname,username,display_name,name,discord_username,discord,statistics&limit=${readLimit}`,
+            `/rest/v1/users?select=nickname,username,display_name,name,discord_username,discord,highscore,playtime,total_kills,statistics&limit=${Math.min(readLimit, 40)}`
         ];
 
         let lastError = null;
