@@ -428,7 +428,7 @@ func (b *Base) CheckBuildingCollision(buildingType BuildingType, position Positi
 			continue
 		}
 		if DoPolygonsIntersect(polygon, building.Polygon) {
-			log.Printf("Collision detected.")
+			// Collisions are expected during placement probing; avoid log spam in hot path.
 			return false
 		}
 	}

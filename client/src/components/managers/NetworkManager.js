@@ -2585,14 +2585,40 @@ export default class NetworkManager {
         this.sendMessage(message);
     }
 
+    chunkBuildingIDs (buildingIDs, maxPerMessage = 40) {
+        if (!Array.isArray(buildingIDs) || buildingIDs.length === 0) {
+            return [];
+        }
+        const normalized = [...new Set(
+            buildingIDs
+                .map((id) => Number(id))
+                .filter((id) => Number.isInteger(id) && id >= 0 && id <= 255)
+        )];
+        if (normalized.length === 0) {
+            return [];
+        }
+        const chunkSize = Math.max(1, Number(maxPerMessage) || 40);
+        const chunks = [];
+        for (let i = 0; i < normalized.length; i += chunkSize) {
+            chunks.push(normalized.slice(i, i + chunkSize));
+        }
+        return chunks;
+    }
+
     upgradeBuildings (buildingIDs, buildingVariant, neutralBaseID = null) {
-        const message = Message.createUpgradeBuildingsMessage(buildingIDs, buildingVariant, neutralBaseID)
-        this.sendMessage(message);
+        const chunks = this.chunkBuildingIDs(buildingIDs, 40);
+        chunks.forEach((chunk) => {
+            const message = Message.createUpgradeBuildingsMessage(chunk, buildingVariant, neutralBaseID);
+            this.sendMessage(message);
+        });
     }
 
     removeBuildings (buildingIDs, neutralBaseID = null) {
-        const message = Message.createRemoveBuildingsMessage(buildingIDs, neutralBaseID);
-        this.sendMessage(message);
+        const chunks = this.chunkBuildingIDs(buildingIDs, 40);
+        chunks.forEach((chunk) => {
+            const message = Message.createRemoveBuildingsMessage(chunk, neutralBaseID);
+            this.sendMessage(message);
+        });
     }
 
     moveUnits (units, targetPosition) {

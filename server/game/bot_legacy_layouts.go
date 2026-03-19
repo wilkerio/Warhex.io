@@ -83,7 +83,7 @@ func refreshBotLegacyLayout(rt *botRuntime) {
 	}
 	rt.legacyLayoutName = name
 	rt.legacyLayoutCursor = 0
-	rt.legacyLayoutSlots = buildLegacyLayoutByName(name)
+	rt.legacyLayoutSlots = buildLegacyLayoutByName(name, rt)
 }
 
 func desiredBotLegacyLayout(rt *botRuntime) string {
@@ -93,16 +93,38 @@ func desiredBotLegacyLayout(rt *botRuntime) string {
 	if configured := configuredBotStandardLegacyLayout(); configured != "" {
 		return configured
 	}
+
+	sig := stableBotBuildSignature(rt)
 	switch rt.basePlan {
 	case basePlanExternAtk:
+		// Keep most attackers on externa while allowing some variation.
+		if sig%11 == 0 {
+			return botLegacyLayoutNone
+		}
+		if sig%7 == 0 {
+			return botLegacyLayoutAutogens
+		}
 		return botLegacyLayoutExterna
 	case basePlanAutogens:
+		// Keep most eco bots on autogens while allowing some variation.
+		if sig%10 == 0 {
+			return botLegacyLayoutNone
+		}
+		if sig%6 == 0 {
+			return botLegacyLayoutExterna
+		}
 		return botLegacyLayoutAutogens
 	default:
 		if rt.profile == profileAttack || rt.role == roleRaider {
+			if sig%5 == 0 {
+				return botLegacyLayoutNone
+			}
 			return botLegacyLayoutExterna
 		}
 		if rt.profile == profileEconomy || rt.role == roleEco {
+			if sig%5 == 0 {
+				return botLegacyLayoutNone
+			}
 			return botLegacyLayoutAutogens
 		}
 		return botLegacyLayoutNone
@@ -113,8 +135,10 @@ func configuredBotStandardLegacyLayout() string {
 	raw := strings.ToLower(strings.TrimSpace(os.Getenv("BOT_STANDARD_BASE")))
 	switch raw {
 	case "":
-		// Default to a strict standard base script unless explicitly disabled.
-		return botLegacyLayoutExterna
+		// Default is adaptive: each bot can pick a different layout family.
+		return botLegacyLayoutNone
+	case "mixed", "adaptive", "auto", "default":
+		return botLegacyLayoutNone
 	case "off", "none", "disable":
 		return botLegacyLayoutNone
 	case "legacy_externa", "externa", "externatk", "extern_atk", "b03", "padrao", "standard":
@@ -122,16 +146,33 @@ func configuredBotStandardLegacyLayout() string {
 	case "legacy_autogens", "autogens", "autogen", "defend", "b05":
 		return botLegacyLayoutAutogens
 	default:
-		return botLegacyLayoutExterna
+		return botLegacyLayoutNone
 	}
 }
 
-func buildLegacyLayoutByName(name string) []botLegacySocketSlot {
+func buildLegacyLayoutByName(name string, rt *botRuntime) []botLegacySocketSlot {
+	angleOffset := 0.0
+	radiusScale := 1.0
+	if rt != nil {
+		// Deterministic per-bot shape variation to avoid clone bases.
+		sig := stableBotBuildSignature(rt)
+		angleBucket := int(sig%9) - 4
+		radiusBucket := int((sig/9)%7) - 3
+		angleOffset += float64(angleBucket) * 0.018
+		radiusScale += float64(radiusBucket) * 0.018
+		if radiusScale < 0.90 {
+			radiusScale = 0.90
+		}
+		if radiusScale > 1.10 {
+			radiusScale = 1.10
+		}
+	}
+
 	switch name {
 	case botLegacyLayoutExterna:
-		return convertLegacySocketLayout(legacyExternaSocketLayout, -0.055, 1.0)
+		return convertLegacySocketLayout(legacyExternaSocketLayout, -0.055+angleOffset, radiusScale)
 	case botLegacyLayoutAutogens:
-		return convertLegacySocketLayout(legacyAutogensSocketLayout, 0, 1.0)
+		return convertLegacySocketLayout(legacyAutogensSocketLayout, angleOffset, radiusScale)
 	default:
 		return nil
 	}

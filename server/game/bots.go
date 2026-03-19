@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +40,17 @@ const (
 	moveRegroup
 	movePressure
 	moveFlank
+)
+
+const (
+	botMoveProgressMinDistance = float32(26)
+	botMoveStuckTargetDistance = float32(120)
+	botMoveStuckTimeout        = 9 * time.Second
+	botMoveModeMinHold         = 4 * time.Second
+	botMoveTargetMinHold       = 2500 * time.Millisecond
+	botMoveTargetSwitchGrace   = 1800 * time.Millisecond
+	botMoveTargetReachRadius   = float32(175)
+	botMoveTargetRepathDelta   = float32(210)
 )
 
 type botRole byte
@@ -192,16 +204,26 @@ type botRuntime struct {
 	nextChatAt  time.Time
 	lastChatAt  time.Time
 
-	lastMode          botMoveMode
-	lastEnemyName     string
-	lastDuelAt        time.Time
-	lastCommanderAt   time.Time
-	lastUpgradeAt     time.Time
-	lastDefendAt      time.Time
-	attackUnlockedAt  time.Time
-	attackCommitUntil time.Time
-	targetPlayerID    ID
-	targetLockedUntil time.Time
+	lastMode           botMoveMode
+	lastModeChangeAt   time.Time
+	lastEnemyName      string
+	lastDuelAt         time.Time
+	lastCommanderAt    time.Time
+	lastUpgradeAt      time.Time
+	lastDefendAt       time.Time
+	attackUnlockedAt   time.Time
+	attackCommitUntil  time.Time
+	targetPlayerID     ID
+	targetLockedUntil  time.Time
+	lastMoveCentroid   PositionFloat
+	lastMoveSampleAt   time.Time
+	lastMoveProgressAt time.Time
+	lastMoveTarget     PositionFloat
+	lastMoveTargetAt   time.Time
+	lastMoveTargetMode botMoveMode
+	unstuckUntil       time.Time
+	unstuckBursts      int
+	nextRecycleAt      time.Time
 
 	nextThinkAt           time.Time
 	nextPersistAt         time.Time
@@ -348,7 +370,7 @@ var botTargetIntentsMu sync.Mutex
 var globalBotChatHistory []string
 var globalBotChatHistoryMu sync.Mutex
 var globalBotSocialChatLog []botSocialChatEntry
-var globalBotSocialChatLogMu sync.Mutex
+var globalBotSocialChatLogMu sync.RWMutex
 var globalBotSocialTick int
 var globalBotFastestElimination *botSocialFastestElimination
 
@@ -356,6 +378,13 @@ var activeBotRuntimes = make(map[ID]*botRuntime)
 var activeBotRuntimesMu sync.RWMutex
 
 func startBotController() {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Printf("bot controller panic recovered: %v\n%s", recovered, debug.Stack())
+			go startBotController()
+		}
+	}()
+
 	target := getConfiguredBotCount()
 	if target <= 0 {
 		log.Println("Bot controller disabled (BOT_COUNT <= 0)")
@@ -387,51 +416,61 @@ func startBotController() {
 		}
 
 		for botID, rt := range runtimes {
-			player := getBotByID(botID)
-			if player == nil || player.IsMarkedForRemoval() {
-				ClearBotRuntimeIntent(botID)
-				delete(runtimes, botID)
-				continue
-			}
+			func(botID ID, rt *botRuntime) {
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						log.Printf("bot runtime panic recovered (botID=%d): %v\n%s", botID, recovered, debug.Stack())
+						ClearBotRuntimeIntent(botID)
+						delete(runtimes, botID)
+					}
+				}()
 
-			if rt.goChatMem != nil {
-				chatFeed := chatFeedFromSocialEntries(getRecentSocialChatLog(30, 40))
-				rt.goChatMem.ObserveChatFeed(chatFeed, rt.identity.ID, currentSocialTick())
-			}
-			if now.After(rt.nextPersistAt) {
-				flushBotRuntimePersistence(rt)
-				rt.nextPersistAt = now.Add(randomDuration(minBotPersistTTL, maxBotPersistTTL))
-			}
-
-			// Claude-only mode: without Claude planner enabled, bots only join and idle.
-			if !isExternalPlannerEnabled() {
-				continue
-			}
-
-			if now.After(rt.nextThinkAt) {
-				refreshBotThought(player, rt)
-				rt.nextThinkAt = now.Add(nextThinkDelay(rt))
-			}
-
-			if now.After(rt.nextBuildAt) {
-				if runBotBuild(player, rt) {
-					rt.nextBuildAt = now.Add(nextBuildDelay(rt, true))
-				} else {
-					rt.nextBuildAt = now.Add(nextBuildDelay(rt, false))
+				player := getBotByID(botID)
+				if player == nil || player.IsMarkedForRemoval() {
+					ClearBotRuntimeIntent(botID)
+					delete(runtimes, botID)
+					return
 				}
-			}
 
-			if now.After(rt.nextMoveAt) {
-				runBotMovement(player, rt)
-				rt.nextMoveAt = now.Add(nextMoveDelay(rt))
-			}
-
-			if now.After(rt.nextChatAt) && now.After(globalNextChatAt) {
-				if runBotChat(player, rt) {
-					globalNextChatAt = now.Add(randomDuration(4*time.Second, 8*time.Second))
+				if rt.goChatMem != nil {
+					chatFeed := chatFeedFromSocialEntries(getRecentSocialChatLog(30, 40))
+					rt.goChatMem.ObserveChatFeed(chatFeed, rt.identity.ID, currentSocialTick())
 				}
-				rt.nextChatAt = now.Add(nextChatDelay(rt))
-			}
+				if now.After(rt.nextPersistAt) {
+					flushBotRuntimePersistence(rt)
+					rt.nextPersistAt = now.Add(randomDuration(minBotPersistTTL, maxBotPersistTTL))
+				}
+
+				// Claude-only mode: without Claude planner enabled, bots only join and idle.
+				if !isExternalPlannerEnabled() {
+					return
+				}
+
+				if now.After(rt.nextThinkAt) {
+					refreshBotThought(player, rt)
+					rt.nextThinkAt = now.Add(nextThinkDelay(rt))
+				}
+
+				if now.After(rt.nextBuildAt) {
+					if runBotBuild(player, rt) {
+						rt.nextBuildAt = now.Add(nextBuildDelay(rt, true))
+					} else {
+						rt.nextBuildAt = now.Add(nextBuildDelay(rt, false))
+					}
+				}
+
+				if now.After(rt.nextMoveAt) {
+					runBotMovement(player, rt)
+					rt.nextMoveAt = now.Add(nextMoveDelay(rt))
+				}
+
+				if now.After(rt.nextChatAt) && now.After(globalNextChatAt) {
+					if runBotChat(player, rt) {
+						globalNextChatAt = now.Add(randomDuration(4*time.Second, 8*time.Second))
+					}
+					rt.nextChatAt = now.Add(nextChatDelay(rt))
+				}
+			}(botID, rt)
 		}
 	}
 }
@@ -2156,6 +2195,11 @@ func runBotBuild(player *Player, rt *botRuntime) bool {
 	power := readCurrentPower(player)
 	freePop := readFreePopulation(player)
 	underAttack := player.WasBaseDamagedWithin(12 * time.Second)
+	if tryRecycleExcessGenerators(player, rt, summary, power, freePop, underAttack) {
+		rt.phase++
+		rt.cursor += math.Pi / 18
+		return true
+	}
 	baseReady := isBotBaseReadyForPush(player, rt, summary, power)
 	llmMode := isExternalPlannerEnabled()
 	if baseReady && !rt.baseSaved {
@@ -2448,6 +2492,7 @@ func isBotBaseReadyForPush(player *Player, rt *botRuntime, summary botBuildingSu
 func chooseFoundationBuildType(rt *botRuntime, s botBuildingSummary, power uint16, freePop int, underAttack bool) (BuildingType, bool) {
 	targetGens, targetHouses, targetBarracks, targetDefense, targetWalls, _ := getFoundationTargets(rt)
 	defenseCount := s.turrets + s.snipers
+	minEcoCore := minInt(targetGens, maxInt(4, targetGens-2))
 
 	if rt != nil {
 		switch rt.profile {
@@ -2466,6 +2511,10 @@ func chooseFoundationBuildType(rt *botRuntime, s botBuildingSummary, power uint1
 				return SIMPLE_TURRET, true
 			}
 		}
+	}
+
+	if s.gens < minEcoCore && (s.gens <= s.houses+2 || power < 320) {
+		return GENERATOR, true
 	}
 
 	if underAttack {
@@ -2933,6 +2982,31 @@ func chooseBuildType(rt *botRuntime, s botBuildingSummary, power uint16, freePop
 		weights[WALL] += 1.5
 	}
 
+	targetGens, targetHouses, targetBarracks, targetDefense, _, _ := getFoundationTargets(rt)
+	defenseCount := s.turrets + s.snipers
+	if s.gens < targetGens {
+		gap := targetGens - s.gens
+		weights[GENERATOR] += 1.6 + float64(gap)*0.55
+		if s.gens <= s.houses+1 {
+			weights[GENERATOR] += 1.1
+		}
+	}
+	if s.gens > targetGens+2 {
+		excess := s.gens - (targetGens + 2)
+		weights[GENERATOR] -= float64(excess) * 1.45
+		if s.houses < targetHouses {
+			weights[HOUSE] += float64(excess) * 0.8
+		}
+		if s.barracks < targetBarracks {
+			weights[BARRACKS] += float64(excess) * 1.25
+		}
+		if defenseCount < targetDefense {
+			weights[SIMPLE_TURRET] += float64(excess) * 1.0
+			weights[SNIPER_TURRET] += float64(excess) * 0.65
+			weights[WALL] += float64(excess) * 0.45
+		}
+	}
+
 	// Economy emergency.
 	if power < 180 {
 		weights[GENERATOR] += 3.0
@@ -2964,6 +3038,81 @@ func chooseBuildType(rt *botRuntime, s botBuildingSummary, power uint16, freePop
 	applyBotMathEconomyWeights(weights, rt, s, power, freePop, underAttack)
 
 	return weightedPickBuilding(weights)
+}
+
+func tryRecycleExcessGenerators(player *Player, rt *botRuntime, s botBuildingSummary, power uint16, freePop int, underAttack bool) bool {
+	if player == nil || player.Base == nil || rt == nil || underAttack {
+		return false
+	}
+	now := time.Now()
+	if now.Before(rt.nextRecycleAt) {
+		return false
+	}
+
+	targetGens, targetHouses, targetBarracks, targetDefense, _, _ := getFoundationTargets(rt)
+	defenseCount := s.turrets + s.snipers
+
+	maxDesiredGens := targetGens + 2
+	if rt.basePlan == basePlanAutogens || rt.profile == profileEconomy || rt.role == roleEco {
+		maxDesiredGens = targetGens + 3
+	}
+	if s.gens <= maxDesiredGens {
+		return false
+	}
+	if power < 360 {
+		return false
+	}
+
+	infraLagging := s.houses < targetHouses || s.barracks < targetBarracks || defenseCount < targetDefense || freePop <= 1
+	if !infraLagging && s.gens <= maxDesiredGens+1 {
+		return false
+	}
+
+	candidate := pickGeneratorRecycleCandidate(player.Base)
+	if candidate == nil {
+		return false
+	}
+
+	if ok := player.Base.RemoveBuilding(candidate.ID); !ok {
+		rt.nextRecycleAt = now.Add(randomDuration(4*time.Second, 7*time.Second))
+		return false
+	}
+	TriggerBuildingRemovedEvent(player.Base, candidate)
+	rt.nextRecycleAt = now.Add(randomDuration(12*time.Second, 20*time.Second))
+	return true
+}
+
+func pickGeneratorRecycleCandidate(base *Base) *Building {
+	if base == nil {
+		return nil
+	}
+
+	var oldestBasic *Building
+	var oldestAny *Building
+	now := time.Now()
+
+	base.RLock()
+	for _, b := range base.Buildings {
+		if b == nil || b.IsMarkedForRemoval() || b.Type != GENERATOR {
+			continue
+		}
+		// Avoid removing freshly placed generators to reduce oscillation.
+		if now.Sub(b.PlacedAt) < 30*time.Second {
+			continue
+		}
+		if oldestAny == nil || b.PlacedAt.Before(oldestAny.PlacedAt) {
+			oldestAny = b
+		}
+		if b.Variant == BASIC_BUILDING && (oldestBasic == nil || b.PlacedAt.Before(oldestBasic.PlacedAt)) {
+			oldestBasic = b
+		}
+	}
+	base.RUnlock()
+
+	if oldestBasic != nil {
+		return oldestBasic
+	}
+	return oldestAny
 }
 
 func getProfessionalTemplate(rt *botRuntime) botProfessionalTemplate {
@@ -3087,6 +3236,40 @@ func getProfessionalTemplate(rt *botRuntime) botProfessionalTemplate {
 	}
 }
 
+func stableBotBuildSignature(rt *botRuntime) uint32 {
+	if rt == nil {
+		return 0
+	}
+
+	hash := uint32(2166136261)
+	mixByte := func(v byte) {
+		hash ^= uint32(v)
+		hash *= 16777619
+	}
+	mixUint32 := func(v uint32) {
+		mixByte(byte(v))
+		mixByte(byte(v >> 8))
+		mixByte(byte(v >> 16))
+		mixByte(byte(v >> 24))
+	}
+	mixString := func(v string) {
+		for _, r := range v {
+			mixByte(byte(r))
+		}
+	}
+
+	mixUint32(uint32(rt.playerID))
+	mixByte(rt.layoutDNA)
+	mixByte(byte(rt.basePlan))
+	mixByte(byte(rt.profile))
+	mixByte(byte(rt.role))
+	mixByte(byte(rt.persona))
+	mixByte(byte(rt.archetype))
+	mixString(strings.ToLower(strings.TrimSpace(rt.identity.ID)))
+
+	return hash
+}
+
 func buildScriptedOpeningSequence(rt *botRuntime) []BuildingType {
 	template := getProfessionalTemplate(rt)
 	if len(template.OpeningVariants) == 0 {
@@ -3095,7 +3278,7 @@ func buildScriptedOpeningSequence(rt *botRuntime) []BuildingType {
 
 	idx := 0
 	if rt != nil && len(template.OpeningVariants) > 1 {
-		idx = int(rt.layoutDNA) % len(template.OpeningVariants)
+		idx = int(stableBotBuildSignature(rt) % uint32(len(template.OpeningVariants)))
 	}
 	if idx < 0 {
 		idx = -idx
@@ -3137,7 +3320,11 @@ func chooseScriptedOpeningExtension(rt *botRuntime, s botBuildingSummary, phase 
 		return 0, false
 	}
 
-	bt := cycle[phase%len(cycle)]
+	offset := 0
+	if len(cycle) > 1 {
+		offset = int(stableBotBuildSignature(rt) % uint32(len(cycle)))
+	}
+	bt := cycle[(phase+offset)%len(cycle)]
 	if bt == BARRACKS && s.barracks >= 4 {
 		if rt.profile == profileAttack {
 			bt = SIMPLE_TURRET
@@ -3796,6 +3983,8 @@ func runBotMovement(player *Player, rt *botRuntime) {
 	if len(units) == 0 {
 		return
 	}
+	now := time.Now()
+	forceUnstuck := updateBotStuckState(rt, units, now)
 
 	enemyPos, hasEnemy, _, enemyName := findEnemyForRuntime(player, rt)
 	if hasEnemy {
@@ -3815,7 +4004,7 @@ func runBotMovement(player *Player, rt *botRuntime) {
 	}
 	if !pushUnlocked {
 		rt.attackCommitUntil = time.Time{}
-		softLock := time.Now().Add(randomDuration(6*time.Second, 12*time.Second))
+		softLock := now.Add(randomDuration(6*time.Second, 12*time.Second))
 		if rt.attackUnlockedAt.Before(softLock) {
 			rt.attackUnlockedAt = softLock
 		}
@@ -3823,22 +4012,46 @@ func runBotMovement(player *Player, rt *botRuntime) {
 
 	attackConfidence := computeBotAttackConfidence(player, rt, enemyPos, hasEnemy, len(units), power, pushUnlocked)
 	mode := chooseMoveMode(player, rt, len(units), hasEnemy, pushUnlocked, attackConfidence, rt.thought.forceMode)
+	if forceUnstuck {
+		if player.WasBaseDamagedWithin(10 * time.Second) {
+			mode = moveDefend
+		} else {
+			mode = moveRegroup
+		}
+	}
+	mode = stabilizeBotMoveMode(player, rt, mode, forceUnstuck)
 	rt.lastMode = mode
-	updateAttackCommit(player, rt, mode, hasEnemy)
+	if forceUnstuck {
+		rt.attackCommitUntil = time.Time{}
+	} else {
+		updateAttackCommit(player, rt, mode, hasEnemy)
+	}
 
 	applyBotGroupPreference(player, rt, mode)
 
 	target, ok := pickMoveTarget(player, rt, mode, enemyPos, hasEnemy, pushUnlocked, len(units), attackConfidence)
+	if forceUnstuck {
+		target = pickUnstuckMoveTarget(player, rt, enemyPos, hasEnemy)
+		ok = true
+	}
 	if !ok {
 		return
 	}
+	target = stabilizeBotMoveTarget(rt, units, mode, target, forceUnstuck)
 
 	selected := selectUnitsForMove(units, rt, mode)
+	if forceUnstuck {
+		selected = units
+	}
 	if len(selected) == 0 {
 		return
 	}
 
-	applyFormationTargets(selected, target, rt, mode)
+	if forceUnstuck {
+		applyScatterFormation(selected, target, 320)
+	} else {
+		applyFormationTargets(selected, target, rt, mode)
+	}
 	player.SetLastActivity()
 	TriggerUnitsRotationUpdateEvent(player, selected)
 }
@@ -3857,6 +4070,212 @@ func collectMovableUnits(player *Player) []*Unit {
 	return units
 }
 
+func unitsCentroid(units []*Unit) (PositionFloat, bool) {
+	if len(units) == 0 {
+		return PositionFloat{}, false
+	}
+	var sumX float32
+	var sumY float32
+	count := 0
+	for _, unit := range units {
+		if unit == nil || unit.IsMarkedForRemoval() {
+			continue
+		}
+		pos := unit.GetPosition()
+		sumX += pos.X
+		sumY += pos.Y
+		count++
+	}
+	if count == 0 {
+		return PositionFloat{}, false
+	}
+	return PositionFloat{
+		X: sumX / float32(count),
+		Y: sumY / float32(count),
+	}, true
+}
+
+func averageUnitTargetDistance(units []*Unit) float32 {
+	if len(units) == 0 {
+		return 0
+	}
+	var total float32
+	count := 0
+	for _, unit := range units {
+		if unit == nil || unit.IsMarkedForRemoval() {
+			continue
+		}
+		total += unit.GetPosition().DistanceTo(unit.TargetPosition)
+		count++
+	}
+	if count == 0 {
+		return 0
+	}
+	return total / float32(count)
+}
+
+func updateBotStuckState(rt *botRuntime, units []*Unit, now time.Time) bool {
+	if rt == nil {
+		return false
+	}
+	centroid, ok := unitsCentroid(units)
+	if !ok {
+		return false
+	}
+
+	if rt.lastMoveSampleAt.IsZero() {
+		rt.lastMoveCentroid = centroid
+		rt.lastMoveSampleAt = now
+		rt.lastMoveProgressAt = now
+		return false
+	}
+
+	moved := centroid.DistanceTo(rt.lastMoveCentroid)
+	rt.lastMoveCentroid = centroid
+	rt.lastMoveSampleAt = now
+	if moved >= botMoveProgressMinDistance {
+		rt.lastMoveProgressAt = now
+		if rt.unstuckBursts > 0 {
+			rt.unstuckBursts--
+		}
+	}
+
+	if now.Before(rt.unstuckUntil) {
+		return true
+	}
+
+	if len(units) < 4 {
+		return false
+	}
+	if averageUnitTargetDistance(units) < botMoveStuckTargetDistance {
+		return false
+	}
+	if now.Sub(rt.lastMoveProgressAt) < botMoveStuckTimeout {
+		return false
+	}
+
+	burst := rt.unstuckBursts
+	if burst > 3 {
+		burst = 3
+	}
+	boost := time.Duration(burst) * time.Second
+	rt.unstuckUntil = now.Add(randomDuration(4*time.Second+boost, 7*time.Second+boost))
+	rt.unstuckBursts++
+	rt.lastMoveProgressAt = now
+	return true
+}
+
+func stabilizeBotMoveMode(player *Player, rt *botRuntime, candidate botMoveMode, forceUnstuck bool) botMoveMode {
+	if rt == nil {
+		return candidate
+	}
+	now := time.Now()
+	if rt.lastModeChangeAt.IsZero() {
+		rt.lastModeChangeAt = now
+		return candidate
+	}
+	if forceUnstuck {
+		rt.lastModeChangeAt = now
+		return candidate
+	}
+	if candidate == rt.lastMode {
+		return candidate
+	}
+
+	urgentDefend := player != nil && candidate == moveDefend && player.WasBaseDamagedWithin(8*time.Second)
+	if urgentDefend {
+		rt.lastModeChangeAt = now
+		return candidate
+	}
+
+	// Hold the previous mode briefly to avoid pressure/regroup ping-pong.
+	if now.Sub(rt.lastModeChangeAt) < botMoveModeMinHold {
+		return rt.lastMode
+	}
+	rt.lastModeChangeAt = now
+	return candidate
+}
+
+func stabilizeBotMoveTarget(rt *botRuntime, units []*Unit, mode botMoveMode, candidate PositionFloat, forceUnstuck bool) PositionFloat {
+	if rt == nil {
+		return candidate
+	}
+
+	now := time.Now()
+	if forceUnstuck || rt.lastMoveTargetAt.IsZero() {
+		rt.lastMoveTarget = candidate
+		rt.lastMoveTargetAt = now
+		rt.lastMoveTargetMode = mode
+		return candidate
+	}
+
+	prev := rt.lastMoveTarget
+	sinceLast := now.Sub(rt.lastMoveTargetAt)
+	centroid, hasCentroid := unitsCentroid(units)
+
+	if mode == rt.lastMoveTargetMode && sinceLast < botMoveTargetMinHold {
+		if hasCentroid && centroid.DistanceTo(prev) > botMoveTargetReachRadius {
+			return prev
+		}
+		if candidate.DistanceTo(prev) < botMoveTargetRepathDelta {
+			return prev
+		}
+	}
+
+	if mode != rt.lastMoveTargetMode && sinceLast < botMoveTargetSwitchGrace {
+		if hasCentroid && centroid.DistanceTo(prev) > botMoveTargetReachRadius*0.85 {
+			return prev
+		}
+	}
+
+	chosen := candidate
+	delta := candidate.DistanceTo(prev)
+	// Smooth small path corrections to prevent visible back-and-forth.
+	if delta > 0 && delta < 900 {
+		newWeight := float32(0.68)
+		if mode != rt.lastMoveTargetMode {
+			newWeight = 0.55
+		}
+		oldWeight := 1 - newWeight
+		chosen = PositionFloat{
+			X: prev.X*oldWeight + candidate.X*newWeight,
+			Y: prev.Y*oldWeight + candidate.Y*newWeight,
+		}
+	}
+
+	rt.lastMoveTarget = chosen
+	rt.lastMoveTargetAt = now
+	rt.lastMoveTargetMode = mode
+	return chosen
+}
+
+func pickUnstuckMoveTarget(player *Player, rt *botRuntime, enemyPos PositionFloat, hasEnemy bool) PositionFloat {
+	if player == nil || player.Base == nil {
+		return PositionFloat{}
+	}
+	self := IntToFloat(player.Base.GetPosition())
+	angle := rand.Float64() * 2 * math.Pi
+	radius := float32(460 + rand.Intn(260))
+
+	target := PositionFloat{
+		X: self.X + radius*float32(math.Cos(angle)),
+		Y: self.Y + radius*float32(math.Sin(angle)),
+	}
+
+	if hasEnemy && rand.Float64() < 0.45 {
+		advance := float32(0.24)
+		if rt != nil {
+			advance += rt.aggression * 0.12
+		}
+		target = PositionFloat{
+			X: self.X + (enemyPos.X-self.X)*advance + float32(rand.Intn(580)-290),
+			Y: self.Y + (enemyPos.Y-self.Y)*advance + float32(rand.Intn(580)-290),
+		}
+	}
+
+	return ClampPositionFloatToMap(target, 120)
+}
+
 func findEnemyForRuntime(player *Player, rt *botRuntime) (PositionFloat, bool, float64, string) {
 	if player == nil || player.Base == nil {
 		return PositionFloat{}, false, 0, ""
@@ -3868,8 +4287,15 @@ func findEnemyForRuntime(player *Player, rt *botRuntime) (PositionFloat, bool, f
 	now := time.Now()
 	if rt.targetPlayerID != 0 && now.Before(rt.targetLockedUntil) {
 		if target := getEnemyByID(player, rt.targetPlayerID); target != nil {
-			setBotTargetIntent(player.ID, target.ID)
-			return enemySnapshotFromTarget(player, target)
+			// Human players are only valid attack targets after they leave their base zone.
+			if !target.IsBot && !isHumanTargetExposedOutsideBase(target) {
+				rt.targetPlayerID = 0
+				rt.targetLockedUntil = time.Time{}
+				clearBotTargetIntent(player.ID)
+			} else {
+				setBotTargetIntent(player.ID, target.ID)
+				return enemySnapshotFromTarget(player, target)
+			}
 		}
 		rt.targetPlayerID = 0
 		rt.targetLockedUntil = time.Time{}
@@ -4040,6 +4466,8 @@ func chooseStrategicEnemyTarget(player *Player, rt *botRuntime) *Player {
 	}
 
 	selfPos := IntToFloat(player.Base.GetPosition())
+	preferredHuman := closestHumanTargetForBot(player)
+	isPreferredHunter := preferredHuman != nil && isBotAmongClosestToTarget(player, preferredHuman, 2)
 	var best *Player
 	bestScore := -1e9
 
@@ -4054,6 +4482,9 @@ func chooseStrategicEnemyTarget(player *Player, rt *botRuntime) *Player {
 		if target == nil || target.ID == player.ID || target.IsMarkedForRemoval() || target.Base == nil {
 			continue
 		}
+		if !target.IsBot && !isHumanTargetExposedOutsideBase(target) {
+			continue
+		}
 
 		targetPos := IntToFloat(target.Base.GetPosition())
 		dist := selfPos.DistanceTo(targetPos)
@@ -4066,6 +4497,16 @@ func chooseStrategicEnemyTarget(player *Player, rt *botRuntime) *Player {
 			targetScore -= 0.9
 		} else {
 			targetScore += 1.4
+		}
+		if preferredHuman != nil && target.ID == preferredHuman.ID {
+			if isPreferredHunter {
+				// Force the two closest bots to pressure the closest human target.
+				targetScore += 3.1
+				targetScore += clampFloat64(1.3-float64(dist)/2400.0, -0.5, 1.3)
+			} else {
+				// Keep the rest from dogpiling the same player.
+				targetScore -= 2.0
+			}
 		}
 
 		// Distance preference differs by role.
@@ -4108,6 +4549,9 @@ func chooseStrategicEnemyTarget(player *Player, rt *botRuntime) *Player {
 		if !target.IsBot && (rt.teamplay > 0.58 || rt.role == roleSiege || rt.role == roleRaider) {
 			desiredTeammates = 2
 		}
+		if preferredHuman != nil && target.ID == preferredHuman.ID && isPreferredHunter {
+			desiredTeammates = 2
+		}
 		if crowd >= desiredTeammates {
 			targetScore -= float64(crowd-desiredTeammates+1) * (0.95 + float64(1-rt.teamplay)*0.5)
 		} else if crowd == desiredTeammates-1 && desiredTeammates >= 2 {
@@ -4129,6 +4573,96 @@ func chooseStrategicEnemyTarget(player *Player, rt *botRuntime) *Player {
 	}
 
 	return best
+}
+
+func closestHumanTargetForBot(player *Player) *Player {
+	if player == nil || player.Base == nil {
+		return nil
+	}
+	selfPos := IntToFloat(player.Base.GetPosition())
+	bestDist := float32(math.MaxFloat32)
+	var best *Player
+
+	State.RLock()
+	for _, other := range State.Players {
+		if other == nil || other.ID == player.ID || other.IsMarkedForRemoval() || other.Base == nil || other.IsBot {
+			continue
+		}
+		if !isHumanTargetExposedOutsideBase(other) {
+			continue
+		}
+		dist := selfPos.DistanceTo(IntToFloat(other.Base.GetPosition()))
+		if dist < bestDist {
+			bestDist = dist
+			best = other
+		}
+	}
+	State.RUnlock()
+
+	return best
+}
+
+func isHumanTargetExposedOutsideBase(target *Player) bool {
+	if target == nil || target.IsBot || target.Base == nil {
+		return false
+	}
+
+	basePos := IntToFloat(target.Base.GetPosition())
+	// Treat the spawn-protection ring as the "base zone" for bot targeting.
+	baseZoneRadius := float32(PLAYER_SPAWN_PROTECTION_RADIUS)
+
+	target.RLock()
+	defer target.RUnlock()
+
+	for _, unit := range target.Units {
+		if unit == nil || unit.IsMarkedForRemoval() {
+			continue
+		}
+		if !unit.IsWithinRadius(basePos, baseZoneRadius+float32(unit.Size)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isBotAmongClosestToTarget(bot *Player, target *Player, limit int) bool {
+	if bot == nil || target == nil || bot.Base == nil || target.Base == nil || limit <= 0 {
+		return false
+	}
+
+	type botDist struct {
+		id   ID
+		dist float32
+	}
+	targetPos := IntToFloat(target.Base.GetPosition())
+	candidates := make([]botDist, 0, 16)
+
+	State.RLock()
+	for _, other := range State.Players {
+		if other == nil || other.IsMarkedForRemoval() || !other.IsBot || other.Base == nil {
+			continue
+		}
+		if other.ID == target.ID {
+			continue
+		}
+		dist := targetPos.DistanceTo(IntToFloat(other.Base.GetPosition()))
+		candidates = append(candidates, botDist{id: other.ID, dist: dist})
+	}
+	State.RUnlock()
+
+	if len(candidates) == 0 {
+		return false
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].dist < candidates[j].dist })
+	if limit > len(candidates) {
+		limit = len(candidates)
+	}
+	for i := 0; i < limit; i++ {
+		if candidates[i].id == bot.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func clampFloat64(v float64, low float64, high float64) float64 {
@@ -5108,8 +5642,8 @@ func buildBotSocialPayload(player *Player, rt *botRuntime) botSocialPayload {
 }
 
 func getRecentSocialChatLog(tickWindow int, maxItems int) []botSocialChatEntry {
-	globalBotSocialChatLogMu.Lock()
-	defer globalBotSocialChatLogMu.Unlock()
+	globalBotSocialChatLogMu.RLock()
+	defer globalBotSocialChatLogMu.RUnlock()
 	if len(globalBotSocialChatLog) == 0 {
 		return nil
 	}
@@ -5382,12 +5916,12 @@ func buildSocialMatchMeta(chatLog []botSocialChatEntry) botSocialMatchMeta {
 	}
 
 	var fastest *botSocialFastestElimination
-	globalBotSocialChatLogMu.Lock()
+	globalBotSocialChatLogMu.RLock()
 	if globalBotFastestElimination != nil {
 		copyValue := *globalBotFastestElimination
 		fastest = &copyValue
 	}
-	globalBotSocialChatLogMu.Unlock()
+	globalBotSocialChatLogMu.RUnlock()
 
 	return botSocialMatchMeta{
 		WhoIsWinning:                 winner,
@@ -5469,9 +6003,9 @@ func buildSocialRelationshipsSnapshot(rt *botRuntime, observed []botObservedPlay
 }
 
 func currentSocialTick() int {
-	globalBotSocialChatLogMu.Lock()
+	globalBotSocialChatLogMu.RLock()
 	tick := globalBotSocialTick
-	globalBotSocialChatLogMu.Unlock()
+	globalBotSocialChatLogMu.RUnlock()
 	return tick
 }
 
