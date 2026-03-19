@@ -34,7 +34,8 @@ export default class Message {
         const skinByteArray = new Uint8Array(1);
         skinByteArray[0] = skinByte;
 
-        // Preferred non-skin color index (palette index on server)
+        // Preferred non-skin color index (palette index on server).
+        // Bit7 is reserved for join-security flags.
         let colorIndexByte = 0;
         if (typeof preferredColorIndex === 'number' && !Number.isNaN(preferredColorIndex)) {
             colorIndexByte = Math.max(0, Math.min(255, preferredColorIndex));
@@ -276,6 +277,12 @@ export default class Message {
         const payload = new Uint8Array(1);
         payload[0] = targetPlayerID;
         return new Message(MessageTypes.CLIENT_WATCH_LEAVE_BASE, payload);
+    }
+
+    static createClientSecurityAlertMessage (reasonCode = 0) {
+        const payload = new Uint8Array(1);
+        payload[0] = Math.max(0, Math.min(255, Number(reasonCode) || 0));
+        return new Message(MessageTypes.CLIENT_SECURITY_ALERT, payload);
     }
 
 

@@ -119,13 +119,16 @@ class BlobfuscatorPlugin {
         }
       }
 
-      fs.writeFileSync("blobfuscator/debug.txt", "", "utf-8");
-      fs.appendFileSync("blobfuscator/debug.txt", `Key-Mapping:\n` + JSON.stringify(keyMapping, null, 2) + "\n", "utf-8");
+      const emitDebugFile = this.options.emitDebugFile === true;
+      if (emitDebugFile) {
+        fs.writeFileSync("blobfuscator/debug.txt", "", "utf-8");
+        fs.appendFileSync("blobfuscator/debug.txt", `Key-Mapping:\n` + JSON.stringify(keyMapping, null, 2) + "\n", "utf-8");
 
-      const unusedWords = includedWords.filter(word => !usedWords.has(word));
-      if (unusedWords.length > 0) {
-        const text = `\nUnused Words:\n${unusedWords.join(", ")}\n\n`;
-        fs.writeFileSync("blobfuscator/debug.txt", text + fs.readFileSync("blobfuscator/debug.txt", "utf-8"));
+        const unusedWords = includedWords.filter(word => !usedWords.has(word));
+        if (unusedWords.length > 0) {
+          const text = `\nUnused Words:\n${unusedWords.join(", ")}\n\n`;
+          fs.writeFileSync("blobfuscator/debug.txt", text + fs.readFileSync("blobfuscator/debug.txt", "utf-8"));
+        }
       }
 
       callback();

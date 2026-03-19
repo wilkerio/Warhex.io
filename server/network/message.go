@@ -4,6 +4,7 @@ package network
 const (
 	ErrorCodeServerFull       byte = 0
 	ErrorCodeRelocateCooldown byte = 1
+	ErrorCodeUnauthorizedExt  byte = 2
 )
 
 const (
@@ -67,6 +68,7 @@ const (
 	MessageTypeClientBuyRelocateBase    byte = 51
 	MessageTypeWildPortalsUpdate        byte = 52
 	MessageTypeClientWatchLeaveBase     byte = 53
+	MessageTypeClientSecurityAlert      byte = 54
 	MessageTypeHeartbeat                byte = 69
 	MessageTypeServerVersion            byte = 98
 	MessageTypeRebootAlertMessage       byte = 99

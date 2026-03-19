@@ -160,8 +160,12 @@ export default class Core {
     }
 
     handlePlayButtonPress (playerName, equippedSkin) {
-        this.setGameplayActive(true);
-        this.networkManager.joinGame(playerName, equippedSkin)
+        const joinRequested = this.networkManager.joinGame(playerName, equippedSkin);
+        if (joinRequested !== false) {
+            this.setGameplayActive(true);
+        } else {
+            this.setGameplayActive(false);
+        }
     }
 
     setGameplayActive (active) {

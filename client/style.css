@@ -67,6 +67,16 @@ img {
   margin-top: 6px;
 }
 
+#menu-dialog .menu-card,
+#menu-dialog .menu-card h2,
+#menu-dialog .menu-card p {
+  color: #ffffff;
+}
+
+#menu-dialog #menu-dialog-button {
+  color: #ffffff;
+}
+
 #login-dialog{
   display: none;
 }

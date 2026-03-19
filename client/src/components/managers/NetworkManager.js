@@ -15,6 +15,28 @@ import WildPortal from "../../entities/objective/WildPortal.js";
 import SkinCache from "../SkinCache.js";
 import { clearLocalAuthState, consumeOAuthCallbackSession, ensureUserRow, fetchSkins, fetchUserRowById, invalidateGlobalLeaderboardCache, signUp, signIn, signOut, getCurrentUser, onAuthStateChange, supabase, restoreSessionFromStorage, updateUserProgressStats, updateUserProgressStatsKeepalive } from "../../network/supabaseClient.js";
 
+const JOIN_SECURITY_FLAG_UNAUTHORIZED_EXTENSION = 0x80;
+const KNOWN_GAME_EDITING_EXTENSIONS = [
+    { label: "Tampermonkey", tokens: ["tampermonkey"] },
+    { label: "Violentmonkey", tokens: ["violentmonkey"] },
+    { label: "Greasemonkey", tokens: ["greasemonkey"] },
+    { label: "Userscripts", tokens: ["userscripts"] },
+    { label: "FireMonkey", tokens: ["firemonkey"] },
+    { label: "OrangeMonkey", tokens: ["orangemonkey"] },
+    { label: "ScriptCat", tokens: ["scriptcat"] },
+    { label: "User JavaScript and CSS", tokens: ["user javascript and css"] },
+    { label: "Custom JavaScript for Websites 2", tokens: ["custom javascript for websites"] },
+    { label: "Stylus", tokens: ["stylus"] },
+    { label: "Stylebot", tokens: ["stylebot"] },
+    { label: "Resource Override", tokens: ["resource override"] },
+];
+
+const SECURITY_ALERT_REASON = {
+    DEVTOOLS_SHORTCUT: 1,
+    VIEW_SOURCE_SHORTCUT: 2,
+    DEVTOOLS_OPENED: 3,
+};
+
 export default class NetworkManager {
     constructor (serverAddress, core) {
         this.network = new Network(serverAddress);
@@ -50,6 +72,12 @@ export default class NetworkManager {
         ];
         this.ownerNamePrefix = "OWNER_";
         this.ownerAccountActive = false;
+        this.pendingUnauthorizedJoinBlockNotice = false;
+        this.securityViolationReported = false;
+        this.securityViolationReason = 0;
+        this.securityGuardBound = false;
+        this.devtoolsOpenStreak = 0;
+        this.devtoolsDetectorTimer = null;
 
         // Use async initialization for login status
         // this.initialize();
@@ -59,6 +87,7 @@ export default class NetworkManager {
 
         // Monitor bandwidth every second
         this.monitorBandwidth();
+        this.setupClientSecurityGuards();
     }
 
     _bindUnloadStatsSync () {
@@ -1173,6 +1202,15 @@ export default class NetworkManager {
             return;
         }
 
+        if (payload?.code === ErrorCodes.UNAUTHORIZED_EXTENSION) {
+            if (this.pendingUnauthorizedJoinBlockNotice) {
+                this.pendingUnauthorizedJoinBlockNotice = false;
+                return;
+            }
+            this.showUnauthorizedExtensionBlock();
+            return;
+        }
+
         this.core.uiManager.showMenuDialog(
             "Connection Issue",
             "Oops! We couldn't connect to the server.",
@@ -2138,6 +2176,9 @@ export default class NetworkManager {
 
     // Send a message to the server
     sendMessage (message) {
+        if (this.securityViolationReported && message?.type !== MessageTypes.CLIENT_SECURITY_ALERT) {
+            return;
+        }
         if (message instanceof Message) {
             this.network.sendMessage(message);
         } else {
@@ -2146,12 +2187,222 @@ export default class NetworkManager {
         }
     }
 
+    securityReasonLabel(reasonCode) {
+        switch (reasonCode) {
+            case SECURITY_ALERT_REASON.DEVTOOLS_SHORTCUT:
+                return "DevTools shortcut detected";
+            case SECURITY_ALERT_REASON.VIEW_SOURCE_SHORTCUT:
+                return "Source/inspect shortcut detected";
+            case SECURITY_ALERT_REASON.DEVTOOLS_OPENED:
+                return "Developer tools panel detected";
+            default:
+                return "Security rule triggered";
+        }
+    }
+
+    showSecurityViolationDialog(reasonCode) {
+        const reasonText = this.securityReasonLabel(reasonCode);
+        this.core?.uiManager?.showMenuDialog(
+            "Security Violation",
+            `${reasonText}. Session blocked.`,
+            "DevTools/inspect shortcuts are not allowed in this match.",
+            "Close DevTools and reload the page if you want to play.",
+            "Understood",
+            "If this was accidental, refresh and try again."
+        );
+        this.core?.setGameplayActive?.(false);
+    }
+
+    reportClientSecurityViolation(reasonCode) {
+        if (this.securityViolationReported) {
+            return;
+        }
+        this.securityViolationReported = true;
+        this.securityViolationReason = reasonCode;
+        this.showSecurityViolationDialog(reasonCode);
+
+        const msg = Message.createClientSecurityAlertMessage(reasonCode);
+        this.sendMessage(msg);
+
+        try {
+            this.network?.worker?.postMessage?.({ type: "disconnect" });
+        } catch (error) {}
+    }
+
+    setupClientSecurityGuards() {
+        if (this.securityGuardBound || typeof window === "undefined") {
+            return;
+        }
+        this.securityGuardBound = true;
+
+        window.addEventListener("keydown", (event) => {
+            if (this.securityViolationReported) {
+                return;
+            }
+
+            const keyRaw = String(event.key || "");
+            const key = keyRaw.toLowerCase();
+            const ctrlOrMeta = event.ctrlKey || event.metaKey;
+            let reason = 0;
+
+            if (keyRaw === "F12") {
+                reason = SECURITY_ALERT_REASON.DEVTOOLS_SHORTCUT;
+            } else if (ctrlOrMeta && event.shiftKey && (key === "i" || key === "j" || key === "c" || key === "k")) {
+                reason = SECURITY_ALERT_REASON.DEVTOOLS_SHORTCUT;
+            } else if (ctrlOrMeta && (key === "u" || key === "s")) {
+                reason = SECURITY_ALERT_REASON.VIEW_SOURCE_SHORTCUT;
+            }
+
+            if (reason !== 0) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.reportClientSecurityViolation(reason);
+            }
+        }, true);
+
+        this.devtoolsDetectorTimer = window.setInterval(() => {
+            if (this.securityViolationReported) {
+                return;
+            }
+            const widthGap = Math.abs((window.outerWidth || 0) - (window.innerWidth || 0));
+            const heightGap = Math.abs((window.outerHeight || 0) - (window.innerHeight || 0));
+            const looksOpen = widthGap > 170 || heightGap > 170;
+
+            if (looksOpen) {
+                this.devtoolsOpenStreak += 1;
+            } else {
+                this.devtoolsOpenStreak = 0;
+            }
+
+            if (this.devtoolsOpenStreak >= 2) {
+                this.reportClientSecurityViolation(SECURITY_ALERT_REASON.DEVTOOLS_OPENED);
+            }
+        }, 700);
+    }
+
+    getKnownEditingExtensionCatalog () {
+        return KNOWN_GAME_EDITING_EXTENSIONS.map((ext) => ext.label);
+    }
+
+    scanJoinEnvironmentForUnauthorizedExtensions () {
+        const detected = new Set();
+        const addDetected = (label) => {
+            if (typeof label === "string" && label.trim() !== "") {
+                detected.add(label);
+            }
+        };
+
+        const win = typeof window !== "undefined" ? window : null;
+        const doc = typeof document !== "undefined" ? document : null;
+        const userscriptSources = [];
+        const addUserscriptSource = (value) => {
+            const source = String(value || "").trim();
+            if (!source) return;
+            if (!userscriptSources.includes(source)) {
+                userscriptSources.push(source);
+            }
+        };
+
+        if (win) {
+            const userscriptAPIKeys = [
+                "GM",
+                "GM_info",
+                "GM_addStyle",
+                "GM_xmlhttpRequest",
+                "GM_registerMenuCommand",
+                "unsafeWindow"
+            ];
+            if (userscriptAPIKeys.some((key) => typeof win[key] !== "undefined")) {
+                addDetected("Userscript API");
+            }
+
+            const runtimeUserscriptSources = Array.isArray(win.__WARHEX_USERSCRIPT_SOURCES__)
+                ? win.__WARHEX_USERSCRIPT_SOURCES__
+                : [];
+            if (runtimeUserscriptSources.length > 0) {
+                addDetected("UserScript (*.user.js)");
+                runtimeUserscriptSources.forEach((source) => addUserscriptSource(source));
+            }
+
+            const globalKeys = Object.keys(win);
+            for (const key of globalKeys) {
+                const lower = String(key || "").toLowerCase();
+                for (const ext of KNOWN_GAME_EDITING_EXTENSIONS) {
+                    if (ext.tokens.some((token) => lower.includes(token))) {
+                        addDetected(ext.label);
+                    }
+                }
+            }
+        }
+
+        if (doc) {
+            const nodes = doc.querySelectorAll("script[src],link[href],style[id],style[class],iframe[src]");
+            nodes.forEach((node) => {
+                const source = String(node.src || node.href || node.id || node.className || "").toLowerCase();
+                if (!source) return;
+                if (source.includes(".user.js")) {
+                    addDetected("UserScript (*.user.js)");
+                    addUserscriptSource(source);
+                }
+                for (const ext of KNOWN_GAME_EDITING_EXTENSIONS) {
+                    if (ext.tokens.some((token) => source.includes(token))) {
+                        addDetected(ext.label);
+                    }
+                }
+            });
+        }
+
+        return {
+            blocked: detected.size > 0,
+            detectedExtensions: Array.from(detected),
+            userScriptSources: userscriptSources,
+        };
+    }
+
+    showUnauthorizedExtensionBlock (scan = null) {
+        const detected = Array.isArray(scan?.detectedExtensions) ? scan.detectedExtensions : [];
+        const source = Array.isArray(scan?.userScriptSources) ? scan.userScriptSources[0] : "";
+        const detectedText = detected.length > 0
+            ? detected.join(", ")
+            : "userscript/modification injector";
+        const commonList = this.getKnownEditingExtensionCatalog().join(", ");
+        const sourceLine = source
+            ? `Source sample: <b>${String(source).slice(0, 110)}</b>`
+            : "Turn it off, reload the page, and try again.";
+
+        this.core?.uiManager?.showMenuDialog(
+            "Unauthorized Extension Detected",
+            `Game start blocked. Detected: ${detectedText}.`,
+            "Disable any script/CSS editing extension before joining.",
+            `Common extension family list: <b>${commonList}</b>.`,
+            "Understood",
+            sourceLine
+        );
+        this.core?.setGameplayActive?.(false);
+    }
+
     // Join the game by sending a join message to the server
     joinGame (playerName, equippedSkin) {
+        if (this.securityViolationReported) {
+            this.showSecurityViolationDialog(this.securityViolationReason || SECURITY_ALERT_REASON.DEVTOOLS_SHORTCUT);
+            return false;
+        }
+
+        const scan = this.scanJoinEnvironmentForUnauthorizedExtensions();
+        let preferredColorIndex = Number(localStorage.getItem("defaultColorIndex")) || 0;
+        preferredColorIndex = Math.max(0, Math.min(127, preferredColorIndex));
+        if (scan.blocked) {
+            preferredColorIndex |= JOIN_SECURITY_FLAG_UNAUTHORIZED_EXTENSION;
+            this.pendingUnauthorizedJoinBlockNotice = true;
+            this.showUnauthorizedExtensionBlock(scan);
+        } else {
+            this.pendingUnauthorizedJoinBlockNotice = false;
+        }
+
         const fingerprint = this.getFingerPrint();
-        const preferredColorIndex = Number(localStorage.getItem("defaultColorIndex")) || 0;
         const message = Message.createJoinMessage(playerName, equippedSkin, preferredColorIndex, fingerprint);
         this.sendMessage(message);
+        return !scan.blocked;
     }
 
     placeBuilding (buildingType, position, isDefenseAction = false, placementRotationStep = 0) {

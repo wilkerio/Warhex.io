@@ -921,6 +921,18 @@ func sendRelocateCooldownError(conn *websocket.Conn, remainingSeconds uint16) {
 	sendToClient(conn, EncodeMessage(message), nil)
 }
 
+func sendUnauthorizedExtensionError(conn *websocket.Conn) {
+	message := Message{
+		Type: MessageTypeError,
+	}
+
+	buffer := new(bytes.Buffer)
+	buffer.WriteByte(ErrorCodeUnauthorizedExt)
+	message.Payload = buffer.Bytes()
+
+	sendToClient(conn, EncodeMessage(message), nil)
+}
+
 func SendServerVersion(conn *websocket.Conn, version byte) {
 	message := Message{
 		Type: MessageTypeServerVersion,

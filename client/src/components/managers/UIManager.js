@@ -5886,19 +5886,36 @@ export default class UIManager {
         this.showGameOverContainer(show);
     }
 
-    showMenuDialog (title, message1, message2 = "", message3 = "", buttonText = "Okay") {
+    showMenuDialog (title, message1, message2 = "", message3 = "", buttonText = "Okay", message4 = "") {
         const dialog = document.getElementById("menu-dialog");
         const dialogTitle = dialog.querySelector("h2");
         const dialogMessages = dialog.querySelectorAll("p");
         const dialogButton = document.getElementById("menu-dialog-button");
 
         if (dialog) {
-            //! Just keep the html content for now
-            //   dialogTitle.textContent = title;
-            //  dialogMessages[0].textContent = message1;
-            //  dialogMessages[1].innerHTML = message2;
-            //   dialogMessages[2].innerHTML = message3;
-            //   dialogButton.textContent = buttonText;
+            if (dialogTitle && typeof title === "string") {
+                dialogTitle.textContent = title;
+            }
+            if (dialogMessages[0] && typeof message1 === "string") {
+                dialogMessages[0].textContent = message1;
+            }
+            if (dialogMessages[1] && typeof message2 === "string") {
+                dialogMessages[1].innerHTML = message2;
+            }
+            if (dialogMessages[2] && typeof message3 === "string") {
+                dialogMessages[2].innerHTML = message3;
+            }
+            if (dialogMessages[3]) {
+                const fallbackFourthLine = typeof this.t === "function"
+                    ? this.t("menu.connectionTryAgain")
+                    : "Try again in a bit!";
+                dialogMessages[3].textContent = (typeof message4 === "string" && message4.trim() !== "")
+                    ? message4
+                    : fallbackFourthLine;
+            }
+            if (dialogButton && typeof buttonText === "string" && buttonText.trim() !== "") {
+                dialogButton.textContent = buttonText;
+            }
             dialog.style.display = "flex";
         }
         this.hideMenuSecondaryPanels = true;

@@ -16,6 +16,11 @@ import (
 var PORT = os.Getenv("PORT")
 var DISABLE_MULTIBOX_CHECK = false // Enforce multibox check by default (admins are still exempt).
 
+const (
+	joinSecurityFlagUnauthorizedExt byte = 0x80
+	joinSecurityColorMask           byte = 0x7F
+)
+
 func hasActiveUnits(player *game.Player) bool {
 	if player == nil {
 		return false
@@ -86,6 +91,8 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleClientX1ChallengeReply(conn, payload)
 	case MessageTypeClientWatchLeaveBase:
 		handleClientWatchLeaveBase(conn, payload)
+	case MessageTypeClientSecurityAlert:
+		handleClientSecurityAlert(conn, payload)
 
 	default:
 		log.Printf("Received unsupported message type: %d", messageType)
@@ -109,11 +116,19 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	// New join payload layout:
-	// [name...][equippedSkin:1][preferredColorIndex:1][fingerprint:4]
+	// Join payload layout:
+	// [name...][equippedSkin:1][preferredColorIndex+securityFlags:1][fingerprint:4]
 	name := payload[:len(payload)-6]
 	equippedSkin := payload[len(name)]
-	preferredColorIndex := payload[len(name)+1]
+	preferredColorRaw := payload[len(name)+1]
+	joinSecurityFlags := preferredColorRaw &^ joinSecurityColorMask
+	preferredColorIndex := preferredColorRaw & joinSecurityColorMask
+
+	if (joinSecurityFlags & joinSecurityFlagUnauthorizedExt) != 0 {
+		sendUnauthorizedExtensionError(conn)
+		conn.Close()
+		return
+	}
 
 	// Extract the fingerprint (last 4 bytes)
 	fingerprint := uint32(payload[len(payload)-4])<<24 |
@@ -1296,6 +1311,36 @@ func handleClientActivity(conn *websocket.Conn, payload []byte) {
 	player.SetLastActivity()
 	player.LastActivityWarningSent = time.Now()
 	SendPlayerActive(player)
+}
+
+func securityAlertReasonName(code byte) string {
+	switch code {
+	case 1:
+		return "devtools_shortcut"
+	case 2:
+		return "viewsource_shortcut"
+	case 3:
+		return "devtools_opened"
+	default:
+		return "unknown"
+	}
+}
+
+func handleClientSecurityAlert(conn *websocket.Conn, payload []byte) {
+	reason := byte(0)
+	if len(payload) > 0 {
+		reason = payload[0]
+	}
+
+	player, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		log.Printf("security alert before join from %s: reason=%d (%s)", conn.RemoteAddr().String(), reason, securityAlertReasonName(reason))
+		CloseConnection(conn)
+		return
+	}
+
+	log.Printf("security alert from player=%d reason=%d (%s)", player.ID, reason, securityAlertReasonName(reason))
+	game.TriggerKickEvent(player, game.KICK_REASON_SCRIPTING)
 }
 
 func handleToggleGroupUnitsMessage(conn *websocket.Conn, payload []byte) {

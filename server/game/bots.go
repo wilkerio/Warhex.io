@@ -183,6 +183,10 @@ type botRuntime struct {
 	cursor  float64
 	phase   int
 
+	legacyLayoutName   string
+	legacyLayoutSlots  []botLegacySocketSlot
+	legacyLayoutCursor int
+
 	nextBuildAt time.Time
 	nextMoveAt  time.Time
 	nextChatAt  time.Time
@@ -242,6 +246,18 @@ type botBuildingSummary struct {
 	turrets   int
 	snipers   int
 	buildings int
+}
+
+type botProfessionalTemplate struct {
+	Name            string
+	OpeningVariants [][]BuildingType
+	MidCycle        []BuildingType
+	UpgradePriority []BuildingType
+	TargetGens      int
+	TargetHouses    int
+	TargetBarracks  int
+	TargetWalls     int
+	TargetDefense   int
 }
 
 var botNamesPreset = []string{
@@ -731,6 +747,7 @@ func newBotRuntime(playerID ID, languageHint string, identity botIdentityPreset)
 		localBrain:         brain,
 		goChatMem:          chatMem,
 	}
+	refreshBotLegacyLayout(rt)
 	registerActiveLocalBrain(playerID, rt.localBrain)
 	registerActiveChatMemory(playerID, identity.ID, rt.goChatMem)
 	registerActiveBotRuntime(playerID, rt)
@@ -1593,7 +1610,28 @@ func applyBotAdvancedActions(player *Player, rt *botRuntime) {
 	}
 	rt.thought.tryCommander = false
 
-	if rt.thought.tryUpgrade || rand.Float32() < 0.08+rt.macroFocus*0.12 {
+	powerNow := readCurrentPower(player)
+	upgradeChance := float32(0.24) + rt.macroFocus*0.26
+	if powerNow >= 420 {
+		upgradeChance += 0.14
+	} else if powerNow >= 300 {
+		upgradeChance += 0.08
+	}
+	if underAttack {
+		upgradeChance -= 0.04
+	}
+	if rt.profile == profileEconomy {
+		upgradeChance += 0.06
+	} else if rt.profile == profileAttack {
+		upgradeChance += 0.03
+	}
+	if upgradeChance < 0.12 {
+		upgradeChance = 0.12
+	}
+	if upgradeChance > 0.78 {
+		upgradeChance = 0.78
+	}
+	if rt.thought.tryUpgrade || rand.Float32() < upgradeChance {
 		maybeUpgradeBuilding(player, rt)
 	}
 	rt.thought.tryUpgrade = false
@@ -1814,13 +1852,119 @@ func maybeDefendBurst(player *Player, rt *botRuntime) {
 	rt.lastDefendAt = time.Now()
 }
 
+func canSpendForUpgradeBudget(buildingType BuildingType, power uint16, reserve uint16, cost uint16, underAttack bool) bool {
+	if power < cost {
+		return false
+	}
+	requiredReserve := int(reserve) * 3 / 4
+	if requiredReserve < 60 {
+		requiredReserve = 60
+	}
+	if underAttack && (buildingType == WALL || buildingType == SIMPLE_TURRET || buildingType == SNIPER_TURRET) {
+		return int(power)-int(cost) >= requiredReserve/2
+	}
+	return int(power)-int(cost) >= requiredReserve
+}
+
+func scoreBotUpgradeOption(rt *botRuntime, buildingType BuildingType, currentVariant BuildingVariant, candidate BuildingVariant, cost uint16, power uint16, freePop int, underAttack bool, summary botBuildingSummary) float64 {
+	currentGen, _ := GetResourceGeneration(buildingType, currentVariant)
+	targetGen, _ := GetResourceGeneration(buildingType, candidate)
+	genGain := float64(int(targetGen.Power) - int(currentGen.Power))
+
+	currentCap, _ := GetPopulationCapacity(buildingType, currentVariant)
+	targetCap, _ := GetPopulationCapacity(buildingType, candidate)
+	capacityGain := float64(int(targetCap) - int(currentCap))
+
+	score := 0.35 + genGain*1.7 + capacityGain*0.24
+	switch buildingType {
+	case GENERATOR:
+		score += 1.05
+		if power < 240 {
+			score += 0.85
+		}
+	case HOUSE:
+		score += 0.75
+		if freePop <= 2 {
+			score += 0.75
+		}
+	case BARRACKS:
+		score += 0.95
+		if summary.barracks < 3 {
+			score += 0.55
+		}
+	case SIMPLE_TURRET:
+		score += 0.85
+		if underAttack {
+			score += 1.35
+		}
+	case SNIPER_TURRET:
+		score += 0.78
+		if underAttack {
+			score += 1.25
+		}
+	case WALL:
+		score += 0.62
+		if underAttack {
+			score += 1.40
+		}
+	case ARMORY:
+		score += 1.12
+	}
+	if currentVariant == BASIC_BUILDING {
+		switch buildingType {
+		case GENERATOR, HOUSE, BARRACKS:
+			score += 0.75
+		case SIMPLE_TURRET, SNIPER_TURRET:
+			score += 0.55
+		}
+	}
+
+	if rt != nil {
+		switch rt.profile {
+		case profileAttack:
+			if buildingType == BARRACKS || buildingType == ARMORY {
+				score += 0.65
+			}
+		case profileDefense:
+			if buildingType == WALL || buildingType == SIMPLE_TURRET || buildingType == SNIPER_TURRET {
+				score += 0.75
+			}
+		case profileEconomy:
+			if buildingType == GENERATOR || buildingType == HOUSE {
+				score += 0.68
+			}
+		}
+		template := getProfessionalTemplate(rt)
+		for idx, bt := range template.UpgradePriority {
+			if bt != buildingType {
+				continue
+			}
+			score += 0.85 - float64(idx)*0.08
+			break
+		}
+	}
+
+	costNorm := 1.0 + float64(cost)/540.0
+	score /= costNorm
+	if score < 0 {
+		return 0
+	}
+	return score
+}
+
 func maybeUpgradeBuilding(player *Player, rt *botRuntime) bool {
 	if player == nil || player.Base == nil || rt == nil {
 		return false
 	}
-	if time.Since(rt.lastUpgradeAt) < 22*time.Second {
+	if time.Since(rt.lastUpgradeAt) < 16*time.Second {
 		return false
 	}
+
+	power := readCurrentPower(player)
+	freePop := readFreePopulation(player)
+	underAttack := player.WasBaseDamagedWithin(12 * time.Second)
+	summary := summarizeBotBuildings(player.Base)
+	reserve := botPowerReserve(rt, summary, power, freePop, underAttack)
 
 	base := player.Base
 	base.RLock()
@@ -1836,9 +1980,10 @@ func maybeUpgradeBuilding(player *Player, rt *botRuntime) bool {
 		return false
 	}
 
-	rand.Shuffle(len(buildings), func(i, j int) {
-		buildings[i], buildings[j] = buildings[j], buildings[i]
-	})
+	var bestBuilding *Building
+	var bestVariant BuildingVariant
+	var bestCost uint16
+	bestScore := 0.0
 
 	for _, building := range buildings {
 		nextVariants := getBuildingNextVariants(building)
@@ -1846,8 +1991,6 @@ func maybeUpgradeBuilding(player *Player, rt *botRuntime) bool {
 			continue
 		}
 
-		var targetVariant BuildingVariant
-		foundVariant := false
 		for _, candidate := range nextVariants {
 			if building.Type == ARMORY && !isArmoryUpgradeAllowed(player, candidate) {
 				continue
@@ -1856,75 +1999,75 @@ func maybeUpgradeBuilding(player *Player, rt *botRuntime) bool {
 			if !ok {
 				continue
 			}
-			if readCurrentPower(player) >= cost {
-				targetVariant = candidate
-				foundVariant = true
-				break
+			if !canSpendForUpgradeBudget(building.Type, power, reserve, cost, underAttack) {
+				continue
+			}
+
+			score := scoreBotUpgradeOption(rt, building.Type, building.Variant, candidate, cost, power, freePop, underAttack, summary)
+			if score > bestScore {
+				bestScore = score
+				bestBuilding = building
+				bestVariant = candidate
+				bestCost = cost
 			}
 		}
-		if !foundVariant {
-			continue
-		}
-
-		cost, ok := GetBuildingCost(building.Type, targetVariant)
-		if !ok {
-			continue
-		}
-		if !player.Resources.Power.Decrement(cost) {
-			continue
-		}
-
-		// Mirror server-side upgrade flow used by player handlers.
-		if generating, ok := GetResourceGeneration(building.Type, building.Variant); ok {
-			player.Lock()
-			player.Generating.Power -= generating.Power
-			player.Unlock()
-		}
-		if generating, ok := GetResourceGeneration(building.Type, targetVariant); ok {
-			player.Lock()
-			player.Generating.Power += generating.Power
-			player.Unlock()
-		}
-
-		if capacity, ok := GetPopulationCapacity(building.Type, building.Variant); ok {
-			player.Population.DecrementCapacity(capacity)
-		}
-		if capacity, ok := GetPopulationCapacity(building.Type, targetVariant); ok {
-			player.Population.IncrementCapacity(capacity)
-		}
-
-		wasUnitSpawningActive := false
-		switch building.Type {
-		case BARRACKS:
-			unitSpawning := player.GetUnitSpawningForBarrack(building)
-			if unitSpawning != nil {
-				wasUnitSpawningActive = unitSpawning.Activated
-			}
-			player.RemoveUnitSpawning(building)
-		case SIMPLE_TURRET, SNIPER_TURRET:
-			base.RemoveBulletSpawning(building)
-		}
-
-		if !base.UpgradeBuilding(building.ID, targetVariant) {
-			player.Resources.Power.Increment(cost)
-			return false
-		}
-
-		switch building.Type {
-		case BARRACKS:
-			player.AddUnitSpawning(building, wasUnitSpawningActive)
-		case SIMPLE_TURRET, SNIPER_TURRET:
-			base.AddBulletSpawning(building)
-		case ARMORY:
-			applyArmoryUpgradeEffects(player, targetVariant)
-		}
-
-		TriggerBuildingsUpgradedEvent(base, []ID{building.ID})
-		rt.lastUpgradeAt = time.Now()
-		return true
 	}
 
-	return false
+	if bestBuilding == nil {
+		return false
+	}
+	if !player.Resources.Power.Decrement(bestCost) {
+		return false
+	}
+
+	// Mirror server-side upgrade flow used by player handlers.
+	if generating, ok := GetResourceGeneration(bestBuilding.Type, bestBuilding.Variant); ok {
+		player.Lock()
+		player.Generating.Power -= generating.Power
+		player.Unlock()
+	}
+	if generating, ok := GetResourceGeneration(bestBuilding.Type, bestVariant); ok {
+		player.Lock()
+		player.Generating.Power += generating.Power
+		player.Unlock()
+	}
+
+	if capacity, ok := GetPopulationCapacity(bestBuilding.Type, bestBuilding.Variant); ok {
+		player.Population.DecrementCapacity(capacity)
+	}
+	if capacity, ok := GetPopulationCapacity(bestBuilding.Type, bestVariant); ok {
+		player.Population.IncrementCapacity(capacity)
+	}
+
+	wasUnitSpawningActive := false
+	switch bestBuilding.Type {
+	case BARRACKS:
+		unitSpawning := player.GetUnitSpawningForBarrack(bestBuilding)
+		if unitSpawning != nil {
+			wasUnitSpawningActive = unitSpawning.Activated
+		}
+		player.RemoveUnitSpawning(bestBuilding)
+	case SIMPLE_TURRET, SNIPER_TURRET:
+		base.RemoveBulletSpawning(bestBuilding)
+	}
+
+	if !base.UpgradeBuilding(bestBuilding.ID, bestVariant) {
+		player.Resources.Power.Increment(bestCost)
+		return false
+	}
+
+	switch bestBuilding.Type {
+	case BARRACKS:
+		player.AddUnitSpawning(bestBuilding, wasUnitSpawningActive)
+	case SIMPLE_TURRET, SNIPER_TURRET:
+		base.AddBulletSpawning(bestBuilding)
+	case ARMORY:
+		applyArmoryUpgradeEffects(player, bestVariant)
+	}
+
+	TriggerBuildingsUpgradedEvent(base, []ID{bestBuilding.ID})
+	rt.lastUpgradeAt = time.Now()
+	return true
 }
 
 func getBuildingNextVariants(building *Building) []BuildingVariant {
@@ -2005,6 +2148,7 @@ func runBotBuild(player *Player, rt *botRuntime) bool {
 		return false
 	}
 	applyThoughtMenuStrategy(rt)
+	refreshBotLegacyLayout(rt)
 
 	applyBotAdvancedActions(player, rt)
 
@@ -2026,6 +2170,15 @@ func runBotBuild(player *Player, rt *botRuntime) bool {
 	_, hasEnemy, enemyAngle, _ := findEnemyForRuntime(player, rt)
 	if !hasEnemy {
 		enemyAngle = rt.anchorA
+	}
+	if tryBuildLegacyLayoutSlot(player, rt, summary, power, freePop, underAttack) {
+		rt.phase++
+		rt.cursor += math.Pi / 13
+		return true
+	}
+	if hasPendingLegacyLayout(rt) && !underAttack {
+		// Keep bots locked on the configured standard base instead of drifting to fallback builders.
+		return false
 	}
 
 	if llmMode {
@@ -2152,40 +2305,87 @@ func getFoundationTargets(rt *botRuntime) (gens int, houses int, barracks int, d
 	if rt == nil {
 		return 5, 3, 2, 4, 8, 9
 	}
+
+	gens, houses, barracks, defense, walls, units = 5, 3, 2, 4, 8, 9
 	switch rt.profile {
 	case profileAttack:
-		return 4, 3, 5, 4, 7, 12
+		gens, houses, barracks, defense, walls, units = 4, 3, 4, 4, 8, 12
 	case profileDefense:
-		return 6, 4, 2, 7, 16, 10
+		gens, houses, barracks, defense, walls, units = 6, 4, 2, 7, 16, 10
 	case profileHybrid:
-		return 6, 4, 3, 5, 11, 10
+		gens, houses, barracks, defense, walls, units = 6, 4, 3, 5, 11, 10
 	case profileEconomy:
-		return 9, 6, 2, 5, 11, 10
+		gens, houses, barracks, defense, walls, units = 9, 6, 2, 5, 11, 10
 	}
 	switch rt.basePlan {
 	case basePlanAutogens:
-		return 8, 5, 2, 4, 10, 10
+		gens = maxInt(gens, 8)
+		houses = maxInt(houses, 5)
+		defense = maxInt(defense, 4)
+		walls = maxInt(walls, 10)
+		units = maxInt(units, 10)
 	case basePlanExternAtk:
-		return 4, 3, 3, 4, 8, 9
+		barracks = maxInt(barracks, 4)
+		defense = maxInt(defense, 4)
+		walls = maxInt(walls, 8)
+		units = maxInt(units, 10)
 	case basePlanPublicTurtle:
-		return 6, 4, 2, 5, 12, 10
+		gens = maxInt(gens, 6)
+		houses = maxInt(houses, 4)
+		defense = maxInt(defense, 6)
+		walls = maxInt(walls, 14)
+		units = maxInt(units, 10)
 	case basePlanPublicHybrid:
-		return 6, 4, 3, 4, 9, 10
+		gens = maxInt(gens, 6)
+		houses = maxInt(houses, 4)
+		barracks = maxInt(barracks, 3)
+		defense = maxInt(defense, 5)
+		walls = maxInt(walls, 10)
+		units = maxInt(units, 10)
 	}
 	switch rt.role {
 	case roleGuardian:
-		return 6, 4, 2, 5, 12, 9
+		defense = maxInt(defense, 6)
+		walls = maxInt(walls, 14)
 	case roleRaider:
-		return 4, 3, 2, 3, 7, 8
+		barracks = maxInt(barracks, 4)
+		defense = maxInt(defense, 4)
+		units = maxInt(units, 11)
 	case roleSiege:
-		return 5, 3, 3, 4, 9, 10
+		barracks = maxInt(barracks, 4)
+		defense = maxInt(defense, 5)
+		units = maxInt(units, 11)
 	case roleEco:
-		return 7, 5, 2, 4, 10, 10
+		gens = maxInt(gens, 9)
+		houses = maxInt(houses, 6)
+		walls = maxInt(walls, 11)
 	case roleDuelist:
-		return 5, 3, 2, 3, 8, 8
-	default:
-		return 5, 3, 2, 4, 8, 9
+		barracks = maxInt(barracks, 4)
+		defense = maxInt(defense, 4)
+		units = maxInt(units, 10)
 	}
+
+	template := getProfessionalTemplate(rt)
+	if template.TargetGens > 0 {
+		gens = maxInt(gens, template.TargetGens-2)
+	}
+	if template.TargetHouses > 0 {
+		houses = maxInt(houses, template.TargetHouses-2)
+	}
+	if template.TargetBarracks > 0 {
+		barracks = maxInt(barracks, template.TargetBarracks-1)
+	}
+	if template.TargetDefense > 0 {
+		defense = maxInt(defense, template.TargetDefense-2)
+	}
+	if template.TargetWalls > 0 {
+		walls = maxInt(walls, template.TargetWalls-3)
+	}
+
+	if barracks > 4 {
+		barracks = 4
+	}
+	return gens, houses, barracks, defense, walls, units
 }
 
 func isBotBaseReadyForPush(player *Player, rt *botRuntime, summary botBuildingSummary, power uint16) bool {
@@ -2315,52 +2515,285 @@ func canAffordBuilding(buildingType BuildingType, power uint16) bool {
 	return power >= cost
 }
 
+func botPowerReserve(rt *botRuntime, s botBuildingSummary, power uint16, freePop int, underAttack bool) uint16 {
+	reserve := 80 + int(float64(power)*0.11)
+	if underAttack {
+		reserve += 110
+	}
+	if freePop <= 1 {
+		reserve += 65
+	}
+	if power < 260 {
+		reserve += 40
+	}
+	if s.barracks == 0 {
+		reserve -= 70
+	}
+	if rt != nil {
+		switch rt.role {
+		case roleEco, roleGuardian:
+			reserve += 90
+		case roleRaider, roleDuelist:
+			reserve -= 35
+		}
+		if rt.profile == profileAttack && !underAttack {
+			reserve -= 20
+		}
+		if rt.profile == profileDefense {
+			reserve += 30
+		}
+	}
+	if reserve < 50 {
+		reserve = 50
+	}
+	maxReserve := int(power) - 40
+	if maxReserve < 0 {
+		maxReserve = 0
+	}
+	if reserve > maxReserve {
+		reserve = maxReserve
+	}
+	return uint16(reserve)
+}
+
+func canAffordBuildingWithBudget(buildingType BuildingType, power uint16, reserve uint16, underAttack bool, freePop int) bool {
+	cost, ok := GetBuildingCost(buildingType, BASIC_BUILDING)
+	if !ok || power < cost {
+		return false
+	}
+
+	critical := (freePop <= 0 && buildingType == HOUSE) ||
+		(underAttack && (buildingType == WALL || buildingType == SIMPLE_TURRET || buildingType == SNIPER_TURRET))
+	if critical {
+		return true
+	}
+	requiredReserve := int(reserve) * 85 / 100
+	if requiredReserve < 50 {
+		requiredReserve = 50
+	}
+	return int(power)-int(cost) >= requiredReserve
+}
+
+func botBuildEconomicUrgency(buildingType BuildingType, rt *botRuntime, s botBuildingSummary, power uint16, freePop int, underAttack bool) float64 {
+	urgency := 1.0
+	defenseCount := s.turrets + s.snipers
+
+	switch buildingType {
+	case GENERATOR:
+		urgency += 0.55
+		if power < 220 {
+			urgency += 0.75
+		}
+		if s.gens <= s.houses {
+			urgency += 0.35
+		}
+		if rt != nil && (rt.profile == profileEconomy || rt.role == roleEco) {
+			urgency += 0.30
+		}
+	case HOUSE:
+		urgency += 0.45
+		if freePop <= 0 {
+			urgency += 1.50
+		} else if freePop <= 2 {
+			urgency += 0.70
+		}
+		if s.houses < 3 {
+			urgency += 0.30
+		}
+	case BARRACKS:
+		urgency += 0.55
+		if s.barracks == 0 {
+			urgency += 1.15
+		}
+		if rt != nil && (rt.profile == profileAttack || rt.role == roleRaider || rt.role == roleSiege) {
+			urgency += 0.35
+		}
+		if underAttack {
+			urgency -= 0.15
+		}
+	case SIMPLE_TURRET:
+		urgency += 0.55
+		if defenseCount < 2 {
+			urgency += 0.60
+		}
+		if underAttack {
+			urgency += 0.90
+		}
+	case SNIPER_TURRET:
+		urgency += 0.35
+		if defenseCount < 2 {
+			urgency += 0.45
+		}
+		if underAttack {
+			urgency += 0.75
+		}
+	case WALL:
+		urgency += 0.50
+		if s.walls < 7 {
+			urgency += 0.45
+		}
+		if underAttack {
+			urgency += 1.10
+		}
+	}
+
+	if rt != nil && rt.basePlan == basePlanExternAtk && buildingType == BARRACKS {
+		urgency += 0.35
+	}
+	if rt != nil && rt.basePlan == basePlanAutogens && buildingType == GENERATOR {
+		urgency += 0.35
+	}
+
+	if urgency < 0.1 {
+		urgency = 0.1
+	}
+	return urgency
+}
+
+func applyProfessionalTemplateCountWeights(weights map[BuildingType]float64, rt *botRuntime, s botBuildingSummary, underAttack bool) {
+	template := getProfessionalTemplate(rt)
+	if template.TargetGens <= 0 && template.TargetHouses <= 0 && template.TargetBarracks <= 0 && template.TargetWalls <= 0 && template.TargetDefense <= 0 {
+		return
+	}
+
+	defenseCount := s.turrets + s.snipers
+
+	gensGap := template.TargetGens - s.gens
+	housesGap := template.TargetHouses - s.houses
+	barracksGap := template.TargetBarracks - s.barracks
+	wallsGap := template.TargetWalls - s.walls
+	defenseGap := template.TargetDefense - defenseCount
+
+	if gensGap > 0 {
+		weights[GENERATOR] += float64(gensGap) * 0.9
+	} else if gensGap < -2 {
+		weights[GENERATOR] -= 0.35
+	}
+	if housesGap > 0 {
+		weights[HOUSE] += float64(housesGap) * 0.75
+	}
+	if barracksGap > 0 {
+		weights[BARRACKS] += float64(barracksGap) * 0.95
+	} else if barracksGap < -1 {
+		weights[BARRACKS] -= 0.3
+	}
+	if wallsGap > 0 {
+		weights[WALL] += float64(wallsGap) * 0.55
+	}
+	if defenseGap > 0 {
+		weights[SIMPLE_TURRET] += float64(defenseGap) * 0.82
+		weights[SNIPER_TURRET] += float64(defenseGap) * 0.58
+	}
+
+	if underAttack {
+		weights[WALL] += 1.0
+		weights[SIMPLE_TURRET] += 0.9
+		weights[SNIPER_TURRET] += 0.7
+	}
+}
+
+func applyBotMathEconomyWeights(weights map[BuildingType]float64, rt *botRuntime, s botBuildingSummary, power uint16, freePop int, underAttack bool) {
+	reserve := botPowerReserve(rt, s, power, freePop, underAttack)
+
+	for bt, w := range weights {
+		if w <= 0 {
+			continue
+		}
+
+		cost, ok := GetBuildingCost(bt, BASIC_BUILDING)
+		if !ok {
+			weights[bt] = 0
+			continue
+		}
+		if power < cost {
+			weights[bt] = 0
+			continue
+		}
+
+		if !canAffordBuildingWithBudget(bt, power, reserve, underAttack, freePop) {
+			weights[bt] = w * 0.28
+			continue
+		}
+
+		urgency := botBuildEconomicUrgency(bt, rt, s, power, freePop, underAttack)
+		costNorm := 1.0 + math.Sqrt(float64(cost))/19.0
+		budgetHeadroom := float64(int(power)-int(cost)-int(reserve)) / float64(int(cost)+120)
+		budgetHeadroom = clampFloat64(budgetHeadroom, -0.45, 1.4)
+		liquidityMul := 0.86 + budgetHeadroom*0.34
+		if liquidityMul < 0.35 {
+			liquidityMul = 0.35
+		}
+
+		adjusted := w * urgency * liquidityMul / costNorm
+		if adjusted < 0.03 {
+			adjusted = 0.03
+		}
+		weights[bt] = adjusted
+	}
+}
+
 func chooseAIBuildType(rt *botRuntime, s botBuildingSummary, power uint16, freePop int, underAttack bool) (BuildingType, bool) {
 	if rt == nil {
 		return 0, false
 	}
 
+	reserve := botPowerReserve(rt, s, power, freePop, underAttack)
 	if freePop <= 0 && canAffordBuilding(HOUSE, power) {
 		return HOUSE, true
 	}
-	if power < 180 && canAffordBuilding(GENERATOR, power) {
+	if power < 180 && canAffordBuildingWithBudget(GENERATOR, power, reserve, underAttack, freePop) {
 		return GENERATOR, true
 	}
 
 	for i := 0; i < len(rt.thought.buildSequence); i++ {
 		bt := rt.thought.buildSequence[i]
-		if !canAffordBuilding(bt, power) {
+		if !canAffordBuildingWithBudget(bt, power, reserve, underAttack, freePop) {
 			continue
 		}
 		rt.thought.buildSequence = append(rt.thought.buildSequence[:i], rt.thought.buildSequence[i+1:]...)
 		return bt, true
 	}
 
+	bestHint := BuildingType(0)
+	bestHintScore := -1.0
 	for _, bt := range rt.thought.buildHints {
-		if canAffordBuilding(bt, power) {
-			return bt, true
+		if !canAffordBuildingWithBudget(bt, power, reserve, underAttack, freePop) {
+			continue
 		}
+		cost, ok := GetBuildingCost(bt, BASIC_BUILDING)
+		if !ok {
+			continue
+		}
+		urgency := botBuildEconomicUrgency(bt, rt, s, power, freePop, underAttack)
+		score := urgency / (1.0 + float64(cost)/300.0)
+		if score > bestHintScore {
+			bestHintScore = score
+			bestHint = bt
+		}
+	}
+	if bestHintScore >= 0 {
+		return bestHint, true
 	}
 
 	// Safety fallback if model output is temporarily empty.
 	if underAttack {
-		if canAffordBuilding(WALL, power) {
+		if canAffordBuildingWithBudget(WALL, power, reserve, underAttack, freePop) {
 			return WALL, true
 		}
-		if canAffordBuilding(SIMPLE_TURRET, power) {
+		if canAffordBuildingWithBudget(SIMPLE_TURRET, power, reserve, underAttack, freePop) {
 			return SIMPLE_TURRET, true
 		}
 	}
-	if s.gens <= s.houses && canAffordBuilding(GENERATOR, power) {
+	if s.gens <= s.houses && canAffordBuildingWithBudget(GENERATOR, power, reserve, underAttack, freePop) {
 		return GENERATOR, true
 	}
-	if s.houses < 4 && canAffordBuilding(HOUSE, power) {
+	if s.houses < 4 && canAffordBuildingWithBudget(HOUSE, power, reserve, underAttack, freePop) {
 		return HOUSE, true
 	}
-	if s.barracks < 3 && canAffordBuilding(BARRACKS, power) {
+	if s.barracks < 3 && canAffordBuildingWithBudget(BARRACKS, power, reserve, underAttack, freePop) {
 		return BARRACKS, true
 	}
-	if canAffordBuilding(SIMPLE_TURRET, power) {
+	if canAffordBuildingWithBudget(SIMPLE_TURRET, power, reserve, underAttack, freePop) {
 		return SIMPLE_TURRET, true
 	}
 	return 0, false
@@ -2368,7 +2801,10 @@ func chooseAIBuildType(rt *botRuntime, s botBuildingSummary, power uint16, freeP
 
 func chooseBuildType(rt *botRuntime, s botBuildingSummary, power uint16, freePop int, underAttack bool, hints []BuildingType) (BuildingType, bool) {
 	if bt, ok := chooseScriptedOpening(rt, s); ok {
-		return bt, true
+		reserve := botPowerReserve(rt, s, power, freePop, underAttack)
+		if canAffordBuildingWithBudget(bt, power, reserve, underAttack, freePop) {
+			return bt, true
+		}
 	}
 
 	weights := map[BuildingType]float64{
@@ -2524,75 +2960,215 @@ func chooseBuildType(rt *botRuntime, s botBuildingSummary, power uint16, freePop
 		}
 	}
 
+	applyProfessionalTemplateCountWeights(weights, rt, s, underAttack)
+	applyBotMathEconomyWeights(weights, rt, s, power, freePop, underAttack)
+
 	return weightedPickBuilding(weights)
 }
 
-func chooseScriptedOpening(rt *botRuntime, s botBuildingSummary) (BuildingType, bool) {
-	var sequence []BuildingType
+func getProfessionalTemplate(rt *botRuntime) botProfessionalTemplate {
+	if rt == nil {
+		return botProfessionalTemplate{}
+	}
+
 	switch rt.basePlan {
 	case basePlanAutogens:
-		sequence = []BuildingType{
-			GENERATOR, HOUSE, GENERATOR, HOUSE, GENERATOR, HOUSE, WALL, SIMPLE_TURRET,
-			GENERATOR, HOUSE, BARRACKS, GENERATOR, HOUSE, SIMPLE_TURRET, WALL, BARRACKS,
-			GENERATOR, HOUSE, SNIPER_TURRET,
+		return botProfessionalTemplate{
+			Name: "Autogen Fortress",
+			OpeningVariants: [][]BuildingType{
+				{
+					GENERATOR, HOUSE, GENERATOR, HOUSE, WALL, GENERATOR, HOUSE, SIMPLE_TURRET,
+					GENERATOR, HOUSE, BARRACKS, WALL, SIMPLE_TURRET, GENERATOR, HOUSE, SNIPER_TURRET,
+					WALL, BARRACKS, GENERATOR, HOUSE, SIMPLE_TURRET, WALL,
+				},
+				{
+					GENERATOR, HOUSE, WALL, GENERATOR, HOUSE, SIMPLE_TURRET, GENERATOR, HOUSE,
+					WALL, SNIPER_TURRET, GENERATOR, BARRACKS, HOUSE, WALL, SIMPLE_TURRET, GENERATOR,
+					HOUSE, BARRACKS, WALL, SNIPER_TURRET, GENERATOR, HOUSE,
+				},
+				{
+					GENERATOR, HOUSE, GENERATOR, HOUSE, WALL, SIMPLE_TURRET, GENERATOR, HOUSE,
+					WALL, SNIPER_TURRET, GENERATOR, HOUSE, WALL, SIMPLE_TURRET, BARRACKS, GENERATOR,
+					HOUSE, WALL, SNIPER_TURRET, BARRACKS, GENERATOR, HOUSE, WALL, SIMPLE_TURRET,
+				},
+			},
+			MidCycle:        []BuildingType{GENERATOR, HOUSE, WALL, SIMPLE_TURRET, BARRACKS, SNIPER_TURRET},
+			UpgradePriority: []BuildingType{GENERATOR, HOUSE, BARRACKS, SIMPLE_TURRET, SNIPER_TURRET, WALL},
+			TargetGens:      11,
+			TargetHouses:    8,
+			TargetBarracks:  3,
+			TargetWalls:     15,
+			TargetDefense:   8,
 		}
 	case basePlanExternAtk:
-		sequence = []BuildingType{
-			BARRACKS, GENERATOR, HOUSE, BARRACKS, SIMPLE_TURRET, WALL, BARRACKS, GENERATOR,
-			SIMPLE_TURRET, WALL, BARRACKS, SNIPER_TURRET, HOUSE, BARRACKS, WALL, SIMPLE_TURRET,
+		return botProfessionalTemplate{
+			Name: "Extern Spearhead",
+			OpeningVariants: [][]BuildingType{
+				{
+					BARRACKS, GENERATOR, HOUSE, BARRACKS, SIMPLE_TURRET, WALL, BARRACKS, HOUSE,
+					SIMPLE_TURRET, BARRACKS, GENERATOR, WALL, SNIPER_TURRET, BARRACKS, HOUSE, SIMPLE_TURRET,
+					WALL, BARRACKS, GENERATOR, SNIPER_TURRET, SIMPLE_TURRET,
+				},
+				{
+					GENERATOR, BARRACKS, HOUSE, BARRACKS, SIMPLE_TURRET, BARRACKS, WALL, HOUSE,
+					SIMPLE_TURRET, GENERATOR, BARRACKS, WALL, SNIPER_TURRET, BARRACKS, HOUSE, SIMPLE_TURRET,
+					WALL, BARRACKS, GENERATOR, SNIPER_TURRET, SIMPLE_TURRET,
+				},
+				{
+					BARRACKS, BARRACKS, HOUSE, GENERATOR, SIMPLE_TURRET, WALL, BARRACKS, HOUSE,
+					SIMPLE_TURRET, BARRACKS, WALL, SNIPER_TURRET, BARRACKS, HOUSE, SIMPLE_TURRET, GENERATOR,
+					WALL, BARRACKS, SNIPER_TURRET, SIMPLE_TURRET, HOUSE, GENERATOR, WALL,
+				},
+			},
+			MidCycle:        []BuildingType{BARRACKS, SIMPLE_TURRET, WALL, BARRACKS, SNIPER_TURRET, HOUSE, GENERATOR},
+			UpgradePriority: []BuildingType{BARRACKS, SIMPLE_TURRET, SNIPER_TURRET, GENERATOR, HOUSE, WALL, ARMORY},
+			TargetGens:      7,
+			TargetHouses:    6,
+			TargetBarracks:  4,
+			TargetWalls:     11,
+			TargetDefense:   7,
 		}
 	case basePlanPublicTurtle:
-		sequence = []BuildingType{
-			GENERATOR, HOUSE, WALL, SIMPLE_TURRET, WALL, GENERATOR, HOUSE, SNIPER_TURRET,
-			WALL, BARRACKS, SIMPLE_TURRET, WALL, BARRACKS,
-		}
-	case basePlanPublicHybrid:
-		sequence = []BuildingType{
-			GENERATOR, BARRACKS, HOUSE, SIMPLE_TURRET, GENERATOR, WALL, HOUSE, BARRACKS,
-			SNIPER_TURRET, WALL, GENERATOR, SIMPLE_TURRET,
+		return botProfessionalTemplate{
+			Name: "Turtle Citadel",
+			OpeningVariants: [][]BuildingType{
+				{
+					GENERATOR, HOUSE, WALL, WALL, SIMPLE_TURRET, GENERATOR, HOUSE, SNIPER_TURRET,
+					WALL, SIMPLE_TURRET, WALL, BARRACKS, HOUSE, GENERATOR, WALL, SNIPER_TURRET,
+					BARRACKS, WALL, SIMPLE_TURRET, HOUSE, WALL, GENERATOR,
+				},
+				{
+					GENERATOR, HOUSE, WALL, SIMPLE_TURRET, WALL, GENERATOR, HOUSE, SNIPER_TURRET,
+					WALL, WALL, SIMPLE_TURRET, BARRACKS, GENERATOR, HOUSE, WALL, SNIPER_TURRET,
+					BARRACKS, WALL, SIMPLE_TURRET, HOUSE, WALL, GENERATOR,
+				},
+				{
+					GENERATOR, HOUSE, WALL, WALL, SIMPLE_TURRET, WALL, GENERATOR, HOUSE,
+					SNIPER_TURRET, WALL, SIMPLE_TURRET, WALL, BARRACKS, GENERATOR, HOUSE, WALL,
+					SNIPER_TURRET, WALL, SIMPLE_TURRET, BARRACKS, WALL, GENERATOR, HOUSE, WALL, SIMPLE_TURRET,
+				},
+			},
+			MidCycle:        []BuildingType{WALL, SIMPLE_TURRET, WALL, SNIPER_TURRET, GENERATOR, HOUSE, BARRACKS},
+			UpgradePriority: []BuildingType{WALL, SIMPLE_TURRET, SNIPER_TURRET, GENERATOR, HOUSE, BARRACKS},
+			TargetGens:      10,
+			TargetHouses:    6,
+			TargetBarracks:  3,
+			TargetWalls:     20,
+			TargetDefense:   10,
 		}
 	default:
-		switch rt.profile {
-		case profileAttack:
-			sequence = []BuildingType{
-				GENERATOR, HOUSE, BARRACKS, BARRACKS, WALL, SIMPLE_TURRET, BARRACKS,
-				SIMPLE_TURRET, WALL, SNIPER_TURRET, BARRACKS, HOUSE, BARRACKS, WALL,
-			}
-		case profileDefense:
-			sequence = []BuildingType{
-				GENERATOR, HOUSE, WALL, WALL, SIMPLE_TURRET, GENERATOR, WALL,
-				HOUSE, SNIPER_TURRET, WALL, SIMPLE_TURRET, BARRACKS, WALL, BARRACKS, SNIPER_TURRET,
-			}
-		case profileHybrid:
-			sequence = []BuildingType{
-				GENERATOR, HOUSE, BARRACKS, WALL, SIMPLE_TURRET, GENERATOR, HOUSE,
-				BARRACKS, SNIPER_TURRET, WALL, SIMPLE_TURRET, BARRACKS, GENERATOR, WALL,
-			}
-		case profileEconomy:
-			sequence = []BuildingType{
-				GENERATOR, HOUSE, GENERATOR, HOUSE, GENERATOR, WALL, SIMPLE_TURRET,
-				GENERATOR, HOUSE, BARRACKS, GENERATOR, HOUSE, SIMPLE_TURRET, WALL, BARRACKS,
-			}
-		default:
-			switch rt.archetype {
-			case archetypeFortress:
-				sequence = []BuildingType{
-					GENERATOR, HOUSE, WALL, WALL, SIMPLE_TURRET, BARRACKS, WALL, SNIPER_TURRET,
-				}
-			case archetypeSpearhead:
-				sequence = []BuildingType{
-					BARRACKS, GENERATOR, HOUSE, SIMPLE_TURRET, BARRACKS, WALL, GENERATOR, SIMPLE_TURRET,
-				}
-			case archetypePinwheel:
-				sequence = []BuildingType{
-					GENERATOR, BARRACKS, WALL, HOUSE, SIMPLE_TURRET, WALL, GENERATOR, BARRACKS,
-				}
-			default: // archetypeNomad
-				sequence = []BuildingType{
-					GENERATOR, HOUSE, GENERATOR, BARRACKS, SIMPLE_TURRET, HOUSE, WALL, SNIPER_TURRET,
-				}
-			}
+		return botProfessionalTemplate{
+			Name: "Hybrid Control",
+			OpeningVariants: [][]BuildingType{
+				{
+					GENERATOR, HOUSE, BARRACKS, SIMPLE_TURRET, WALL, GENERATOR, HOUSE, BARRACKS,
+					SNIPER_TURRET, WALL, SIMPLE_TURRET, GENERATOR, HOUSE, BARRACKS, WALL, SIMPLE_TURRET,
+					GENERATOR, HOUSE, SNIPER_TURRET, BARRACKS, WALL,
+				},
+				{
+					GENERATOR, BARRACKS, HOUSE, SIMPLE_TURRET, WALL, GENERATOR, HOUSE, BARRACKS,
+					SIMPLE_TURRET, WALL, SNIPER_TURRET, GENERATOR, HOUSE, BARRACKS, WALL, SIMPLE_TURRET,
+					GENERATOR, HOUSE, SNIPER_TURRET, BARRACKS, WALL,
+				},
+				{
+					GENERATOR, HOUSE, BARRACKS, SIMPLE_TURRET, WALL, GENERATOR, HOUSE, BARRACKS,
+					SIMPLE_TURRET, SNIPER_TURRET, WALL, BARRACKS, GENERATOR, HOUSE, WALL, SIMPLE_TURRET,
+					BARRACKS, GENERATOR, HOUSE, SNIPER_TURRET, WALL, SIMPLE_TURRET, BARRACKS,
+				},
+			},
+			MidCycle:        []BuildingType{BARRACKS, WALL, SIMPLE_TURRET, GENERATOR, HOUSE, SNIPER_TURRET},
+			UpgradePriority: []BuildingType{BARRACKS, GENERATOR, HOUSE, SIMPLE_TURRET, SNIPER_TURRET, WALL},
+			TargetGens:      9,
+			TargetHouses:    7,
+			TargetBarracks:  4,
+			TargetWalls:     13,
+			TargetDefense:   8,
 		}
+	}
+}
+
+func buildScriptedOpeningSequence(rt *botRuntime) []BuildingType {
+	template := getProfessionalTemplate(rt)
+	if len(template.OpeningVariants) == 0 {
+		return nil
+	}
+
+	idx := 0
+	if rt != nil && len(template.OpeningVariants) > 1 {
+		idx = int(rt.layoutDNA) % len(template.OpeningVariants)
+	}
+	if idx < 0 {
+		idx = -idx
+	}
+	return template.OpeningVariants[idx]
+}
+
+func applyOpeningPersonaTail(rt *botRuntime, sequence []BuildingType) []BuildingType {
+	if rt == nil || len(sequence) == 0 {
+		return sequence
+	}
+	switch rt.persona {
+	case personaArchitect:
+		sequence = append(sequence, WALL, SIMPLE_TURRET, GENERATOR, HOUSE)
+	case personaPredator:
+		sequence = append(sequence, BARRACKS, SIMPLE_TURRET, BARRACKS, WALL)
+	case personaSentinel:
+		sequence = append(sequence, WALL, SNIPER_TURRET, WALL, SIMPLE_TURRET)
+	case personaShotcaller:
+		sequence = append(sequence, BARRACKS, SIMPLE_TURRET, WALL, GENERATOR)
+	case personaWildcard:
+		if rt.layoutDNA%2 == 0 {
+			sequence = append(sequence, SIMPLE_TURRET, HOUSE, WALL, BARRACKS)
+		} else {
+			sequence = append(sequence, BARRACKS, WALL, GENERATOR, SNIPER_TURRET)
+		}
+	}
+	return sequence
+}
+
+func chooseScriptedOpeningExtension(rt *botRuntime, s botBuildingSummary, phase int) (BuildingType, bool) {
+	if rt == nil || phase < 0 {
+		return 0, false
+	}
+
+	template := getProfessionalTemplate(rt)
+	cycle := template.MidCycle
+	if len(cycle) == 0 {
+		return 0, false
+	}
+
+	bt := cycle[phase%len(cycle)]
+	if bt == BARRACKS && s.barracks >= 4 {
+		if rt.profile == profileAttack {
+			bt = SIMPLE_TURRET
+		} else {
+			bt = GENERATOR
+		}
+	}
+	if bt == WALL && s.walls >= 22 {
+		bt = SIMPLE_TURRET
+	}
+	if bt == GENERATOR && s.gens >= 14 {
+		bt = HOUSE
+	}
+	if bt == HOUSE && s.houses >= 10 {
+		bt = SIMPLE_TURRET
+	}
+	if bt == SNIPER_TURRET && s.snipers >= 4 {
+		bt = SIMPLE_TURRET
+	}
+	return bt, true
+}
+
+func chooseScriptedOpening(rt *botRuntime, s botBuildingSummary) (BuildingType, bool) {
+	if rt == nil {
+		return 0, false
+	}
+
+	sequence := buildScriptedOpeningSequence(rt)
+	sequence = applyOpeningPersonaTail(rt, sequence)
+	if len(sequence) == 0 {
+		return 0, false
 	}
 
 	if rt.phase < len(sequence) {
@@ -2600,7 +3176,21 @@ func chooseScriptedOpening(rt *botRuntime, s botBuildingSummary) (BuildingType, 
 		if bt == BARRACKS && s.barracks >= 4 {
 			return GENERATOR, true
 		}
+		if bt == GENERATOR && s.gens >= 14 {
+			return HOUSE, true
+		}
+		if bt == HOUSE && s.houses >= 10 {
+			return SIMPLE_TURRET, true
+		}
+		if bt == WALL && s.walls >= 22 {
+			return SIMPLE_TURRET, true
+		}
 		return bt, true
+	}
+
+	extensionPhase := rt.phase - len(sequence)
+	if extensionPhase < 12 {
+		return chooseScriptedOpeningExtension(rt, s, extensionPhase)
 	}
 	return 0, false
 }
@@ -2677,33 +3267,150 @@ func tryBuildBotBuilding(player *Player, rt *botRuntime, buildingType BuildingTy
 				continue
 			}
 
-			if !player.Resources.Power.Decrement(cost) {
-				return false
+			if placeBotBuildingAtPosition(player, buildingType, pos, rotationStep, cost) {
+				return true
 			}
-
-			building, placed := base.AddBuilding(buildingType, pos, rotationStep)
-			if !placed || building == nil {
-				player.Resources.Power.Increment(cost)
-				continue
-			}
-
-			if generating, ok := GetResourceGeneration(buildingType, BASIC_BUILDING); ok {
-				player.Lock()
-				player.Generating.Power += generating.Power
-				player.Unlock()
-			}
-
-			if capacity, ok := GetPopulationCapacity(buildingType, BASIC_BUILDING); ok {
-				player.Population.IncrementCapacity(capacity)
-			}
-
-			player.SetLastActivity()
-			TriggerBuildingPlacedEvent(base, building)
-			return true
 		}
 	}
 
 	return false
+}
+
+func tryBuildLegacyLayoutSlot(player *Player, rt *botRuntime, summary botBuildingSummary, power uint16, freePop int, underAttack bool) bool {
+	if player == nil || player.Base == nil || rt == nil {
+		return false
+	}
+	if len(rt.legacyLayoutSlots) == 0 || rt.legacyLayoutCursor >= len(rt.legacyLayoutSlots) {
+		return false
+	}
+	if player.WasBaseDamagedWithin(8*time.Second) && underAttack {
+		return false
+	}
+
+	const maxScanPerTick = 8
+	scanned := 0
+	start := rt.legacyLayoutCursor
+	end := start + maxScanPerTick
+	if end > len(rt.legacyLayoutSlots) {
+		end = len(rt.legacyLayoutSlots)
+	}
+
+	for idx := start; idx < end; idx++ {
+		slot := rt.legacyLayoutSlots[idx]
+		scanned++
+
+		if !isLegacySlotTypeStillUseful(slot.BuildingType, summary, freePop) {
+			if idx == rt.legacyLayoutCursor {
+				rt.legacyLayoutCursor++
+			}
+			continue
+		}
+		cost, ok := GetBuildingCost(slot.BuildingType, BASIC_BUILDING)
+		if !ok {
+			if idx == rt.legacyLayoutCursor {
+				rt.legacyLayoutCursor++
+			}
+			continue
+		}
+		if power < cost {
+			// Don't let expensive first slots (e.g. early armory) block the whole scripted base.
+			if idx == rt.legacyLayoutCursor && (slot.BuildingType == ARMORY || slot.BuildingType == BARRACKS) {
+				rt.legacyLayoutCursor++
+				continue
+			}
+			return false
+		}
+		if !tryBuildBotLegacySocket(player, rt, slot, cost) {
+			if idx == rt.legacyLayoutCursor {
+				rt.legacyLayoutCursor++
+			}
+			continue
+		}
+		rt.legacyLayoutCursor = idx + 1
+		return true
+	}
+	_ = scanned
+	return false
+}
+
+func hasPendingLegacyLayout(rt *botRuntime) bool {
+	if rt == nil {
+		return false
+	}
+	return rt.legacyLayoutName != "" && rt.legacyLayoutCursor < len(rt.legacyLayoutSlots)
+}
+
+func isLegacySlotTypeStillUseful(buildingType BuildingType, summary botBuildingSummary, freePop int) bool {
+	switch buildingType {
+	case BARRACKS:
+		return summary.barracks < 4
+	case GENERATOR:
+		return summary.gens < 15
+	case HOUSE:
+		return freePop <= 12 || summary.houses < 11
+	case WALL:
+		return summary.walls < 30
+	case SIMPLE_TURRET:
+		return summary.turrets < 10
+	case SNIPER_TURRET:
+		return summary.snipers < 8
+	default:
+		return true
+	}
+}
+
+func tryBuildBotLegacySocket(player *Player, rt *botRuntime, slot botLegacySocketSlot, cost uint16) bool {
+	if player == nil || player.Base == nil {
+		return false
+	}
+	basePos := IntToFloat(player.Base.GetPosition())
+	pos := PositionFloat{
+		X: basePos.X + slot.Radius*float32(math.Cos(slot.Angle)),
+		Y: basePos.Y + slot.Radius*float32(math.Sin(slot.Angle)),
+	}
+	sizePadding := float32(GetBuildingSize(slot.BuildingType) + 24)
+	pos = ClampPositionFloatToMap(pos, sizePadding)
+
+	rotationStep := uint8(0)
+	if slot.BuildingType == GENERATOR {
+		rotationStep = uint8((rt.phase + int(rt.layoutDNA)) % 6)
+	} else if slot.BuildingType == HOUSE {
+		rotationStep = uint8((rt.phase + int(rt.layoutDNA)) % 5)
+	}
+
+	if !player.Base.CheckBuildingCollision(slot.BuildingType, pos, rotationStep) {
+		return false
+	}
+	return placeBotBuildingAtPosition(player, slot.BuildingType, pos, rotationStep, cost)
+}
+
+func placeBotBuildingAtPosition(player *Player, buildingType BuildingType, pos PositionFloat, rotationStep uint8, cost uint16) bool {
+	if player == nil || player.Base == nil {
+		return false
+	}
+	if !player.Resources.Power.Decrement(cost) {
+		return false
+	}
+
+	building, placed := player.Base.AddBuilding(buildingType, pos, rotationStep)
+	if !placed || building == nil {
+		player.Resources.Power.Increment(cost)
+		return false
+	}
+
+	if generating, ok := GetResourceGeneration(buildingType, BASIC_BUILDING); ok {
+		player.Lock()
+		player.Generating.Power += generating.Power
+		player.Unlock()
+	}
+
+	if capacity, ok := GetPopulationCapacity(buildingType, BASIC_BUILDING); ok {
+		player.Population.IncrementCapacity(capacity)
+	}
+
+	player.SetLastActivity()
+	TriggerBuildingPlacedEvent(player.Base, building)
+	return true
 }
 
 func botAngleJitter(rt *botRuntime, buildingType BuildingType) float64 {
@@ -3114,13 +3821,14 @@ func runBotMovement(player *Player, rt *botRuntime) {
 		}
 	}
 
-	mode := chooseMoveMode(player, rt, len(units), hasEnemy, pushUnlocked, rt.thought.forceMode)
+	attackConfidence := computeBotAttackConfidence(player, rt, enemyPos, hasEnemy, len(units), power, pushUnlocked)
+	mode := chooseMoveMode(player, rt, len(units), hasEnemy, pushUnlocked, attackConfidence, rt.thought.forceMode)
 	rt.lastMode = mode
 	updateAttackCommit(player, rt, mode, hasEnemy)
 
 	applyBotGroupPreference(player, rt, mode)
 
-	target, ok := pickMoveTarget(player, rt, mode, enemyPos, hasEnemy, pushUnlocked, len(units))
+	target, ok := pickMoveTarget(player, rt, mode, enemyPos, hasEnemy, pushUnlocked, len(units), attackConfidence)
 	if !ok {
 		return
 	}
@@ -3211,6 +3919,119 @@ func enemySnapshotFromTarget(player *Player, target *Player) (PositionFloat, boo
 	targetPos := IntToFloat(target.Base.GetPosition())
 	angle := math.Atan2(float64(targetPos.Y-selfPos.Y), float64(targetPos.X-selfPos.X))
 	return targetPos, true, angle, getPlayerName(target)
+}
+
+func findAttackSnapshotEnemy(player *Player, rt *botRuntime, enemyPos PositionFloat) *Player {
+	if player == nil {
+		return nil
+	}
+	if rt != nil && rt.targetPlayerID != 0 {
+		if target := getEnemyByID(player, rt.targetPlayerID); target != nil {
+			return target
+		}
+	}
+
+	var best *Player
+	bestDist := float32(math.MaxFloat32)
+
+	State.RLock()
+	for _, other := range State.Players {
+		if other == nil || other.ID == player.ID || other.IsMarkedForRemoval() || other.Base == nil {
+			continue
+		}
+		pos := IntToFloat(other.Base.GetPosition())
+		dist := enemyPos.DistanceTo(pos)
+		if dist < bestDist {
+			bestDist = dist
+			best = other
+		}
+	}
+	State.RUnlock()
+
+	return best
+}
+
+func computeBotAttackConfidence(player *Player, rt *botRuntime, enemyPos PositionFloat, hasEnemy bool, unitCount int, power uint16, baseReady bool) float64 {
+	if player == nil || rt == nil {
+		return 0
+	}
+
+	score := 0.0
+	if hasEnemy {
+		score += 0.22
+	} else {
+		score -= 0.55
+	}
+	if baseReady {
+		score += 0.2
+	} else {
+		score -= 0.16
+	}
+
+	score += float64(rt.aggression) * 0.28
+	score += float64(rt.teamplay) * 0.12
+
+	switch {
+	case unitCount >= 12:
+		score += 0.28
+	case unitCount >= 9:
+		score += 0.18
+	case unitCount >= 7:
+		score += 0.08
+	default:
+		score -= 0.24
+	}
+
+	switch {
+	case power >= 420:
+		score += 0.17
+	case power >= 260:
+		score += 0.09
+	case power < 160:
+		score -= 0.14
+	}
+
+	if player.WasBaseDamagedWithin(10 * time.Second) {
+		score -= 0.42
+	}
+
+	target := findAttackSnapshotEnemy(player, rt, enemyPos)
+	if target != nil {
+		targetUnits := 0
+		target.RLock()
+		targetUnits = len(target.Units)
+		target.RUnlock()
+
+		targetPower := readCurrentPower(target)
+		targetHP := 1.0
+		if target.Base != nil {
+			target.Base.Health.RLock()
+			if target.Base.Health.Max > 0 {
+				targetHP = float64(target.Base.Health.Current) / float64(target.Base.Health.Max)
+			}
+			target.Base.Health.RUnlock()
+		}
+
+		score += clampFloat64(float64(unitCount-targetUnits)/8.0, -0.30, 0.28)
+		score += clampFloat64(float64(int(power)-int(targetPower))/500.0, -0.22, 0.20)
+		if targetHP < 0.45 {
+			score += 0.15
+		}
+		if targetHP > 0.85 && !baseReady {
+			score -= 0.12
+		}
+	}
+
+	switch rt.role {
+	case roleGuardian, roleEco:
+		if !baseReady {
+			score -= 0.1
+		}
+	case roleRaider, roleDuelist:
+		score += 0.08
+	}
+
+	return clampFloat64(score, 0.0, 1.0)
 }
 
 func chooseStrategicEnemyTarget(player *Player, rt *botRuntime) *Player {
@@ -3439,10 +4260,14 @@ func updateAttackCommit(player *Player, rt *botRuntime, mode botMoveMode, hasEne
 	rt.attackCommitUntil = now.Add(scaled)
 }
 
-func chooseMoveMode(player *Player, rt *botRuntime, unitCount int, hasEnemy bool, baseReady bool, forced *botMoveMode) botMoveMode {
+func chooseMoveMode(player *Player, rt *botRuntime, unitCount int, hasEnemy bool, baseReady bool, attackConfidence float64, forced *botMoveMode) botMoveMode {
 	now := time.Now()
 	attackLocked := now.Before(rt.attackUnlockedAt)
 	attackCommitted := hasEnemy && baseReady && now.Before(rt.attackCommitUntil)
+	if attackCommitted && attackConfidence < 0.24 {
+		rt.attackCommitUntil = time.Time{}
+		attackCommitted = false
+	}
 
 	if attackCommitted && !player.WasBaseDamagedWithin(10*time.Second) {
 		if rt.lastMode == moveFlank {
@@ -3455,6 +4280,9 @@ func chooseMoveMode(player *Player, rt *botRuntime, unitCount int, hasEnemy bool
 		if attackLocked && (*forced == movePressure || *forced == moveFlank) {
 			forced = nil
 		}
+		if attackConfidence < 0.30 && (*forced == movePressure || *forced == moveFlank) {
+			forced = nil
+		}
 	}
 	if forced != nil {
 		return *forced
@@ -3463,15 +4291,22 @@ func chooseMoveMode(player *Player, rt *botRuntime, unitCount int, hasEnemy bool
 		return moveDefend
 	}
 	if !baseReady {
-		if !attackLocked && unitCount >= 7 {
-			if rt.basePlan == basePlanExternAtk || rt.profile == profileAttack || rt.role == roleRaider {
-				if rand.Float32() < 0.42 {
+		if !attackLocked && hasEnemy && unitCount >= 6 {
+			aggressivePlan := rt.basePlan == basePlanExternAtk || rt.profile == profileAttack || rt.role == roleRaider
+			if aggressivePlan && attackConfidence >= 0.62 {
+				if rand.Float32() < float32(0.28+attackConfidence*0.35) {
 					return movePressure
 				}
 			}
-			if rt.basePlan == basePlanAutogens && unitCount >= 8 && hasEnemy && rand.Float32() < 0.24 {
-				return movePressure
+			if aggressivePlan && attackConfidence >= 0.78 && unitCount >= 8 && rand.Float32() < 0.22 {
+				return moveFlank
 			}
+		}
+		if attackConfidence < 0.22 {
+			if rt.role == roleGuardian || rt.role == roleEco {
+				return moveDefend
+			}
+			return moveRegroup
 		}
 		if unitCount <= 7 {
 			return moveRegroup
@@ -3492,10 +4327,21 @@ func chooseMoveMode(player *Player, rt *botRuntime, unitCount int, hasEnemy bool
 	if !hasEnemy {
 		return moveRegroup
 	}
+	if attackConfidence < 0.26 {
+		return moveDefend
+	}
+	if attackConfidence < 0.42 {
+		return moveRegroup
+	}
 
 	r := rand.Float32()
+	attackBias := float32(attackConfidence)
 	if rt.aggression > 0.72 && unitCount >= 8 && rt.role != roleEco {
-		if r < 0.58+rt.teamplay*0.22 {
+		pressureChance := float32(0.34) + attackBias*0.44 + rt.teamplay*0.18
+		if pressureChance > 0.9 {
+			pressureChance = 0.9
+		}
+		if r < pressureChance {
 			return movePressure
 		}
 		return moveFlank
@@ -3503,29 +4349,35 @@ func chooseMoveMode(player *Player, rt *botRuntime, unitCount int, hasEnemy bool
 
 	switch rt.role {
 	case roleGuardian:
-		if r < 0.45 {
+		if r < 0.42 {
 			return moveDefend
 		}
-		if r < 0.8 {
+		if attackConfidence < 0.62 || unitCount < 8 {
 			return moveRegroup
 		}
-		if unitCount >= 9 {
+		if r < 0.82 {
 			return movePressure
 		}
 		return moveRegroup
 	case roleRaider:
-		if unitCount >= 8 && r < 0.58 {
-			return moveFlank
-		}
-		if unitCount >= 7 && r < 0.84 {
-			return movePressure
-		}
-		if r < 0.92 {
+		if attackConfidence < 0.45 {
+			if r < 0.25 {
+				return moveDefend
+			}
 			return moveRegroup
 		}
-		return moveDefend
+		if unitCount >= 8 && r < 0.48+attackBias*0.2 {
+			return moveFlank
+		}
+		if unitCount >= 7 && r < 0.88 {
+			return movePressure
+		}
+		return moveRegroup
 	case roleSiege:
-		if unitCount >= 9 && r < 0.62 {
+		if attackConfidence < 0.4 {
+			return moveRegroup
+		}
+		if unitCount >= 9 && r < 0.55+attackBias*0.2 {
 			return movePressure
 		}
 		if unitCount >= 8 && r < 0.84 {
@@ -3536,30 +4388,36 @@ func chooseMoveMode(player *Player, rt *botRuntime, unitCount int, hasEnemy bool
 		}
 		return moveDefend
 	case roleEco:
-		if unitCount < 10 {
-			if r < 0.7 {
-				return moveRegroup
+		if attackConfidence < 0.52 {
+			if r < 0.35 {
+				return moveDefend
 			}
-			return moveDefend
-		}
-		if r < 0.18 {
-			return moveDefend
-		}
-		if r < 0.6 {
 			return moveRegroup
 		}
-		if r < 0.86 {
+		if unitCount < 9 {
+			return moveRegroup
+		}
+		if r < 0.2 {
+			return moveDefend
+		}
+		if r < 0.72 {
 			return movePressure
 		}
 		return moveFlank
 	case roleDuelist:
-		if unitCount >= 8 && r < 0.5 {
+		if attackConfidence < 0.45 {
+			if r < 0.2 {
+				return moveDefend
+			}
+			return moveRegroup
+		}
+		if unitCount >= 8 && r < 0.52 {
 			return moveFlank
 		}
-		if unitCount >= 7 && r < 0.78 {
+		if unitCount >= 7 && r < 0.86 {
 			return movePressure
 		}
-		if r < 0.9 {
+		if r < 0.93 {
 			return moveRegroup
 		}
 		return moveDefend
@@ -3577,7 +4435,7 @@ func chooseMoveMode(player *Player, rt *botRuntime, unitCount int, hasEnemy bool
 	}
 }
 
-func pickMoveTarget(player *Player, rt *botRuntime, mode botMoveMode, enemyPos PositionFloat, hasEnemy bool, baseReady bool, unitCount int) (PositionFloat, bool) {
+func pickMoveTarget(player *Player, rt *botRuntime, mode botMoveMode, enemyPos PositionFloat, hasEnemy bool, baseReady bool, unitCount int, attackConfidence float64) (PositionFloat, bool) {
 	if player == nil || player.Base == nil {
 		return PositionFloat{}, false
 	}
@@ -3587,20 +4445,36 @@ func pickMoveTarget(player *Player, rt *botRuntime, mode botMoveMode, enemyPos P
 	attackCommitted := time.Now().Before(rt.attackCommitUntil)
 	inWarmup := player.HasProtection() && time.Now().Before(rt.attackUnlockedAt)
 	if inWarmup || !baseReady {
-		if !inWarmup && !baseReady && hasEnemy && unitCount >= 7 {
-			aggressivePlan := rt.basePlan == basePlanExternAtk || rt.profile == profileAttack || rt.role == roleRaider
-			if aggressivePlan {
-				target = PositionFloat{
-					X: self.X + (enemyPos.X-self.X)*0.56 + float32(rand.Intn(300)-150),
-					Y: self.Y + (enemyPos.Y-self.Y)*0.56 + float32(rand.Intn(300)-150),
-				}
-				target = ClampPositionFloatToMap(target, 120)
-				return target, true
+		if hasEnemy {
+			progress := float32(0.34 + rt.aggression*0.18)
+			if !baseReady && attackConfidence >= 0.62 {
+				progress += 0.14
 			}
+			if inWarmup {
+				progress *= 0.72
+			}
+			if player.WasBaseDamagedWithin(10 * time.Second) {
+				progress -= 0.14
+			}
+			progress = clampFloat32(progress, 0.2, 0.7)
+
+			jitter := 190
+			if attackConfidence >= 0.62 {
+				jitter = 130
+			}
+			if inWarmup {
+				jitter = 90
+			}
+			target = PositionFloat{
+				X: self.X + (enemyPos.X-self.X)*progress + float32(rand.Intn(jitter*2)-jitter),
+				Y: self.Y + (enemyPos.Y-self.Y)*progress + float32(rand.Intn(jitter*2)-jitter),
+			}
+			target = ClampPositionFloatToMap(target, 120)
+			return target, true
 		}
-		spread := 110
+		spread := 180
 		if !baseReady {
-			spread = 170
+			spread = 260
 		}
 		target = PositionFloat{
 			X: self.X + float32(rand.Intn(spread*2)-spread),
@@ -3618,9 +4492,24 @@ func pickMoveTarget(player *Player, rt *botRuntime, mode botMoveMode, enemyPos P
 		}
 	case moveRegroup:
 		if hasEnemy {
+			advance := float32(0.40 + rt.aggression*0.18)
+			if attackConfidence > 0.68 {
+				advance += 0.1
+			}
+			if unitCount <= 5 {
+				advance -= 0.12
+			}
+			if player.WasBaseDamagedWithin(10 * time.Second) {
+				advance -= 0.14
+			}
+			advance = clampFloat32(advance, 0.24, 0.72)
+			jitter := 220
+			if attackCommitted {
+				jitter = 110
+			}
 			target = PositionFloat{
-				X: self.X + (enemyPos.X-self.X)*0.38 + float32(rand.Intn(260)-130),
-				Y: self.Y + (enemyPos.Y-self.Y)*0.38 + float32(rand.Intn(260)-130),
+				X: self.X + (enemyPos.X-self.X)*advance + float32(rand.Intn(jitter*2)-jitter),
+				Y: self.Y + (enemyPos.Y-self.Y)*advance + float32(rand.Intn(jitter*2)-jitter),
 			}
 		} else {
 			target = PositionFloat{
@@ -3636,18 +4525,28 @@ func pickMoveTarget(player *Player, rt *botRuntime, mode botMoveMode, enemyPos P
 		if attackCommitted {
 			jitter = 72
 		}
-		target = PositionFloat{
-			X: enemyPos.X + float32(rand.Intn(jitter*2)-jitter),
-			Y: enemyPos.Y + float32(rand.Intn(jitter*2)-jitter),
+		if attackConfidence < 0.45 {
+			target = PositionFloat{
+				X: self.X + (enemyPos.X-self.X)*0.72 + float32(rand.Intn(jitter*2)-jitter),
+				Y: self.Y + (enemyPos.Y-self.Y)*0.72 + float32(rand.Intn(jitter*2)-jitter),
+			}
+		} else {
+			target = PositionFloat{
+				X: enemyPos.X + float32(rand.Intn(jitter*2)-jitter),
+				Y: enemyPos.Y + float32(rand.Intn(jitter*2)-jitter),
+			}
 		}
 	case moveFlank:
 		if !hasEnemy {
 			return PositionFloat{}, false
 		}
 		flankAngle := rt.anchorA + (rand.Float64()-0.5)*0.55
-		flankRadius := float32(360)
+		flankRadius := float32(360 - attackConfidence*90)
 		if attackCommitted {
-			flankRadius = 240
+			flankRadius -= 70
+		}
+		if flankRadius < 190 {
+			flankRadius = 190
 		}
 		target = PositionFloat{
 			X: enemyPos.X + flankRadius*float32(math.Cos(flankAngle)),

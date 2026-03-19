@@ -1,7 +1,5 @@
 //! Because before that the old buildingLimits need to reset
 
-//! Just keep the html content for now
-
 //! Just used for trapper bullets currently
 
 //! Needs to be cleared after setNeutralCaptured

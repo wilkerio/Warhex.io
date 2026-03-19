@@ -87,6 +87,7 @@ export const MessageTypes = {
     BUY_RELOCATE_BASE: 51,
     WILD_PORTALS_UPDATE: 52,
     CLIENT_WATCH_LEAVE_BASE: 53,
+    CLIENT_SECURITY_ALERT: 54,
     HEARTBEAT: 69,
     SERVER_VERSION: 98,
     REBOOT_ALERT: 99,
@@ -95,7 +96,8 @@ export const MessageTypes = {
 
 export const ErrorCodes = {
     SERVER_FULL: 0,
-    RELOCATE_COOLDOWN: 1
+    RELOCATE_COOLDOWN: 1,
+    UNAUTHORIZED_EXTENSION: 2
 };
 
 export const BuildingPlacementFailReasons = {
