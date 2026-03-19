@@ -17,13 +17,14 @@ import { clearLocalAuthState, consumeOAuthCallbackSession, ensureUserRow, fetchS
 
 const JOIN_SECURITY_FLAG_UNAUTHORIZED_EXTENSION = 0x80;
 const KNOWN_GAME_EDITING_EXTENSIONS = [
-    { label: "Tampermonkey", tokens: ["tampermonkey"] },
-    { label: "Violentmonkey", tokens: ["violentmonkey"] },
+    { label: "Tampermonkey", tokens: ["tampermonkey", "tampermonk", "tempermonkey", "tempermonk"] },
+    { label: "Violentmonkey", tokens: ["violentmonkey", "violetmonkey", "violetnmonkey", "violetn"] },
     { label: "Greasemonkey", tokens: ["greasemonkey"] },
     { label: "Userscripts", tokens: ["userscripts"] },
     { label: "FireMonkey", tokens: ["firemonkey"] },
     { label: "OrangeMonkey", tokens: ["orangemonkey"] },
     { label: "ScriptCat", tokens: ["scriptcat"] },
+    { label: "Resoluce/Override Tool", tokens: ["resoluce", "resourceoverride"] },
     { label: "User JavaScript and CSS", tokens: ["user javascript and css"] },
     { label: "Custom JavaScript for Websites 2", tokens: ["custom javascript for websites"] },
     { label: "Stylus", tokens: ["stylus"] },
@@ -36,6 +37,18 @@ const SECURITY_ALERT_REASON = {
     VIEW_SOURCE_SHORTCUT: 2,
     DEVTOOLS_OPENED: 3,
 };
+
+const EXTENSION_SCHEME_MARKERS = [
+    "chrome-extension://",
+    "moz-extension://",
+    "safari-web-extension://",
+    "edge-extension://",
+];
+
+function resolveStrictClientSecurityGuards() {
+    // Strict mode always enabled.
+    return true;
+}
 
 export default class NetworkManager {
     constructor (serverAddress, core) {
@@ -78,6 +91,9 @@ export default class NetworkManager {
         this.securityGuardBound = false;
         this.devtoolsOpenStreak = 0;
         this.devtoolsDetectorTimer = null;
+        this.extensionWatchdogTimer = null;
+        this.unauthorizedExtensionDetected = false;
+        this.enforceStrictClientSecurity = resolveStrictClientSecurityGuards();
 
         // Use async initialization for login status
         // this.initialize();
@@ -88,6 +104,91 @@ export default class NetworkManager {
         // Monitor bandwidth every second
         this.monitorBandwidth();
         this.setupClientSecurityGuards();
+        this.setupUserScriptErrorTrap();
+        this.setupUnauthorizedExtensionWatchdog();
+    }
+
+    containsUnauthorizedExtensionMarkers(value) {
+        const lower = String(value || "").toLowerCase();
+        if (!lower) return false;
+        if (lower.includes(".user.js")) return true;
+        if (EXTENSION_SCHEME_MARKERS.some((scheme) => lower.includes(scheme))) return true;
+        return KNOWN_GAME_EDITING_EXTENSIONS.some((ext) => ext.tokens.some((token) => lower.includes(token)));
+    }
+
+    setupUserScriptErrorTrap() {
+        if (!this.enforceStrictClientSecurity || typeof window === "undefined") {
+            return;
+        }
+
+        const inspectRuntimeError = (source) => {
+            const text = String(source || "");
+            if (!this.containsUnauthorizedExtensionMarkers(text)) {
+                return;
+            }
+            this.handleUnauthorizedExtensionDetected({
+                blocked: true,
+                detectedExtensions: ["UserScript/Extension runtime"],
+                userScriptSources: [text],
+            });
+        };
+
+        window.addEventListener("error", (event) => {
+            const filename = event?.filename || "";
+            const message = event?.message || "";
+            const stack = event?.error?.stack || "";
+            inspectRuntimeError(`${filename}\n${message}\n${stack}`);
+        }, true);
+
+        window.addEventListener("unhandledrejection", (event) => {
+            const reason = event?.reason;
+            const text = typeof reason === "string"
+                ? reason
+                : `${reason?.message || ""}\n${reason?.stack || ""}`;
+            inspectRuntimeError(text);
+        }, true);
+    }
+
+    setupUnauthorizedExtensionWatchdog() {
+        if (!this.enforceStrictClientSecurity || typeof window === "undefined") {
+            return;
+        }
+        if (this.extensionWatchdogTimer) {
+            clearInterval(this.extensionWatchdogTimer);
+        }
+
+        const evaluate = () => {
+            if (this.securityViolationReported || this.unauthorizedExtensionDetected) {
+                return;
+            }
+            const scan = this.scanJoinEnvironmentForUnauthorizedExtensions();
+            if (scan.blocked) {
+                this.handleUnauthorizedExtensionDetected(scan);
+            }
+        };
+
+        evaluate();
+        this.extensionWatchdogTimer = window.setInterval(evaluate, 2200);
+    }
+
+    handleUnauthorizedExtensionDetected(scan) {
+        if (this.unauthorizedExtensionDetected) {
+            return;
+        }
+        this.unauthorizedExtensionDetected = true;
+        this.pendingUnauthorizedJoinBlockNotice = true;
+        this.showUnauthorizedExtensionBlock(scan);
+
+        try {
+            const msg = Message.createClientSecurityAlertMessage(SECURITY_ALERT_REASON.DEVTOOLS_OPENED);
+            this.sendMessage(msg);
+        } catch (error) {}
+
+        this.securityViolationReported = true;
+        this.securityViolationReason = SECURITY_ALERT_REASON.DEVTOOLS_OPENED;
+        try {
+            this.network?.worker?.postMessage?.({ type: "disconnect" });
+        } catch (error) {}
     }
 
     _bindUnloadStatsSync () {
@@ -2176,7 +2277,7 @@ export default class NetworkManager {
 
     // Send a message to the server
     sendMessage (message) {
-        if (this.securityViolationReported && message?.type !== MessageTypes.CLIENT_SECURITY_ALERT) {
+        if (this.enforceStrictClientSecurity && this.securityViolationReported && message?.type !== MessageTypes.CLIENT_SECURITY_ALERT) {
             return;
         }
         if (message instanceof Message) {
@@ -2214,6 +2315,9 @@ export default class NetworkManager {
     }
 
     reportClientSecurityViolation(reasonCode) {
+        if (!this.enforceStrictClientSecurity) {
+            return;
+        }
         if (this.securityViolationReported) {
             return;
         }
@@ -2230,7 +2334,7 @@ export default class NetworkManager {
     }
 
     setupClientSecurityGuards() {
-        if (this.securityGuardBound || typeof window === "undefined") {
+        if (!this.enforceStrictClientSecurity || this.securityGuardBound || typeof window === "undefined") {
             return;
         }
         this.securityGuardBound = true;
@@ -2291,6 +2395,26 @@ export default class NetworkManager {
                 detected.add(label);
             }
         };
+        const inspectTextForExtension = (value, fallbackLabel = "") => {
+            const text = String(value || "").toLowerCase();
+            if (!text) return;
+
+            if (text.includes(".user.js")) {
+                addDetected("UserScript (*.user.js)");
+                addUserscriptSource(text);
+            }
+
+            if (EXTENSION_SCHEME_MARKERS.some((scheme) => text.includes(scheme))) {
+                addDetected(fallbackLabel || "Browser Extension Injector");
+                addUserscriptSource(text);
+            }
+
+            for (const ext of KNOWN_GAME_EDITING_EXTENSIONS) {
+                if (ext.tokens.some((token) => text.includes(token))) {
+                    addDetected(ext.label);
+                }
+            }
+        };
 
         const win = typeof window !== "undefined" ? window : null;
         const doc = typeof document !== "undefined" ? document : null;
@@ -2302,6 +2426,16 @@ export default class NetworkManager {
                 userscriptSources.push(source);
             }
         };
+
+        if (win && win.__WARHEX_UNAUTHORIZED_EXTENSION_DETECTED__) {
+            addDetected("Early extension/userscript marker");
+            const earlySources = Array.isArray(win.__WARHEX_UNAUTHORIZED_EXTENSION_SOURCES__)
+                ? win.__WARHEX_UNAUTHORIZED_EXTENSION_SOURCES__
+                : [];
+            for (const source of earlySources) {
+                addUserscriptSource(source);
+            }
+        }
 
         if (win) {
             const userscriptAPIKeys = [
@@ -2316,6 +2450,22 @@ export default class NetworkManager {
                 addDetected("Userscript API");
             }
 
+            if (typeof win.GM_info !== "undefined") {
+                addDetected("Userscript API");
+                inspectTextForExtension(win.GM_info?.script?.name || "");
+                inspectTextForExtension(win.GM_info?.scriptHandler || "");
+            }
+
+            const userscriptManagerMarkers = [
+                "__violentmonkey",
+                "__violentmonkey_proxy",
+                "__tampermonkey",
+                "__greasemonkey"
+            ];
+            if (userscriptManagerMarkers.some((key) => typeof win[key] !== "undefined")) {
+                addDetected("UserScript Manager");
+            }
+
             const runtimeUserscriptSources = Array.isArray(win.__WARHEX_USERSCRIPT_SOURCES__)
                 ? win.__WARHEX_USERSCRIPT_SOURCES__
                 : [];
@@ -2326,29 +2476,38 @@ export default class NetworkManager {
 
             const globalKeys = Object.keys(win);
             for (const key of globalKeys) {
-                const lower = String(key || "").toLowerCase();
-                for (const ext of KNOWN_GAME_EDITING_EXTENSIONS) {
-                    if (ext.tokens.some((token) => lower.includes(token))) {
-                        addDetected(ext.label);
-                    }
+                inspectTextForExtension(key);
+            }
+
+            if (typeof win.performance?.getEntriesByType === "function") {
+                const resources = win.performance.getEntriesByType("resource") || [];
+                const maxScan = Math.min(resources.length, 250);
+                for (let i = 0; i < maxScan; i++) {
+                    inspectTextForExtension(resources[i]?.name, "Browser Extension Resource");
                 }
             }
         }
 
         if (doc) {
-            const nodes = doc.querySelectorAll("script[src],link[href],style[id],style[class],iframe[src]");
+            const nodes = doc.querySelectorAll("script,link,style,iframe");
             nodes.forEach((node) => {
-                const source = String(node.src || node.href || node.id || node.className || "").toLowerCase();
-                if (!source) return;
-                if (source.includes(".user.js")) {
-                    addDetected("UserScript (*.user.js)");
-                    addUserscriptSource(source);
-                }
-                for (const ext of KNOWN_GAME_EDITING_EXTENSIONS) {
-                    if (ext.tokens.some((token) => source.includes(token))) {
-                        addDetected(ext.label);
+                inspectTextForExtension(node.src || "");
+                inspectTextForExtension(node.href || "");
+                inspectTextForExtension(node.id || "");
+                inspectTextForExtension(node.className || "");
+                if (node && node.attributes && node.attributes.length > 0) {
+                    for (let i = 0; i < node.attributes.length; i++) {
+                        const attr = node.attributes[i];
+                        inspectTextForExtension(attr?.name || "");
+                        inspectTextForExtension(attr?.value || "");
                     }
                 }
+            });
+
+            const inlineScripts = doc.querySelectorAll("script:not([src])");
+            inlineScripts.forEach((scriptNode) => {
+                const sample = String(scriptNode?.textContent || "").slice(0, 3000);
+                inspectTextForExtension(sample);
             });
         }
 
@@ -2383,7 +2542,16 @@ export default class NetworkManager {
 
     // Join the game by sending a join message to the server
     joinGame (playerName, equippedSkin) {
-        if (this.securityViolationReported) {
+        if (this.enforceStrictClientSecurity && this.unauthorizedExtensionDetected) {
+            this.showUnauthorizedExtensionBlock({
+                blocked: true,
+                detectedExtensions: ["UserScript/Extension runtime"],
+                userScriptSources: [],
+            });
+            return false;
+        }
+
+        if (this.enforceStrictClientSecurity && this.securityViolationReported) {
             this.showSecurityViolationDialog(this.securityViolationReason || SECURITY_ALERT_REASON.DEVTOOLS_SHORTCUT);
             return false;
         }
@@ -2392,17 +2560,29 @@ export default class NetworkManager {
         let preferredColorIndex = Number(localStorage.getItem("defaultColorIndex")) || 0;
         preferredColorIndex = Math.max(0, Math.min(127, preferredColorIndex));
         if (scan.blocked) {
-            preferredColorIndex |= JOIN_SECURITY_FLAG_UNAUTHORIZED_EXTENSION;
-            this.pendingUnauthorizedJoinBlockNotice = true;
-            this.showUnauthorizedExtensionBlock(scan);
+            if (this.enforceStrictClientSecurity) {
+                this.handleUnauthorizedExtensionDetected(scan);
+                return false;
+            } else {
+                this.pendingUnauthorizedJoinBlockNotice = false;
+                this.core?.uiManager?.addChatMessage(
+                    "System",
+                    "Potential script/CSS extension detected. For fair play and fewer bugs, disable browser modifiers while playing.",
+                    "#ffcc66"
+                );
+            }
         } else {
             this.pendingUnauthorizedJoinBlockNotice = false;
         }
 
         const fingerprint = this.getFingerPrint();
+        // Keep compatibility with backend join-security bit when strict mode is active.
+        if (this.enforceStrictClientSecurity && scan.blocked) {
+            preferredColorIndex |= JOIN_SECURITY_FLAG_UNAUTHORIZED_EXTENSION;
+        }
         const message = Message.createJoinMessage(playerName, equippedSkin, preferredColorIndex, fingerprint);
         this.sendMessage(message);
-        return !scan.blocked;
+        return true;
     }
 
     placeBuilding (buildingType, position, isDefenseAction = false, placementRotationStep = 0) {

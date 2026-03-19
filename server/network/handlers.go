@@ -7,8 +7,10 @@ import (
 	"math/rand/v2"
 	"os"
 	"server/game"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 )
@@ -19,7 +21,28 @@ var DISABLE_MULTIBOX_CHECK = false // Enforce multibox check by default (admins 
 const (
 	joinSecurityFlagUnauthorizedExt byte = 0x80
 	joinSecurityColorMask           byte = 0x7F
+	maxChatMessageBytes             int  = 180
+	maxChatMessageRunes             int  = 120
+	maxBulkBuildingActions          int  = 40
 )
+
+var (
+	enforceClientExtensionBlock    = envBoolDefaultTrue("ENFORCE_CLIENT_EXTENSION_BLOCK")
+	enforceClientSecurityAlertKick = envBoolDefaultTrue("ENFORCE_CLIENT_SECURITY_ALERT_KICK")
+)
+
+func envBoolDefaultTrue(key string) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if raw == "" {
+		return true
+	}
+	switch raw {
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return true
+	}
+}
 
 func hasActiveUnits(player *game.Player) bool {
 	if player == nil {
@@ -125,9 +148,12 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	preferredColorIndex := preferredColorRaw & joinSecurityColorMask
 
 	if (joinSecurityFlags & joinSecurityFlagUnauthorizedExt) != 0 {
-		sendUnauthorizedExtensionError(conn)
-		conn.Close()
-		return
+		if enforceClientExtensionBlock {
+			sendUnauthorizedExtensionError(conn)
+			conn.Close()
+			return
+		}
+		log.Printf("join security flag detected but allowed (ENFORCE_CLIENT_EXTENSION_BLOCK=false): %s", conn.RemoteAddr().String())
 	}
 
 	// Extract the fingerprint (last 4 bytes)
@@ -169,6 +195,10 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	cleanName := filterProfanity(string(name))
+	cleanName = strings.TrimSpace(cleanName)
+	if cleanName == "" {
+		cleanName = "Player"
+	}
 
 	var skinData game.SkinData
 	var color []byte
@@ -570,6 +600,10 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 
 	buildingVariant := game.BuildingVariant(payload[0])
 	payload = payload[1:] // Skip buildingVariant
+	if len(payload) == 0 || len(payload) > maxBulkBuildingActions {
+		log.Println("Invalid number of buildings for upgrade message")
+		return
+	}
 
 	// Now, process each buildingID in the payload
 	var buildingIDs []game.ID
@@ -750,6 +784,10 @@ func handleDestroyBuildingsMessage(conn *websocket.Conn, payload []byte) {
 		payload = payload[2:] // Remove the second byte (neutralBaseID) for the building IDs processing
 	} else {
 		payload = payload[1:] // Remove the first byte (flag) for the building IDs processing
+	}
+	if len(payload) == 0 || len(payload) > maxBulkBuildingActions {
+		log.Println("Invalid number of buildings for destroy message")
+		return
 	}
 
 	// Now, process each buildingID in the payload
@@ -1283,8 +1321,13 @@ var (
 )
 
 func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
-	if len(payload) == 0 {
+	if len(payload) == 0 || len(payload) > maxChatMessageBytes {
 		log.Println("Invalid payload length for a chat message. Payload length:", len(payload))
+		return
+	}
+
+	if !utf8.Valid(payload) {
+		log.Println("Invalid UTF-8 payload for chat message")
 		return
 	}
 
@@ -1296,10 +1339,30 @@ func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
 
 	player.SetLastActivity()
 
-	// Copy payload to avoid race conditions
-	message := payload[:]
+	messageText := strings.TrimSpace(string(payload))
+	if messageText == "" {
+		return
+	}
+	if hasDisallowedControlChars(messageText) {
+		log.Println("Chat message rejected due to control characters")
+		return
+	}
+	messageRunes := []rune(messageText)
+	if len(messageRunes) > maxChatMessageRunes {
+		messageText = string(messageRunes[:maxChatMessageRunes])
+	}
+	message := []byte(messageText)
 
 	game.TriggerChatMessageEvent(player.ID, message)
+}
+
+func hasDisallowedControlChars(text string) bool {
+	for _, r := range text {
+		if r < 32 {
+			return true
+		}
+	}
+	return false
 }
 
 func handleClientActivity(conn *websocket.Conn, payload []byte) {
@@ -1335,12 +1398,16 @@ func handleClientSecurityAlert(conn *websocket.Conn, payload []byte) {
 	player, ok := game.GetPlayerByConn(conn)
 	if !ok {
 		log.Printf("security alert before join from %s: reason=%d (%s)", conn.RemoteAddr().String(), reason, securityAlertReasonName(reason))
-		CloseConnection(conn)
+		if enforceClientSecurityAlertKick {
+			CloseConnection(conn)
+		}
 		return
 	}
 
 	log.Printf("security alert from player=%d reason=%d (%s)", player.ID, reason, securityAlertReasonName(reason))
-	game.TriggerKickEvent(player, game.KICK_REASON_SCRIPTING)
+	if enforceClientSecurityAlertKick {
+		game.TriggerKickEvent(player, game.KICK_REASON_SCRIPTING)
+	}
 }
 
 func handleToggleGroupUnitsMessage(conn *websocket.Conn, payload []byte) {

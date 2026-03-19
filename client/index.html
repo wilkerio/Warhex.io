@@ -11,6 +11,90 @@
     <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
     <link rel="canonical" href="https://warhex.io/">
     <meta name="theme-color" content="#090416">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://pagead2.googlesyndication.com https://cdn.jsdelivr.net https://ep2.adtrafficquality.google https://*.googlesyndication.com https://*.doubleclick.net https://*.google.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https: http://127.0.0.1:* http://localhost:*; frame-src 'self' https://*.doubleclick.net https://*.googlesyndication.com https://*.google.com; media-src 'self' data: blob: https:; object-src 'none'; base-uri 'self'; form-action 'self';">
+    <script>
+        (function () {
+            const MARKERS = [
+                ".user.js",
+                "tampermonkey",
+                "tampermonk",
+                "tempermonkey",
+                "tempermonk",
+                "violentmonkey",
+                "violetmonkey",
+                "violetn",
+                "greasemonkey",
+                "userscripts",
+                "scriptcat",
+                "resoluce",
+                "resource override",
+                "chrome-extension://",
+                "moz-extension://",
+                "safari-web-extension://",
+                "edge-extension://",
+                "injected-web.js",
+                "injected.js"
+            ];
+
+            window.__WARHEX_UNAUTHORIZED_EXTENSION_DETECTED__ = false;
+            window.__WARHEX_UNAUTHORIZED_EXTENSION_SOURCES__ = [];
+
+            const addSource = (value) => {
+                const text = String(value || "").trim();
+                if (!text) return;
+                if (!window.__WARHEX_UNAUTHORIZED_EXTENSION_SOURCES__.includes(text)) {
+                    window.__WARHEX_UNAUTHORIZED_EXTENSION_SOURCES__.push(text);
+                }
+            };
+
+            const inspect = (value) => {
+                const text = String(value || "").toLowerCase();
+                if (!text) return;
+                if (!MARKERS.some((marker) => text.includes(marker))) return;
+                window.__WARHEX_UNAUTHORIZED_EXTENSION_DETECTED__ = true;
+                addSource(String(value || "").slice(0, 300));
+            };
+
+            window.addEventListener("error", (event) => {
+                inspect(event?.filename || "");
+                inspect(event?.message || "");
+                inspect(event?.error?.stack || "");
+            }, true);
+
+            window.addEventListener("unhandledrejection", (event) => {
+                const reason = event?.reason;
+                if (typeof reason === "string") {
+                    inspect(reason);
+                    return;
+                }
+                inspect(reason?.message || "");
+                inspect(reason?.stack || "");
+            }, true);
+
+            const scanDom = () => {
+                const nodes = document.querySelectorAll("script,link,style,iframe");
+                nodes.forEach((node) => {
+                    inspect(node.src || "");
+                    inspect(node.href || "");
+                    inspect(node.id || "");
+                    inspect(node.className || "");
+                    if (node && node.attributes) {
+                        for (let i = 0; i < node.attributes.length; i++) {
+                            inspect(node.attributes[i]?.name || "");
+                            inspect(node.attributes[i]?.value || "");
+                        }
+                    }
+                });
+            };
+
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", scanDom, { once: true });
+            } else {
+                scanDom();
+            }
+        })();
+    </script>
     <meta property="og:type" content="website">
     <meta property="og:title" content="Warhex.io - Free Multiplayer Strategy .io Game">
     <meta property="og:description"
@@ -96,6 +180,7 @@
             const params = new URLSearchParams(window.location.search || "");
             const forcedByQuery = params.get("platform") === "crazygames" || params.get("cg") === "1";
             const host = String(window.location?.hostname || "").toLowerCase();
+            const isLocalHost = host === "localhost" || host === "127.0.0.1";
             const isCrazyHost = host === "crazygames.com" || host.endsWith(".crazygames.com");
             let refHost = "";
             try {
@@ -106,7 +191,7 @@
             const isCrazyGamesEnvironment = forcedByQuery || isCrazyHost || (isEmbedded && isCrazyReferrer);
 
             window.__WARHEX_CRAZYGAMES_ENV__ = isCrazyGamesEnvironment;
-            window.__WARHEX_DISABLE_EXTERNAL_ADS__ = isCrazyGamesEnvironment;
+            window.__WARHEX_DISABLE_EXTERNAL_ADS__ = isCrazyGamesEnvironment || isLocalHost;
         })();
     </script>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-LSJ1RTH753"></script>
@@ -159,7 +244,25 @@
             "url": "https://warhex.io/"
         }
     </script>
-    <script type="module" src="src/index.js"></script>
+    <script>
+        (function () {
+            const host = String(window.location?.hostname || "").toLowerCase();
+            const isLocalHost = host === "localhost" || host === "127.0.0.1";
+            const params = new URLSearchParams(window.location.search || "");
+            const forceDist = params.get("dist") === "1";
+            const forceSrc = params.get("src") === "1";
+
+            const script = document.createElement("script");
+            if ((isLocalHost && !forceDist) || forceSrc) {
+                script.type = "module";
+                script.src = "src/index.js";
+            } else {
+                script.defer = true;
+                script.src = "dist/index.js";
+            }
+            document.head.appendChild(script);
+        })();
+    </script>
 </head>
 
 <body>
