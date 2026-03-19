@@ -21,12 +21,41 @@ export default class Network {
     }
 
     _initWorker() {
-        // Prefer the bundled worker in production builds, but keep the native path for local dev.
+        // Prefer the bundled worker in production builds.
         if (typeof __webpack_require__ === 'function') {
-            const BundledWorker = require('./network.worker.js');
-            this.worker = new BundledWorker();
-        } else {
-            this.worker = new Worker('src/network/network.worker.js', { type: 'module' });
+            try {
+                const BundledWorker = require('./network.worker.js');
+                this.worker = new BundledWorker();
+            } catch (error) {
+                console.warn('Bundled worker initialization failed, trying URL fallbacks.', error);
+            }
+        }
+
+        if (!this.worker) {
+            const workerCandidates = this.isDev
+                ? [
+                    { url: 'src/network/network.worker.js', options: { type: 'module' } },
+                    { url: 'dist/index.worker.js' },
+                    { url: '/dist/index.worker.js' },
+                    { url: 'index.worker.js' }
+                ]
+                : [
+                    { url: 'dist/index.worker.js' },
+                    { url: '/dist/index.worker.js' },
+                    { url: 'index.worker.js' },
+                    { url: 'src/network/network.worker.js', options: { type: 'module' } }
+                ];
+
+            for (const candidate of workerCandidates) {
+                try {
+                    this.worker = new Worker(candidate.url, candidate.options);
+                    break;
+                } catch (error) {}
+            }
+        }
+
+        if (!this.worker) {
+            throw new Error('Unable to initialize network worker from bundled or fallback paths.');
         }
 
         this.worker.onmessage = (event) => {

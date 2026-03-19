@@ -3,7 +3,8 @@ const TerserPlugin = require('terser-webpack-plugin');
 const BlobfuscationPlugin = require('./blobfuscator/blobfuscator-plugin');
 const WebpackObfuscator = require('webpack-obfuscator');
 
-const enableHardObfuscation = process.env.WARHEX_OBFUSCATE !== '0';
+const enableHardObfuscation = process.env.WARHEX_OBFUSCATE === '1';
+const enableBlobfuscation = process.env.WARHEX_BLOBFUSCATE === '1';
 
 module.exports = {
   mode: 'production',
@@ -66,12 +67,13 @@ module.exports = {
     ]
   },
   plugins: [
-   new BlobfuscationPlugin({
+   ...(enableBlobfuscation ? [
+    new BlobfuscationPlugin({
       outputDir: path.join(__dirname, 'dist', 'blobfuscated'),
       includedWordsFilePath: path.join(__dirname, 'blobfuscator/includedWords.txt'),
       emitDebugFile: false,
-   })
-   ,
+    })
+   ] : []),
    ...(enableHardObfuscation ? [
     new WebpackObfuscator(
       {

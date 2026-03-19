@@ -29,10 +29,6 @@
                 "scriptcat",
                 "resoluce",
                 "resource override",
-                "chrome-extension://",
-                "moz-extension://",
-                "safari-web-extension://",
-                "edge-extension://",
                 "injected-web.js",
                 "injected.js"
             ];
@@ -246,21 +242,30 @@
     </script>
     <script>
         (function () {
-            const host = String(window.location?.hostname || "").toLowerCase();
-            const isLocalHost = host === "localhost" || host === "127.0.0.1";
             const params = new URLSearchParams(window.location.search || "");
-            const forceDist = params.get("dist") === "1";
-            const forceSrc = params.get("src") === "1";
+            const forceSrc = params.get("src") === "1" || window.WARHEX_CONFIG?.preferSrcBundle === true;
+            const distBundle = "dist/index.js?v=2026-03-19-supabase-fix-1";
 
-            const script = document.createElement("script");
-            if ((isLocalHost && !forceDist) || forceSrc) {
-                script.type = "module";
-                script.src = "src/index.js";
-            } else {
-                script.defer = true;
-                script.src = "dist/index.js";
+            const loadDistBundle = () => {
+                const distScript = document.createElement("script");
+                distScript.defer = true;
+                distScript.src = distBundle;
+                document.head.appendChild(distScript);
+            };
+
+            if (forceSrc) {
+                const srcScript = document.createElement("script");
+                srcScript.type = "module";
+                srcScript.src = "src/index.js";
+                srcScript.onerror = () => {
+                    // Source bundle may be hidden/blocked in production. Fall back to dist.
+                    loadDistBundle();
+                };
+                document.head.appendChild(srcScript);
+                return;
             }
-            document.head.appendChild(script);
+
+            loadDistBundle();
         })();
     </script>
 </head>
@@ -274,7 +279,7 @@
                 <p>We couldn't let you join the server.</p>
                 <p>The server might be <b>full</b> or <b>temporarily unavailable</b>.</p>
                 <p>Please try again in a few seconds.</p>
-                <img src="https://c.tenor.com/8yMqNs21uTQAAAAd/tenor.gif" alt="Connection Rejected"
+                <img src="https://media2.giphy.com/media/v1.Y2lkPTZjMDliOTUyOTFlY2hvNHd1b29hYWF4aXdwdTBzajg5c21mdWxqajRpc21wcmh6MSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/c1IftuRvhPrG4bliXK/200w.gif" alt="Connection Rejected"
                     style="max-width: 100%; height: auto; margin-top: 20px;">
                 <p>Try again in a bit!</p>
                 <button id="menu-dialog-button">Okay</button>

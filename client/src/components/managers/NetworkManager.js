@@ -45,6 +45,15 @@ const EXTENSION_SCHEME_MARKERS = [
     "edge-extension://",
 ];
 
+const INJECTED_SCRIPT_MARKERS = [
+    "injected-web.js",
+    "injected.js",
+];
+
+function hasKnownEditingExtensionToken(text) {
+    return KNOWN_GAME_EDITING_EXTENSIONS.some((ext) => ext.tokens.some((token) => text.includes(token)));
+}
+
 function resolveStrictClientSecurityGuards() {
     // Strict mode always enabled.
     return true;
@@ -112,8 +121,8 @@ export default class NetworkManager {
         const lower = String(value || "").toLowerCase();
         if (!lower) return false;
         if (lower.includes(".user.js")) return true;
-        if (EXTENSION_SCHEME_MARKERS.some((scheme) => lower.includes(scheme))) return true;
-        return KNOWN_GAME_EDITING_EXTENSIONS.some((ext) => ext.tokens.some((token) => lower.includes(token)));
+        if (INJECTED_SCRIPT_MARKERS.some((marker) => lower.includes(marker))) return true;
+        return hasKnownEditingExtensionToken(lower);
     }
 
     setupUserScriptErrorTrap() {
@@ -2389,29 +2398,39 @@ export default class NetworkManager {
     }
 
     scanJoinEnvironmentForUnauthorizedExtensions () {
-        const detected = new Set();
-        const addDetected = (label) => {
+        const strongDetected = new Set();
+        const weakDetected = new Set();
+        const addDetected = (label, isStrong = false) => {
             if (typeof label === "string" && label.trim() !== "") {
-                detected.add(label);
+                if (isStrong) {
+                    strongDetected.add(label);
+                } else {
+                    weakDetected.add(label);
+                }
             }
         };
-        const inspectTextForExtension = (value, fallbackLabel = "") => {
+        const inspectTextForExtension = (value, fallbackLabel = "", allowWeakTokens = true) => {
             const text = String(value || "").toLowerCase();
             if (!text) return;
 
             if (text.includes(".user.js")) {
-                addDetected("UserScript (*.user.js)");
+                addDetected("UserScript (*.user.js)", true);
                 addUserscriptSource(text);
             }
 
-            if (EXTENSION_SCHEME_MARKERS.some((scheme) => text.includes(scheme))) {
-                addDetected(fallbackLabel || "Browser Extension Injector");
+            const hasKnownToken = hasKnownEditingExtensionToken(text);
+            const hasInjectedScriptMarker = INJECTED_SCRIPT_MARKERS.some((marker) => text.includes(marker));
+
+            if (EXTENSION_SCHEME_MARKERS.some((scheme) => text.includes(scheme)) && (hasKnownToken || hasInjectedScriptMarker)) {
+                addDetected(fallbackLabel || "Browser Extension Injector", true);
                 addUserscriptSource(text);
             }
 
-            for (const ext of KNOWN_GAME_EDITING_EXTENSIONS) {
-                if (ext.tokens.some((token) => text.includes(token))) {
-                    addDetected(ext.label);
+            if (allowWeakTokens) {
+                for (const ext of KNOWN_GAME_EDITING_EXTENSIONS) {
+                    if (ext.tokens.some((token) => text.includes(token))) {
+                        addDetected(ext.label, false);
+                    }
                 }
             }
         };
@@ -2428,7 +2447,7 @@ export default class NetworkManager {
         };
 
         if (win && win.__WARHEX_UNAUTHORIZED_EXTENSION_DETECTED__) {
-            addDetected("Early extension/userscript marker");
+            addDetected("Early extension/userscript marker", true);
             const earlySources = Array.isArray(win.__WARHEX_UNAUTHORIZED_EXTENSION_SOURCES__)
                 ? win.__WARHEX_UNAUTHORIZED_EXTENSION_SOURCES__
                 : [];
@@ -2447,11 +2466,11 @@ export default class NetworkManager {
                 "unsafeWindow"
             ];
             if (userscriptAPIKeys.some((key) => typeof win[key] !== "undefined")) {
-                addDetected("Userscript API");
+                addDetected("Userscript API", true);
             }
 
             if (typeof win.GM_info !== "undefined") {
-                addDetected("Userscript API");
+                addDetected("Userscript API", true);
                 inspectTextForExtension(win.GM_info?.script?.name || "");
                 inspectTextForExtension(win.GM_info?.scriptHandler || "");
             }
@@ -2463,27 +2482,27 @@ export default class NetworkManager {
                 "__greasemonkey"
             ];
             if (userscriptManagerMarkers.some((key) => typeof win[key] !== "undefined")) {
-                addDetected("UserScript Manager");
+                addDetected("UserScript Manager", true);
             }
 
             const runtimeUserscriptSources = Array.isArray(win.__WARHEX_USERSCRIPT_SOURCES__)
                 ? win.__WARHEX_USERSCRIPT_SOURCES__
                 : [];
             if (runtimeUserscriptSources.length > 0) {
-                addDetected("UserScript (*.user.js)");
+                addDetected("UserScript (*.user.js)", true);
                 runtimeUserscriptSources.forEach((source) => addUserscriptSource(source));
             }
 
             const globalKeys = Object.keys(win);
             for (const key of globalKeys) {
-                inspectTextForExtension(key);
+                inspectTextForExtension(key, "", false);
             }
 
             if (typeof win.performance?.getEntriesByType === "function") {
                 const resources = win.performance.getEntriesByType("resource") || [];
                 const maxScan = Math.min(resources.length, 250);
                 for (let i = 0; i < maxScan; i++) {
-                    inspectTextForExtension(resources[i]?.name, "Browser Extension Resource");
+                    inspectTextForExtension(resources[i]?.name, "Browser Extension Resource", false);
                 }
             }
         }
@@ -2493,26 +2512,23 @@ export default class NetworkManager {
             nodes.forEach((node) => {
                 inspectTextForExtension(node.src || "");
                 inspectTextForExtension(node.href || "");
-                inspectTextForExtension(node.id || "");
-                inspectTextForExtension(node.className || "");
+                inspectTextForExtension(node.id || "", "", false);
+                inspectTextForExtension(node.className || "", "", false);
                 if (node && node.attributes && node.attributes.length > 0) {
                     for (let i = 0; i < node.attributes.length; i++) {
                         const attr = node.attributes[i];
-                        inspectTextForExtension(attr?.name || "");
-                        inspectTextForExtension(attr?.value || "");
+                        inspectTextForExtension(attr?.name || "", "", false);
+                        inspectTextForExtension(attr?.value || "", "", false);
                     }
                 }
             });
-
-            const inlineScripts = doc.querySelectorAll("script:not([src])");
-            inlineScripts.forEach((scriptNode) => {
-                const sample = String(scriptNode?.textContent || "").slice(0, 3000);
-                inspectTextForExtension(sample);
-            });
         }
 
+        const blocked = strongDetected.size > 0 || weakDetected.size >= 2;
+        const detected = new Set([...strongDetected, ...weakDetected]);
+
         return {
-            blocked: detected.size > 0,
+            blocked,
             detectedExtensions: Array.from(detected),
             userScriptSources: userscriptSources,
         };
