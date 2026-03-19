@@ -144,6 +144,16 @@ func CanPlayersInteract(a *Player, b *Player) bool {
 	defer second.RUnlock()
 	defer first.RUnlock()
 
+	// Owner rule:
+	// - non-owner cannot damage/affect owner
+	// - owner can always affect non-owner
+	if !a.IsOwner && b.IsOwner {
+		return false
+	}
+	if a.IsOwner && !b.IsOwner {
+		return true
+	}
+
 	areOpponents := a.InDuel && b.InDuel &&
 		a.DuelOpponentID == b.ID &&
 		b.DuelOpponentID == a.ID

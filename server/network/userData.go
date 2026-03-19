@@ -258,6 +258,8 @@ func AddUnlockedSkinsLocally(conn *websocket.Conn, newSkinIDs []int) bool {
 
 func MapRoleToPermission(role string) game.Permission {
 	switch role {
+	case "owner":
+		return game.PERMISSION_ADMIN
 	case "admin":
 		return game.PERMISSION_ADMIN
 	case "super_admin":

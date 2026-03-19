@@ -37,6 +37,10 @@ func (b *Building) MarkForRemoval() {
 }
 
 func (b *Building) TakeDamage(amount uint16) bool {
+	if isOwnerFromOwnerRef(b.Owner) {
+		b.Health.Reset()
+		return true
+	}
 	b.Health.Decrement(amount)
 	return b.Health.IsAlive()
 }

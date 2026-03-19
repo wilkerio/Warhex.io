@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -465,6 +466,10 @@ func startResourceUpdateLoop() {
 	for range ticker.C {
 		State.RLock()
 		for _, player := range State.Players {
+			if player.IsOwnerGodMode() {
+				ApplyOwnerGodMode(player)
+			}
+
 			generatingPower := player.GetGenerating().Power
 			player.Resources.Power.Increment(generatingPower)
 
@@ -550,6 +555,9 @@ func startUnitSpawnLoop() {
 				if spawning.Barracks.IsMarkedForRemoval() {
 					continue
 				}
+				if player.IsOwnerGodMode() {
+					ApplyOwnerSpawnRate(spawning)
+				}
 
 				// Frequencies are configured in milliseconds (legacy parity).
 				if spawning.Frequency.Current > 0 {
@@ -566,13 +574,21 @@ func startUnitSpawnLoop() {
 						continue
 					}
 
-					if !player.Population.IncrementUsed(requiredPopulation) {
+					usesPopulation := !player.IsOwnerGodMode()
+					if usesPopulation && !player.Population.IncrementUsed(requiredPopulation) {
 						continue
 					}
 
 					unit, ok := player.AddUnit(spawning.UnitType, spawning.UnitVariant, spawning.Barracks)
+					if !ok && player.IsOwnerGodMode() {
+						if recycleOwnerUnitForSpawn(player) {
+							unit, ok = player.AddUnit(spawning.UnitType, spawning.UnitVariant, spawning.Barracks)
+						}
+					}
 					if !ok {
-						player.Population.DecrementUsed(requiredPopulation)
+						if usesPopulation {
+							player.Population.DecrementUsed(requiredPopulation)
+						}
 						//log.Printf("Could not add unit of type %v to player %v", spawning.UnitType, player.ID)
 						continue
 					}
@@ -585,6 +601,37 @@ func startUnitSpawnLoop() {
 			}
 		}
 	}
+}
+
+func recycleOwnerUnitForSpawn(player *Player) bool {
+	if player == nil || !player.IsOwnerGodMode() {
+		return false
+	}
+
+	player.RLock()
+	var candidate *Unit
+	for _, unit := range player.Units {
+		if unit == nil || unit.IsMarkedForRemoval() {
+			continue
+		}
+		if unit.Type == COMMANDER {
+			continue
+		}
+		if candidate == nil || (candidate.Type != SOLDIER && unit.Type == SOLDIER) {
+			candidate = unit
+			if unit.Type == SOLDIER {
+				break
+			}
+		}
+	}
+	player.RUnlock()
+
+	if candidate == nil {
+		return false
+	}
+
+	handleUnitDestroyed(candidate)
+	return true
 }
 
 func startTargetingLoop() {
@@ -1391,7 +1438,8 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 		if otherPlayer.ID == player.ID || otherPlayer.IsMarkedForRemoval() {
 			continue
 		}
-		if !CanPlayersInteract(player, otherPlayer) {
+		// Bullet ownership here is `otherPlayer -> player`.
+		if !CanPlayersInteract(otherPlayer, player) {
 			continue
 		}
 
@@ -1531,6 +1579,7 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					powerIncrement := math.Min((float64(player.Score)/100)*10, 6000)
 					otherPlayer.IncrementScore(scoreIncrement)
 					otherPlayer.IncrementKills(1)
+					ApplyOwnerKillReward(otherPlayer)
 					otherPlayer.Resources.Power.Increment(uint16(powerIncrement))
 					player.MarkForRemoval()
 					TriggerPlayerKilledEvent(player, otherPlayer)
@@ -1797,6 +1846,7 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 					// Apply the increments
 					player.IncrementScore(scoreIncrement)
 					player.IncrementKills(1)
+					ApplyOwnerKillReward(player)
 					player.Resources.Power.Increment(uint16(powerIncrement))
 
 					// Mark the other player for removal and trigger the kill event
@@ -2015,6 +2065,7 @@ func applyExplosionDamage(unit *Unit) {
 					player.MarkForRemoval()
 					unit.Player.IncrementScore((player.Score / 100) * 50)
 					unit.Player.IncrementKills(1)
+					ApplyOwnerKillReward(unit.Player)
 
 					// Calculate the score and power increment
 					scoreIncrement := (player.Score / 100) * 50
@@ -2259,7 +2310,7 @@ func handleBuildingDestroyed(building *Building, base *Base) {
 	}
 }
 
-func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color []byte, skinID ID) (*Player, bool) {
+func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color []byte, skinID ID, authUserID string) (*Player, bool) {
 	State.Lock()
 	defer State.Unlock()
 
@@ -2272,15 +2323,30 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 
 	initialPower := uint16(PLAYER_INITIAL_POWER)
 	maxPower := uint16(PLAYER_MAX_POWER)
+	unitIDPoolSize := 128
+	unitSpawnLimitMax := uint16(4)
+	generatingPower := uint16(1)
+	isOwner := IsOwnerUserID(authUserID)
+
 	if permission == PERMISSION_ADMIN {
 		// ! OP power for me :)
 		initialPower = uint16(6000)
 		maxPower = uint16(60000)
 	}
+	if isOwner {
+		initialPower = ownerGodModePowerCap
+		maxPower = ownerGodModePowerCap
+		unitIDPoolSize = 256
+		unitSpawnLimitMax = ownerGodModeSpawnLimitMax
+		generatingPower = ownerGodModeGeneratingPower
+		permission = PERMISSION_ADMIN
+	}
 
 	player := &Player{
 		Conn:              conn,
 		IsBot:             conn == nil,
+		IsOwner:           isOwner,
+		AuthUserID:        strings.TrimSpace(authUserID),
 		Permission:        permission,
 		Name:              [12]byte{},
 		SkinID:            skinID,
@@ -2288,9 +2354,9 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		Kills:             0,
 		Camera:            NewCamera(),
 		Units:             make(map[ID]*Unit),
-		AvailableUnitIDs:  InitAvailableIDs(128),
+		AvailableUnitIDs:  InitAvailableIDs(unitIDPoolSize),
 		Population:        Population{Capacity: PLAYER_INITIAL_POPULATION, Used: 0},
-		UnitSpawningLimit: Capacity{Current: 0, Max: 4},
+		UnitSpawningLimit: Capacity{Current: 0, Max: unitSpawnLimitMax},
 		Resources: Resources{
 			Power: Resource{
 				Current:  initialPower,
@@ -2298,7 +2364,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 			},
 		},
 		Generating: Generating{
-			Power: 1, // 1 per sec
+			Power: generatingPower,
 		},
 		HasSpawnProtection:      true,
 		HasCommander:            false,
@@ -2328,6 +2394,10 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 			HOUSE:         {0, 9999}},
 		AvailableBuildingIDs: InitAvailableIDs(256),
 		AvailableBulletIDs:   InitAvailableIDs(256),
+	}
+
+	if isOwner {
+		ApplyOwnerGodMode(player)
 	}
 
 	// Truncate the player name if it's longer than 12 bytes

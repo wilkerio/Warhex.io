@@ -1185,7 +1185,7 @@ func saveBotPersistentSocialState(rt *botRuntime) {
 
 func spawnBot() (*Player, *botRuntime, bool) {
 	name, language, identity := randomBotIdentity()
-	player, ok := AddPlayer(nil, PERMISSION_NONE, []byte(name), randomBotColor(), 0)
+	player, ok := AddPlayer(nil, PERMISSION_NONE, []byte(name), randomBotColor(), 0, "")
 	if !ok || player == nil {
 		return nil, nil, false
 	}

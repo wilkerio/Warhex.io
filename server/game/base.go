@@ -154,6 +154,10 @@ func (b *Base) GetPosition() PositionInt {
 }
 
 func (b *Base) TakeDamage(amount uint16) bool {
+	if isOwnerFromOwnerRef(b.Owner) {
+		b.Health.Reset()
+		return true
+	}
 	b.Health.Decrement(amount)
 	if amount > 0 {
 		if playerOwner, ok := b.Owner.(*Player); ok && playerOwner != nil {

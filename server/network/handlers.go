@@ -249,7 +249,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		color = skinData.BaseColor
 	}
 
-	player, ok := game.AddPlayer(conn, permission, []byte(cleanName), color, game.ID(skinData.ID))
+	player, ok := game.AddPlayer(conn, permission, []byte(cleanName), color, game.ID(skinData.ID), userData.ProgressUserID())
 	if !ok {
 		log.Println("Failed to add player to the game")
 		sendError(conn)
@@ -518,7 +518,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
 	}
-	ok = player.Resources.Power.Decrement(costs)
+	ok = player.SpendPower(costs)
 	if !ok {
 		log.Println("Could not subtract costs for building:", buildingType)
 		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
@@ -529,7 +529,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	if !base.CheckBuildingCollision(buildingType, position, placementRotationStep) {
 		log.Println("Building intersects with existing building")
 		// Restore resources if collision detected
-		player.Resources.Power.Increment(costs)
+		player.RefundPower(costs)
 		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
 	}
@@ -539,7 +539,7 @@ func handlePlacedBuildingMessage(conn *websocket.Conn, payload []byte) {
 	if !ok {
 		log.Println("Failed to place building")
 		// Restore resources if building placement failed
-		player.Resources.Power.Increment(costs)
+		player.RefundPower(costs)
 		SendBuildingPlacementFailed(player, buildingType, BuildingPlacementFailGeneric, 0)
 		return
 	}
@@ -657,7 +657,7 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 			return
 		}
 
-		ok = player.Resources.Power.Decrement(costs)
+		ok = player.SpendPower(costs)
 		if !ok {
 			log.Println("Could not subtract costs for building:", building.Type, buildingVariant)
 			return
@@ -707,7 +707,7 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 		if !base.UpgradeBuilding(buildingID, buildingVariant) {
 			log.Println("Could not upgrade building:", building.Type, buildingVariant)
 			// Restore resources if building upgrade failed
-			player.Resources.Power.Increment(costs)
+			player.RefundPower(costs)
 			return
 		}
 
@@ -813,7 +813,7 @@ func handleDestroyBuildingsMessage(conn *websocket.Conn, payload []byte) {
 			log.Println("Costs not found for building:", building.Type)
 		} else {
 			refund = costs / 2
-			player.Resources.Power.Increment(refund)
+			player.RefundPower(refund)
 		}
 
 		// Remove the building from the base
@@ -821,7 +821,7 @@ func handleDestroyBuildingsMessage(conn *websocket.Conn, payload []byte) {
 		if !success {
 			log.Println("Failed to remove building: Building not found, ID:", buildingID)
 			if ok {
-				player.Resources.Power.Decrement(refund)
+				player.SpendPower(refund)
 			}
 			continue
 		}
@@ -1134,7 +1134,7 @@ func handleBuyCommander(conn *websocket.Conn, payload []byte) {
 	// Subtract the cost from the power
 	cost := uint16(game.COMMANDER_COST)
 
-	ok = player.Resources.Power.Decrement(cost)
+	ok = player.SpendPower(cost)
 	if !ok {
 		log.Println("Could not subtract costs for:", game.COMMANDER)
 		return
@@ -1161,7 +1161,7 @@ func handleBuyRepair(conn *websocket.Conn, payload []byte) {
 	}
 
 	costs := uint16(6000)
-	ok = player.Resources.Power.Decrement(costs)
+	ok = player.SpendPower(costs)
 	if !ok {
 		log.Println("Could not subtract costs for:", game.COMMANDER)
 		return
@@ -1202,7 +1202,7 @@ func handleBuyRelocateBase(conn *websocket.Conn, payload []byte) {
 	}
 
 	cost := uint16(game.RELOCATE_BASE_COST)
-	ok = player.Resources.Power.Decrement(cost)
+	ok = player.SpendPower(cost)
 	if !ok {
 		log.Println("Could not subtract costs for base relocation")
 		return
@@ -1216,7 +1216,7 @@ func handleBuyRelocateBase(conn *websocket.Conn, payload []byte) {
 
 	ok = game.RelocatePlayerBaseTo(player, targetPosition)
 	if !ok {
-		player.Resources.Power.Increment(cost)
+		player.RefundPower(cost)
 		return
 	}
 

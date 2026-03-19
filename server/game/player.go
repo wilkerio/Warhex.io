@@ -21,6 +21,8 @@ type Player struct {
 	ID                      ID
 	Conn                    *websocket.Conn
 	IsBot                   bool
+	IsOwner                 bool
+	AuthUserID              string
 	Permission              Permission
 	Name                    [12]byte
 	LastActivity            time.Time // Used for timeout
@@ -235,6 +237,10 @@ func (p *Player) RemoveProtection() {
 }
 
 func (p *Player) CanRelocateNow(now time.Time) (bool, time.Duration) {
+	if p.IsOwnerGodMode() {
+		return true, 0
+	}
+
 	p.RLock()
 	defer p.RUnlock()
 
@@ -246,6 +252,10 @@ func (p *Player) CanRelocateNow(now time.Time) (bool, time.Duration) {
 }
 
 func (p *Player) RecordRelocation(now time.Time) {
+	if p.IsOwnerGodMode() {
+		return
+	}
+
 	p.Lock()
 	defer p.Unlock()
 
@@ -322,6 +332,7 @@ func (p *Player) AddCommander() (*Unit, bool) {
 		ExplosionRadius: int(unitStats.ExplosionRadius),
 		LastDamageTime:  time.Now(),
 	}
+	ApplyOwnerCommanderBuff(unit)
 
 	// Commander should spawn with an initial offset below the base.
 	unit.SetTargetPosition(PositionFloat{X: unit.TargetPosition.X, Y: unit.TargetPosition.Y + 200})
@@ -452,6 +463,9 @@ func (p *Player) AddUnitSpawning(barracks *Building, setActive bool) bool {
 		} else {
 			spawning.UnitVariant = BASIC_UNIT
 		}
+	}
+	if p.IsOwnerGodMode() {
+		ApplyOwnerSpawnRate(spawning)
 	}
 
 	// If the spawning is activated, increment the limit
