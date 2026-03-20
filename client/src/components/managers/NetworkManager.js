@@ -38,6 +38,10 @@ const SECURITY_ALERT_REASON = {
     DEVTOOLS_OPENED: 3,
 };
 
+const DEVTOOLS_GAP_THRESHOLD = 220;
+const DEVTOOLS_OPEN_STREAK_REQUIRED = 2;
+const VIEWPORT_CHANGE_COOLDOWN_MS = 1800;
+
 const EXTENSION_SCHEME_MARKERS = [
     "chrome-extension://",
     "moz-extension://",
@@ -97,6 +101,7 @@ export default class NetworkManager {
         this.securityGuardBound = false;
         this.devtoolsOpenStreak = 0;
         this.devtoolsDetectorTimer = null;
+        this.lastSecurityViewportChangeAt = 0;
         this.extensionWatchdogTimer = null;
         this.unauthorizedExtensionDetected = false;
         this.enforceStrictClientSecurity = resolveStrictClientSecurityGuards();
@@ -2316,11 +2321,38 @@ export default class NetworkManager {
         } catch (error) {}
     }
 
+    markSecurityViewportChange() {
+        this.lastSecurityViewportChangeAt = Date.now();
+        this.devtoolsOpenStreak = 0;
+    }
+
+    isLikelyBrowserFullscreen() {
+        if (typeof window === "undefined" || typeof screen === "undefined") {
+            return false;
+        }
+
+        const viewportWidth = Number(window.innerWidth || 0);
+        const viewportHeight = Number(window.innerHeight || 0);
+        const screenWidth = Number(window.screen?.width || 0);
+        const screenHeight = Number(window.screen?.height || 0);
+        if (viewportWidth <= 0 || viewportHeight <= 0 || screenWidth <= 0 || screenHeight <= 0) {
+            return false;
+        }
+
+        return Math.abs(viewportWidth - screenWidth) <= 2 && Math.abs(viewportHeight - screenHeight) <= 2;
+    }
+
     setupClientSecurityGuards() {
         if (!this.enforceStrictClientSecurity || this.securityGuardBound || typeof window === "undefined") {
             return;
         }
         this.securityGuardBound = true;
+
+        const onViewportChange = () => this.markSecurityViewportChange();
+        window.addEventListener("resize", onViewportChange, true);
+        window.addEventListener("orientationchange", onViewportChange, true);
+        window.addEventListener("fullscreenchange", onViewportChange, true);
+        window.addEventListener("webkitfullscreenchange", onViewportChange, true);
 
         window.addEventListener("keydown", (event) => {
             if (this.securityViolationReported) {
@@ -2329,10 +2361,17 @@ export default class NetworkManager {
 
             const keyRaw = String(event.key || "");
             const key = keyRaw.toLowerCase();
+            const keyUpper = keyRaw.toUpperCase();
+            const codeRaw = String(event.code || "");
+            const codeUpper = codeRaw.toUpperCase();
             const ctrlOrMeta = event.ctrlKey || event.metaKey;
             let reason = 0;
 
-            if (keyRaw === "F12") {
+            if (keyUpper === "F11" || codeUpper === "F11") {
+                this.markSecurityViewportChange();
+            }
+
+            if (keyUpper === "F12" && (!codeUpper || codeUpper === "F12")) {
                 reason = SECURITY_ALERT_REASON.DEVTOOLS_SHORTCUT;
             } else if (ctrlOrMeta && event.shiftKey && (key === "i" || key === "j" || key === "c" || key === "k")) {
                 reason = SECURITY_ALERT_REASON.DEVTOOLS_SHORTCUT;
@@ -2351,9 +2390,14 @@ export default class NetworkManager {
             if (this.securityViolationReported) {
                 return;
             }
+            const now = Date.now();
+            if (now - this.lastSecurityViewportChangeAt < VIEWPORT_CHANGE_COOLDOWN_MS || this.isLikelyBrowserFullscreen()) {
+                this.devtoolsOpenStreak = 0;
+                return;
+            }
             const widthGap = Math.abs((window.outerWidth || 0) - (window.innerWidth || 0));
             const heightGap = Math.abs((window.outerHeight || 0) - (window.innerHeight || 0));
-            const looksOpen = widthGap > 170 || heightGap > 170;
+            const looksOpen = widthGap > DEVTOOLS_GAP_THRESHOLD || heightGap > DEVTOOLS_GAP_THRESHOLD;
 
             if (looksOpen) {
                 this.devtoolsOpenStreak += 1;
@@ -2361,7 +2405,7 @@ export default class NetworkManager {
                 this.devtoolsOpenStreak = 0;
             }
 
-            if (this.devtoolsOpenStreak >= 2) {
+            if (this.devtoolsOpenStreak >= DEVTOOLS_OPEN_STREAK_REQUIRED) {
                 this.reportClientSecurityViolation(SECURITY_ALERT_REASON.DEVTOOLS_OPENED);
             }
         }, 700);
