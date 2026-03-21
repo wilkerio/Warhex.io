@@ -29,26 +29,27 @@ const buildingsArray = Object.values(Buildings);
 // Legacy types map:
 // 1 -> Wall, 4 -> House, 7 -> Armory, 8 -> Barracks
 const LEGACY_EXTERNA_SOCKET_LAYOUT = [
-    [4.725, 130, 7],
-    [5.245, 130, 4], [5.715, 130, 4], [6.185, 130, 4], [6.655, 130, 4], [7.13, 130, 4], [7.6, 130, 4],
-    [1.85, 130, 4], [2.32, 130, 4], [2.79, 130, 4], [3.265, 130, 4], [3.735, 130, 4], [4.205, 130, 4],
-    [5.06, 185, 4], [5.4, 185, 4], [5.725, 190, 4], [6.045, 186, 4], [6.374, 185, 4], [6.7215, 189.5, 4],
-    [7.0425, 188.5, 4], [7.365, 185, 4], [7.712, 187.45, 4], [8.035, 188.5, 4], [8.36, 185, 4],
-    [2.425, 188, 4], [2.75, 190, 4], [3.075, 184, 4], [3.42, 186, 4], [3.74, 190, 4], [4.06, 186, 4], [4.39, 185, 4],
-    [4.8625, 245, 4], [5.1125, 245, 4], [5.3625, 245, 4], [5.6125, 245, 4], [5.8625, 245, 4], [6.1125, 245, 4],
-    [6.3625, 245, 4], [6.6125, 245, 4], [6.8625, 245, 4], [7.14, 245, 4], [7.39, 245, 4], [7.64, 246, 4],
-    [7.89, 246, 4], [8.14, 246, 4], [8.39, 246, 4], [8.635, 246, 4], [8.885, 246, 4], [2.5825, 245, 4],
-    [2.8625, 245, 4], [3.1125, 245, 4], [3.3625, 245, 4], [3.6125, 245, 4], [3.8625, 245, 4], [4.1125, 245, 4],
-    [4.3625, 245, 4], [4.6125, 245, 4],
-    [7.86, 311, 1], [8.06, 311, 1], [8.26, 311, 1], [8.46, 311, 1], [8.66, 311, 1], [8.86, 311, 1], [9.06, 311, 1],
-    [9.26, 311, 1], [9.46, 311, 1], [9.66, 311, 1], [9.86, 311, 1], [10.28, 311, 1], [10.7, 311, 1], [10.9, 311, 1],
-    [11.1, 311, 1], [11.3, 311, 1], [11.72, 311, 1], [12.14, 311, 1], [12.34, 311, 1], [12.54, 311, 1], [12.74, 311, 1],
-    [12.94, 311, 1], [13.14, 311, 1], [13.34, 311, 1], [13.54, 311, 1], [13.74, 311, 1], [13.94, 311, 1],
-    [10.07, 311, 8], [10.49, 311, 8], [11.51, 311, 8], [11.93, 311, 8]
+    [-1.06, 310, 8], [-2.08, 310, 8], [-0.64, 310, 8], [-2.5, 310, 8],
+    [-1.67, 306, 1], [-1.47, 306, 1], [-1.87, 306, 1], [-1.27, 306, 1], [-2.29, 306, 1], [-0.85, 306, 1],
+    [-2.71, 306, 1], [-0.43, 306, 1], [-2.91, 306, 1], [-0.23, 306, 1], [-3.11, 306, 1], [-0.03, 306, 1],
+    [2.97, 306, 1], [0.17, 306, 1], [2.77, 306, 1], [0.37, 306, 1], [2.57, 306, 1], [0.57, 306, 1],
+    [2.37, 306, 1], [0.77, 306, 1], [2.17, 306, 1], [0.97, 306, 1], [1.97, 306, 1], [1.17, 306, 1],
+    [1.77, 306, 1], [1.37, 306, 1], [1.5707963267948966, 306, 1],
+    [-1.7, 245.85, 4], [-1.44, 245.85, 4], [-1.95, 245.85, 4], [-1.19, 245.85, 4], [-2.2, 245.85, 4], [-0.94, 245.85, 4],
+    [-2.45, 245.85, 4], [-0.69, 245.85, 4], [-2.7, 245.85, 4], [-0.44, 245.85, 4], [-2.95, 245.85, 4], [-0.19, 245.85, 4],
+    [3.08, 245.85, 4], [-6.22, 245.85, 4], [2.83, 245.85, 4], [-5.97, 245.85, 4], [2.58, 245.85, 4], [-5.72, 245.85, 4],
+    [2.33, 245.85, 4], [-5.47, 245.85, 4], [2.08, 245.85, 4], [-5.22, 245.85, 4], [1.83, 245.85, 4], [-4.97, 245.85, 4],
+    [1.5707963267948966, 245.85, 4],
+    [-1.92, 186, 4], [-1.22, 186, 4], [-2.25, 186, 4], [-0.89, 186, 4], [-2.57, 190.5, 4], [-0.57, 190.5, 4],
+    [-2.89, 186, 4], [-0.25, 186, 4], [3.05, 186, 4], [-6.19, 186, 4], [2.72, 190.5, 4], [-5.86, 190.5, 4],
+    [2.4, 187.5, 4], [-5.54, 187.5, 4], [2.07, 185.5, 4], [-5.21, 185.5, 4], [1.74, 189, 4], [-4.88, 189, 4],
+    [4.71238898038469, 140, 7],
+    [-2.1, 130, 4], [-1.04, 130, 4], [-2.57, 130, 4], [-0.57, 130, 4], [-3.04, 130, 4], [-0.1, 130, 4],
+    [2.77, 130, 4], [-5.91, 130, 4], [2.28, 130, 4], [-5.42, 130, 4], [1.81, 130, 4], [-4.95, 130, 4]
 ];
 
 // Fine-tuning offsets for legacy ExternaTK preset.
-const LEGACY_EXTERNA_ANGLE_OFFSET = -0.055; // Slight clockwise correction.
+const LEGACY_EXTERNA_ANGLE_OFFSET = 0; // Keep exact socket angles from the provided ExternaTK preset.
 const LEGACY_EXTERNA_RADIUS_SCALE = 1.0; // Keep original socket radius fidelity.
 const WALL_OUTER_RING_OFFSET = 3; // Wall outer ring tightened by another 1px.
 const BARRACKS_OUTER_RING_OFFSET = 5; // Keep barracks aligned with legacy ExternaTK socket radius.
@@ -62,30 +63,18 @@ function getInnerHelperRingRadius (base) {
 
 // Legacy socket layout for Autogens (angle, radius, legacyType=3 => Generator).
 const LEGACY_AUTOGENS_SOCKET_LAYOUT = [
-    [1.5700171594315573, 243.85007402090326, 3], [2.4400100710526793, 196.79985467474305, 3],
-    [2.2400039007898447, 243.85656849877958, 3], [-2.7800023458624703, 194.6788252481507, 3],
-    [1.9699911201667188, 243.85313366860794, 3], [2.0999878201715214, 185.58517209087591, 3],
-    [1.8700025978863808, 132.00487756139935, 3], [1.2599938029024704, 132.00454272486235, 3],
-    [1.3800278697318928, 194.13178049974198, 3], [1.7600061169825598, 194.06341746965091, 3],
-    [-2.4400027616849433, 185.75130282181078, 3], [-2.1999936469647867, 131.99750300668575, 3],
-    [-2.5899833434664847, 243.84680949317334, 3], [3.0599865137335724, 131.9992848465475, 3],
-    [2.3700155322992322, 132.00115908582003, 3], [2.7699990995853443, 180.63860107961412, 3],
-    [2.910001829109119, 243.8501927413633, 3], [2.6399909192202835, 243.84888476267423, 3],
-    [3.1100150743706907, 196.05774072961268, 3], [-2.9699920613329622, 243.85151732150447, 3],
-    [-2.690040409174835, 132.00027613607475, 3], [-2.3099851374683826, 243.85151732150447, 3],
-    [-2.0399825212769436, 243.85142525726602, 3], [-1.7700175093099535, 243.85316996094184, 3],
-    [0.7600044161827382, 132.00282572733062, 3], [0.35996640663856383, 180.10304605974878, 3],
-    [0.029980358323314006, 197.1585985951411, 3], [-0.439963547142766, 132.00080795207285, 3],
-    [0.0800082011395776, 132.0022685411125, 3], [0.22998938484625386, 243.85088271318605, 3],
-    [0.5000045603394669, 243.85230796529285, 3], [0.7000201471114224, 196.1091423162112, 3],
-    [0.8999878082444033, 243.84691201653544, 3], [1.0399986494012126, 186.08457861950842, 3],
-    [1.170002238251199, 243.8551629553904, 3], [-0.170023102819992, 243.84605081895415, 3],
-    [-0.36001357695289626, 194.92632916053194, 3], [-0.7000068138510656, 183.7252296229344, 3],
-    [-1.3600094643934062, 243.84717119540267, 3], [-1.0899817628353876, 243.84783862072678, 3],
-    [-0.5500054440958607, 243.85303709406625, 3], [-0.8199991749608286, 243.85031002645857, 3],
-    [-1.9300228177358634, 182.30682104627905, 3], [-1.199997990229862, 183.82290662482725, 3],
-    [-0.9500096278543927, 131.99805036438974, 3], [-1.5699815385655684, 196.37006518306183, 3],
-    [-1.5699629936544652, 132.00004583332537, 3]
+    [-1.71, 243.85, 3], [-1.43, 243.85, 3], [-2.01, 243.85, 3], [-1.13, 243.85, 3],
+    [-0.86, 243.85, 3], [-2.28, 243.85, 3], [-2.55, 243.85, 3], [-0.59, 243.85, 3],
+    [-2.82, 243.85, 3], [-0.32, 243.85, 3], [-0.05, 243.85, 3], [-3.09, 243.85, 3],
+    [2.92, 243.85, 3], [0.22, 243.85, 3], [0.49, 243.85, 3], [2.65, 243.85, 3],
+    [0.76, 243.85, 3], [2.38, 243.85, 3], [2.11, 243.85, 3], [1.03, 243.85, 3],
+    [1.84, 243.85, 3], [1.3, 243.85, 3], [1.5707963267948966, 243.85, 3],
+    [-1.945, 181, 3], [-1.195, 181, 3], [-0.66, 181.3, 3], [-2.48, 181.3, 3],
+    [-3.01, 182, 3], [-0.13, 182, 3], [2.75, 183, 3], [0.39, 183, 3],
+    [0.88, 184, 3], [2.25, 184, 3], [1.75, 182, 3], [1.39, 182, 3],
+    [-0.925, 132, 3], [-2.215, 132, 3], [-2.75, 132, 3], [-0.39, 132, 3],
+    [3, 132, 3], [0.14, 132, 3], [2.5, 132, 3], [0.64, 132, 3],
+    [1.13, 132, 3], [2.01, 132, 3]
 ];
 const LEGACY_AUTOGENS_ANGLE_OFFSET = 0;
 const LEGACY_AUTOGENS_RADIUS_SCALE = 1.0;
@@ -119,10 +108,14 @@ export class BuildingManager {
         this.defenseRemountActive = false;
         this.defenseRemountTimer = null;
         this.defensePlacedWalls = [];
+        this.defensePlacementPressure = 0;
+        this.defensePlacementPressureMax = 12;
+        this.lastDefensePlacementPressAt = 0;
+        this.defenseThreatCache = { at: 0, units: [], dominantAngle: null };
         // Batch-defense: place/remount many slots per cycle for fast rebuilds.
-        this.defensePlacementBurstSize = 30;
+        this.defensePlacementBurstSize = 12;
         this.defenseRemountBurstSize = 30;
-        this.defensePlacementIntervalMs = 180;
+        this.defensePlacementIntervalMs = 120;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -1274,7 +1267,7 @@ export class BuildingManager {
 
     stopDefensePlacement () {
         if (this.defensePlacementTimer) {
-            clearInterval(this.defensePlacementTimer);
+            clearTimeout(this.defensePlacementTimer);
             this.defensePlacementTimer = null;
         }
         this.defensePlacementActive = false;
@@ -1452,14 +1445,15 @@ export class BuildingManager {
         if (!this.defenseProfile || !key) return;
         if (this.core.uiManager.isChatInputFocused) return;
         if (key === this.defensePlacementKey) {
-            if (this.defensePlacementActive) return;
+            this.bumpDefensePlacementPressure();
+            if (this.defensePlacementActive) {
+                this.placeDefenseWallBurst();
+                return;
+            }
             this.stopDefenseRemount();
             this.defensePlacementActive = true;
             this.placeDefenseWallBurst();
-            this.defensePlacementTimer = setInterval(() => {
-                if (!this.defensePlacementActive) return;
-                this.placeDefenseWallBurst();
-            }, this.defensePlacementIntervalMs);
+            this.scheduleDefensePlacementTick();
             return;
         }
 
@@ -1480,11 +1474,17 @@ export class BuildingManager {
         const player = this.core.gameManager.player;
         if (!player) return 0;
 
-        const burst = Math.max(1, Number(this.defensePlacementBurstSize) || 1);
+        const pressureBonus = Math.max(0, Math.floor(this.getDefensePlacementPressureLevel() * 1.35));
+        const burst = Math.max(1, (Number(this.defensePlacementBurstSize) || 1) + pressureBonus);
         const pendingPredictedWalls = [];
+        const sharedContext = {
+            threatCandidates: null,
+            threatCursor: 0,
+            slotCursor: 0
+        };
         let placed = 0;
         for (let i = 0; i < burst; i++) {
-            if (!this.placeOneDefenseWall(pendingPredictedWalls)) break;
+            if (!this.placeOneDefenseWall(pendingPredictedWalls, sharedContext)) break;
             placed++;
         }
         return placed;
@@ -1501,7 +1501,156 @@ export class BuildingManager {
         }
     }
 
-    placeOneDefenseWall (pendingPredictedWalls = null) {
+    getDefensePlacementPressureLevel () {
+        const now = Date.now();
+        const idleMs = now - this.lastDefensePlacementPressAt;
+        if (idleMs > 1300) return 0;
+        if (idleMs <= 0) return this.defensePlacementPressure;
+        const decaySteps = Math.floor(idleMs / 180);
+        return Math.max(0, this.defensePlacementPressure - decaySteps);
+    }
+
+    bumpDefensePlacementPressure () {
+        const now = Date.now();
+        const idleMs = now - this.lastDefensePlacementPressAt;
+        if (idleMs > 1300) {
+            this.defensePlacementPressure = 0;
+        }
+        if (idleMs > 45 || this.lastDefensePlacementPressAt === 0) {
+            this.defensePlacementPressure = Math.min(
+                this.defensePlacementPressureMax,
+                this.defensePlacementPressure + 1
+            );
+        }
+        this.lastDefensePlacementPressAt = now;
+    }
+
+    getDefensePlacementIntervalMs () {
+        const pressure = this.getDefensePlacementPressureLevel();
+        const base = Math.max(40, Number(this.defensePlacementIntervalMs) || 180);
+        return Math.max(38, base - pressure * 9);
+    }
+
+    scheduleDefensePlacementTick () {
+        if (!this.defensePlacementActive) return;
+        const intervalMs = this.getDefensePlacementIntervalMs();
+        this.defensePlacementTimer = setTimeout(() => {
+            if (!this.defensePlacementActive) return;
+            this.placeDefenseWallBurst();
+            this.scheduleDefensePlacementTick();
+        }, intervalMs);
+    }
+
+    collectDefenseThreatUnits (player, limit = 24) {
+        if (!player) return [];
+        const others = Array.isArray(this.core.gameManager.players) ? this.core.gameManager.players : [];
+        const maxThreatRadius = Math.max(player.buildingRadius.max + 220, 420);
+        const maxThreatRadiusSq = maxThreatRadius * maxThreatRadius;
+        const preferredWallRadius = player.buildingRadius.max;
+        const threats = [];
+
+        for (const other of others) {
+            if (!other || other === player || other.id === player.id) continue;
+            const unitPools = [other.units || [], other.spawningUnits || []];
+            for (const pool of unitPools) {
+                for (const unit of pool) {
+                    if (!unit || unit.isFadingOut || !unit.position) continue;
+                    const dx = unit.position.x - player.position.x;
+                    const dy = unit.position.y - player.position.y;
+                    const distanceSq = dx * dx + dy * dy;
+                    if (!Number.isFinite(distanceSq) || distanceSq > maxThreatRadiusSq) continue;
+                    const distance = Math.sqrt(distanceSq);
+                    const angle = Math.atan2(dy, dx);
+
+                    let unitWeight = 1;
+                    if (unit.type === UnitTypes.SIEGE_TANK) unitWeight = 1.8;
+                    else if (unit.type === UnitTypes.TANK) unitWeight = 1.4;
+                    else if (unit.type === UnitTypes.COMMANDER || unit.type === UnitTypes.TRI_COMMANDER) unitWeight = 1.6;
+
+                    const ringDelta = Math.abs(distance - preferredWallRadius);
+                    const ringScore = 1 / (1 + ringDelta * 0.045);
+                    const score = unitWeight * ringScore;
+                    threats.push({ angle, distance, score });
+                }
+            }
+        }
+
+        threats.sort((a, b) => b.score - a.score);
+        return threats.slice(0, Math.max(1, limit | 0));
+    }
+
+    buildDefenseThreatWallCandidates (player, wallSize) {
+        if (!player) return [];
+        const range = this.getPlacementRadiusRangeForType(player, BuildingTypes.WALL, wallSize);
+        const minRadius = Number(range?.minRadius) || 0;
+        const maxRadius = Number(range?.maxRadius) || minRadius;
+        if (maxRadius < minRadius) return [];
+
+        const clampRadius = (radius) => Math.max(minRadius, Math.min(maxRadius, radius));
+        const preferredRadius = clampRadius(maxRadius);
+        const coneOffsetsWide = [0, -0.05, 0.05, -0.1, 0.1, -0.15, 0.15, -0.2, 0.2, -0.25, 0.25, -0.3, 0.3];
+        const coneOffsetsTight = [0, -0.03, 0.03, -0.06, 0.06, -0.09, 0.09];
+        const radiusOffsets = [0, -2, 2, -4, 4];
+        const layeredRadii = [];
+        for (let i = 0; i < 5; i++) {
+            layeredRadii.push(clampRadius(preferredRadius - i * 8));
+        }
+        const threats = this.collectDefenseThreatUnits(player, 24);
+        if (threats.length === 0) return [];
+
+        const out = [];
+        const seen = new Set();
+        const addCandidate = (angle, radius) => {
+            const r = clampRadius(radius);
+            const x = player.position.x + Math.cos(angle) * r;
+            const y = player.position.y + Math.sin(angle) * r;
+            const key = `${Math.round(x * 4)}:${Math.round(y * 4)}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            out.push({ x, y });
+        };
+
+        let weightedX = 0;
+        let weightedY = 0;
+        for (const threat of threats) {
+            const weight = Math.max(0.05, Number(threat.score) || 0.05);
+            weightedX += Math.cos(threat.angle) * weight;
+            weightedY += Math.sin(threat.angle) * weight;
+        }
+        const dominantAngle = Math.atan2(weightedY || 0, weightedX || 1);
+
+        // Priority #1: deep layered cone at the dominant attack direction.
+        for (const radius of layeredRadii) {
+            for (const angleOffset of coneOffsetsWide) {
+                addCandidate(dominantAngle + angleOffset, radius);
+            }
+        }
+
+        // Priority #2: reinforce around top threats with tighter cones across layers.
+        const focusedThreats = threats.slice(0, 12);
+        for (const threat of focusedThreats) {
+            for (const radius of layeredRadii) {
+                for (const angleOffset of coneOffsetsTight) {
+                    addCandidate(threat.angle + angleOffset, radius);
+                }
+            }
+        }
+
+        // Priority #3: keep classic per-threat sockets for broader coverage.
+        for (const threat of threats) {
+            const baseRadius = clampRadius(threat.distance);
+            for (const angleOffset of coneOffsetsTight) {
+                for (const radiusOffset of radiusOffsets) {
+                    addCandidate(threat.angle + angleOffset, baseRadius + radiusOffset);
+                }
+            }
+            addCandidate(threat.angle, preferredRadius);
+        }
+
+        return out;
+    }
+
+    placeOneDefenseWall (pendingPredictedWalls = null, context = null) {
         if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return false;
 
         const player = this.core.gameManager.player;
@@ -1520,29 +1669,80 @@ export class BuildingManager {
         const currentBuildings = [...baseBuildings, ...pendingWalls];
         this.syncDefensePlacedWallsWithCurrentState(player, positionToleranceSq);
         const currentWalls = currentBuildings.filter(b => b.type === BuildingTypes.WALL);
+        const hasWallNearPosition = (position, toleranceSq = positionToleranceSq) => {
+            return currentWalls.some(w => {
+                const dx = w.position.x - position.x;
+                const dy = w.position.y - position.y;
+                return dx * dx + dy * dy <= toleranceSq;
+            });
+        };
+
+        const runtime = context || {};
+        if (!Array.isArray(runtime.threatCandidates)) {
+            runtime.threatCandidates = this.buildDefenseThreatWallCandidates(player, wallSize);
+            runtime.threatCursor = 0;
+        }
+        if (!Number.isInteger(runtime.slotCursor) || runtime.slotCursor < 0) {
+            runtime.slotCursor = 0;
+        }
+
         let selectedPosition = null;
-        for (const entry of this.defenseProfile.entries) {
-            const hasOriginalBuilding = currentBuildings.some(b => {
-                if (b.type !== entry.type) return false;
-                const dx = b.position.x - entry.position.x;
-                const dy = b.position.y - entry.position.y;
-                return dx * dx + dy * dy <= positionToleranceSq;
-            });
-            if (hasOriginalBuilding) continue;
 
-            const hasDefenseWallThere = currentWalls.some(w => {
-                const dx = w.position.x - entry.position.x;
-                const dy = w.position.y - entry.position.y;
-                return dx * dx + dy * dy <= positionToleranceSq;
-            });
-            if (hasDefenseWallThere) continue;
-
-            const candidate = { x: entry.position.x, y: entry.position.y };
-            if (!this.canAutoPlaceBuilding(player, candidate, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
-                continue;
+        // Priority #1: block enemy advance with layered threat candidates.
+        while (runtime.threatCursor < runtime.threatCandidates.length) {
+            const candidate = runtime.threatCandidates[runtime.threatCursor++];
+            if (!candidate) continue;
+            if (hasWallNearPosition(candidate, 11 * 11)) continue;
+            if (this.canAutoPlaceBuilding(player, candidate, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
+                selectedPosition = candidate;
+                break;
             }
-            selectedPosition = candidate;
-            break;
+        }
+
+        // Priority #2: keep legacy defend slots recovered.
+        if (!selectedPosition) {
+            const entries = this.defenseProfile.entries;
+            const total = entries.length;
+            if (total > 0) {
+                for (let i = 0; i < total; i++) {
+                    const idx = (runtime.slotCursor + i) % total;
+                    const entry = entries[idx];
+                    const hasOriginalBuilding = currentBuildings.some(b => {
+                        if (b.type !== entry.type) return false;
+                        const dx = b.position.x - entry.position.x;
+                        const dy = b.position.y - entry.position.y;
+                        return dx * dx + dy * dy <= positionToleranceSq;
+                    });
+                    if (hasOriginalBuilding) continue;
+
+                    const slotPosition = { x: entry.position.x, y: entry.position.y };
+                    if (hasWallNearPosition(slotPosition)) continue;
+
+                    const candidate = slotPosition;
+                    runtime.slotCursor = (idx + 1) % total;
+                    if (!this.canAutoPlaceBuilding(player, candidate, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
+                        continue;
+                    }
+                    selectedPosition = candidate;
+                    break;
+                }
+            }
+        }
+
+        // Priority #3: regenerate threat candidates once if everything above is exhausted.
+        if (!selectedPosition && context && context.threatCandidates.length > 0) {
+            context.threatCandidates = this.buildDefenseThreatWallCandidates(player, wallSize);
+            context.threatCursor = 0;
+            while (context.threatCursor < context.threatCandidates.length) {
+                const candidate = context.threatCandidates[context.threatCursor++];
+                if (!candidate) continue;
+                if (hasWallNearPosition(candidate, 11 * 11)) continue;
+                if (!this.canAutoPlaceBuilding(player, candidate, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
+                    continue;
+                }
+                selectedPosition = candidate;
+                break;
+            }
         }
 
         if (!selectedPosition) return false;

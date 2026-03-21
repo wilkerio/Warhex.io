@@ -378,16 +378,42 @@ func broadcastNeutralBaseCaptured(neutral *game.NeutralBase) {
 	if neutral.CapturedBy != nil {
 		buffer.WriteByte(byte(neutral.CapturedBy.ID))
 
-		// Iterate over buildings and write their details
+		type capturedBuildingSnapshot struct {
+			id           game.ID
+			buildingType game.BuildingType
+			variant      game.BuildingVariant
+			rotationStep uint8
+			x            float32
+			y            float32
+		}
+
+		snapshots := make([]capturedBuildingSnapshot, 0)
+		neutral.Base.RLock()
 		for _, building := range neutral.Base.Buildings {
-			buffer.WriteByte(byte(building.ID))
-			buffer.WriteByte(byte(building.Type))
-			buffer.WriteByte(byte(building.Variant))
-			buffer.WriteByte(byte(building.PlacementRotationStep))
+			if building == nil {
+				continue
+			}
+			snapshots = append(snapshots, capturedBuildingSnapshot{
+				id:           building.ID,
+				buildingType: building.Type,
+				variant:      building.Variant,
+				rotationStep: building.PlacementRotationStep,
+				x:            building.Position.X,
+				y:            building.Position.Y,
+			})
+		}
+		neutral.Base.RUnlock()
+
+		// Iterate over snapshot and write building details.
+		for _, building := range snapshots {
+			buffer.WriteByte(byte(building.id))
+			buffer.WriteByte(byte(building.buildingType))
+			buffer.WriteByte(byte(building.variant))
+			buffer.WriteByte(byte(building.rotationStep))
 
 			// Write building positions
-			binary.Write(buffer, binary.BigEndian, building.Position.X)
-			binary.Write(buffer, binary.BigEndian, building.Position.Y)
+			binary.Write(buffer, binary.BigEndian, building.x)
+			binary.Write(buffer, binary.BigEndian, building.y)
 		}
 	}
 
@@ -400,30 +426,56 @@ func broadcastBuildingPlaced(base *game.Base, buildingID game.ID) {
 		Type: MessageTypeBuildingPlaced,
 	}
 
-	building := base.Buildings[buildingID]
-
 	buffer := new(bytes.Buffer)
 
-	var player *game.Player
-
-	// Determine if the owner is a Player or a NeutralBase and write the relevant data
-	if player_, ok := base.Owner.(*game.Player); ok {
-		player = player_
-		buffer.WriteByte(1) // Indicating it's a Player
-		buffer.WriteByte(byte(player.ID))
-	} else if neutral, ok := base.Owner.(*game.NeutralBase); ok {
-		player = neutral.CapturedBy
-		buffer.WriteByte(0) // Indicating it's a NeutralBase
-		buffer.WriteByte(byte(neutral.ID))
+	type placedBuildingSnapshot struct {
+		player       *game.Player
+		ownerKind    byte
+		ownerID      game.ID
+		id           game.ID
+		buildingType game.BuildingType
+		rotationStep uint8
+		x            float32
+		y            float32
 	}
-	buffer.WriteByte(byte(building.ID))
-	buffer.WriteByte(byte(building.Type))
-	buffer.WriteByte(byte(building.PlacementRotationStep))
-	binary.Write(buffer, binary.BigEndian, building.Position.X)
-	binary.Write(buffer, binary.BigEndian, building.Position.Y)
 
-	if building.Type == game.BARRACKS && player != nil {
-		unitSpawning := player.GetUnitSpawningForBarrack(building)
+	base.RLock()
+	building := base.Buildings[buildingID]
+	if building == nil {
+		base.RUnlock()
+		return
+	}
+
+	snapshot := placedBuildingSnapshot{
+		id:           building.ID,
+		buildingType: building.Type,
+		rotationStep: building.PlacementRotationStep,
+		x:            building.Position.X,
+		y:            building.Position.Y,
+	}
+
+	// Determine if the owner is a Player or a NeutralBase and write the relevant data.
+	if player, ok := base.Owner.(*game.Player); ok {
+		snapshot.player = player
+		snapshot.ownerKind = 1 // Player
+		snapshot.ownerID = player.ID
+	} else if neutral, ok := base.Owner.(*game.NeutralBase); ok {
+		snapshot.player = neutral.CapturedBy
+		snapshot.ownerKind = 0 // NeutralBase
+		snapshot.ownerID = neutral.ID
+	}
+	base.RUnlock()
+
+	buffer.WriteByte(snapshot.ownerKind)
+	buffer.WriteByte(byte(snapshot.ownerID))
+	buffer.WriteByte(byte(snapshot.id))
+	buffer.WriteByte(byte(snapshot.buildingType))
+	buffer.WriteByte(byte(snapshot.rotationStep))
+	binary.Write(buffer, binary.BigEndian, snapshot.x)
+	binary.Write(buffer, binary.BigEndian, snapshot.y)
+
+	if snapshot.buildingType == game.BARRACKS && snapshot.player != nil {
+		unitSpawning := snapshot.player.GetUnitSpawningForBarrack(building)
 		if unitSpawning != nil && unitSpawning.Activated {
 			buffer.WriteByte(1) // Indicate active spawning
 		} else {
@@ -440,19 +492,42 @@ func broadcastBuildingsUpgraded(base *game.Base, buildingIDs []game.ID) {
 		Type: MessageTypeBuildingsUpgraded,
 	}
 
-	building := base.Buildings[buildingIDs[0]]
-
 	buffer := new(bytes.Buffer)
 
-	// Determine if the owner is a Player or a NeutralBase and write the relevant data
-	if player, ok := base.Owner.(*game.Player); ok {
-		buffer.WriteByte(1) // Indicating it's a Player
-		buffer.WriteByte(byte(player.ID))
-	} else if neutral, ok := base.Owner.(*game.NeutralBase); ok {
-		buffer.WriteByte(0) // Indicating it's a NeutralBase
-		buffer.WriteByte(byte(neutral.ID))
+	if len(buildingIDs) == 0 {
+		return
 	}
-	buffer.WriteByte(byte(building.Variant))
+
+	type upgradedBuildingSnapshot struct {
+		ownerKind byte
+		ownerID   game.ID
+		variant   game.BuildingVariant
+	}
+
+	base.RLock()
+	building := base.Buildings[buildingIDs[0]]
+	if building == nil {
+		base.RUnlock()
+		return
+	}
+
+	snapshot := upgradedBuildingSnapshot{
+		variant: building.Variant,
+	}
+
+	// Determine if the owner is a Player or a NeutralBase and write the relevant data.
+	if player, ok := base.Owner.(*game.Player); ok {
+		snapshot.ownerKind = 1 // Player
+		snapshot.ownerID = player.ID
+	} else if neutral, ok := base.Owner.(*game.NeutralBase); ok {
+		snapshot.ownerKind = 0 // NeutralBase
+		snapshot.ownerID = neutral.ID
+	}
+	base.RUnlock()
+
+	buffer.WriteByte(snapshot.ownerKind)
+	buffer.WriteByte(byte(snapshot.ownerID))
+	buffer.WriteByte(byte(snapshot.variant))
 
 	// Write all buildingIDs to the buffer
 	for _, buildingID := range buildingIDs {
