@@ -1295,6 +1295,25 @@ export class BuildingManager {
         });
     }
 
+    resolveDefenseEntryPosition (entry, player = this.core.gameManager.player) {
+        if (!entry || !player?.position) return null;
+        const hasRelativeOffset = Number.isFinite(Number(entry.dx)) && Number.isFinite(Number(entry.dy));
+        if (hasRelativeOffset) {
+            return {
+                x: Math.round((player.position.x + Number(entry.dx)) * 10) / 10,
+                y: Math.round((player.position.y + Number(entry.dy)) * 10) / 10
+            };
+        }
+
+        const position = entry.position;
+        if (!position) return null;
+        if (!Number.isFinite(Number(position.x)) || !Number.isFinite(Number(position.y))) return null;
+        return {
+            x: Number(position.x),
+            y: Number(position.y)
+        };
+    }
+
     announceDefenseHotkeys () {
         this.core.uiManager.addChatMessage(
             "System",
@@ -1325,6 +1344,8 @@ export class BuildingManager {
             .map(b => ({
                 type: b.type,
                 rotationStep: Number.isFinite(Number(b.placementRotationStep)) ? Number(b.placementRotationStep) : 0,
+                dx: Math.round((b.position.x - player.position.x) * 10) / 10,
+                dy: Math.round((b.position.y - player.position.y) * 10) / 10,
                 position: {
                     x: Math.round(b.position.x * 10) / 10,
                     y: Math.round(b.position.y * 10) / 10
@@ -1688,18 +1709,7 @@ export class BuildingManager {
 
         let selectedPosition = null;
 
-        // Priority #1: block enemy advance with layered threat candidates.
-        while (runtime.threatCursor < runtime.threatCandidates.length) {
-            const candidate = runtime.threatCandidates[runtime.threatCursor++];
-            if (!candidate) continue;
-            if (hasWallNearPosition(candidate, 11 * 11)) continue;
-            if (this.canAutoPlaceBuilding(player, candidate, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
-                selectedPosition = candidate;
-                break;
-            }
-        }
-
-        // Priority #2: keep legacy defend slots recovered.
+        // Priority #1: recover saved defend slots at exact base-relative positions.
         if (!selectedPosition) {
             const entries = this.defenseProfile.entries;
             const total = entries.length;
@@ -1707,29 +1717,42 @@ export class BuildingManager {
                 for (let i = 0; i < total; i++) {
                     const idx = (runtime.slotCursor + i) % total;
                     const entry = entries[idx];
+                    const entryPosition = this.resolveDefenseEntryPosition(entry, player);
+                    if (!entryPosition) continue;
                     const hasOriginalBuilding = currentBuildings.some(b => {
                         if (b.type !== entry.type) return false;
-                        const dx = b.position.x - entry.position.x;
-                        const dy = b.position.y - entry.position.y;
+                        const dx = b.position.x - entryPosition.x;
+                        const dy = b.position.y - entryPosition.y;
                         return dx * dx + dy * dy <= positionToleranceSq;
                     });
                     if (hasOriginalBuilding) continue;
 
-                    const slotPosition = { x: entry.position.x, y: entry.position.y };
-                    if (hasWallNearPosition(slotPosition)) continue;
+                    if (hasWallNearPosition(entryPosition)) continue;
 
-                    const candidate = slotPosition;
                     runtime.slotCursor = (idx + 1) % total;
-                    if (!this.canAutoPlaceBuilding(player, candidate, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
+                    if (!this.canAutoPlaceBuilding(player, entryPosition, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
                         continue;
                     }
+                    selectedPosition = entryPosition;
+                    break;
+                }
+            }
+        }
+
+        // Priority #2: block enemy advance with layered threat candidates.
+        if (!selectedPosition) {
+            while (runtime.threatCursor < runtime.threatCandidates.length) {
+                const candidate = runtime.threatCandidates[runtime.threatCursor++];
+                if (!candidate) continue;
+                if (hasWallNearPosition(candidate, 11 * 11)) continue;
+                if (this.canAutoPlaceBuilding(player, candidate, [], pendingWalls, wallType, wallSize, { ignoreUnits: true })) {
                     selectedPosition = candidate;
                     break;
                 }
             }
         }
 
-        // Priority #3: regenerate threat candidates once if everything above is exhausted.
+        // Priority #3: regenerate threat candidates once if exhausted.
         if (!selectedPosition && context && context.threatCandidates.length > 0) {
             context.threatCandidates = this.buildDefenseThreatWallCandidates(player, wallSize);
             context.threatCursor = 0;
@@ -1777,39 +1800,52 @@ export class BuildingManager {
         const wallMatchToleranceSq = 40 * 40;
         this.syncDefensePlacedWallsWithCurrentState(player, wallMatchToleranceSq);
         const currentBuildings = (player.buildings || []).filter(b => b && !b.removeFlag);
+        const getEntryPosition = (entry) => this.resolveDefenseEntryPosition(entry, player);
 
         const findWallsInSavedSlot = (entry) => {
+            const entryPosition = getEntryPosition(entry);
+            if (!entryPosition) return [];
             return currentBuildings.filter(b => {
                 if (b.type !== BuildingTypes.WALL) return false;
-                const dx = b.position.x - entry.position.x;
-                const dy = b.position.y - entry.position.y;
+                const dx = b.position.x - entryPosition.x;
+                const dy = b.position.y - entryPosition.y;
                 return dx * dx + dy * dy <= wallMatchToleranceSq;
             });
         };
 
-        const isOriginalBuildingPresent = (entry) => currentBuildings.some(b => {
-            if (b.type !== entry.type) return false;
-            const dx = b.position.x - entry.position.x;
-            const dy = b.position.y - entry.position.y;
-            return dx * dx + dy * dy <= slotToleranceSq;
-        });
+        const isOriginalBuildingPresent = (entry) => {
+            const entryPosition = getEntryPosition(entry);
+            if (!entryPosition) return false;
+            return currentBuildings.some(b => {
+                if (b.type !== entry.type) return false;
+                const dx = b.position.x - entryPosition.x;
+                const dy = b.position.y - entryPosition.y;
+                return dx * dx + dy * dy <= slotToleranceSq;
+            });
+        };
 
-        const hasOtherBuildingInSlot = (entry) => currentBuildings.some(b => {
-            if (b.type === BuildingTypes.WALL) return false;
-            const dx = b.position.x - entry.position.x;
-            const dy = b.position.y - entry.position.y;
-            return dx * dx + dy * dy <= slotToleranceSq;
-        });
+        const hasOtherBuildingInSlot = (entry) => {
+            const entryPosition = getEntryPosition(entry);
+            if (!entryPosition) return false;
+            return currentBuildings.some(b => {
+                if (b.type === BuildingTypes.WALL) return false;
+                const dx = b.position.x - entryPosition.x;
+                const dy = b.position.y - entryPosition.y;
+                return dx * dx + dy * dy <= slotToleranceSq;
+            });
+        };
 
         // First pass: remove all matching walls in one batch.
         const slotsWithWalls = [];
         const wallIDsToRemove = new Set();
         for (const entry of this.defenseProfile.entries) {
+            const entryPosition = getEntryPosition(entry);
+            if (!entryPosition) continue;
             if (isOriginalBuildingPresent(entry)) continue;
             if (hasOtherBuildingInSlot(entry)) continue;
             const matchingWalls = findWallsInSavedSlot(entry);
             if (matchingWalls.length === 0) continue;
-            slotsWithWalls.push(entry.position);
+            slotsWithWalls.push(entryPosition);
             for (const wall of matchingWalls) {
                 wallIDsToRemove.add(wall.id);
             }
@@ -1830,6 +1866,8 @@ export class BuildingManager {
         const burst = Math.max(1, Number(this.defenseRemountBurstSize) || 1);
         let placed = 0;
         for (const entry of this.defenseProfile.entries) {
+            const entryPosition = getEntryPosition(entry);
+            if (!entryPosition) continue;
             if (placed >= burst) break;
             if (isOriginalBuildingPresent(entry)) continue;
             if (hasOtherBuildingInSlot(entry)) continue;
@@ -1847,7 +1885,7 @@ export class BuildingManager {
             const BuildingClass = BuildingManager.getBuildingClassByType(type);
             if (!BuildingClass) continue;
 
-            const position = { x: entry.position.x, y: entry.position.y };
+            const position = { x: entryPosition.x, y: entryPosition.y };
             this.core.networkManager.placeBuilding(type, position, true, rotationStep);
             const predicted = new BuildingClass(player.color, position);
             if (typeof predicted.setPlacementRotationStep === "function") {
