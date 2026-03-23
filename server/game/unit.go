@@ -448,7 +448,7 @@ var unitTypes = map[UnitType]map[UnitVariant]UnitStats{
 	COMMANDER: {
 		BASIC_UNIT: {
 			Variant:            BASIC_UNIT,
-			Health:             Health{Current: 1170, Max: 1170},
+			Health:             Health{Current: 2220, Max: 2220},
 			Damage:             130,
 			Speed:              legacySpeedToPerSecond(0.16),
 			Size:               32,

@@ -120,8 +120,8 @@ const (
 	PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
 	// Commander regeneration is intentionally slow and periodic.
 	COMMANDER_HEALTH_REGENERATION           = 120 // HP per tick
-	COMMANDER_HEALTH_REGENERATION_FREQUENCY = 300 // Seconds (5 minutes)
-	COMMANDER_HEALTH_REGENERATION_DELAY     = 30  // Seconds without taking damage
+	COMMANDER_HEALTH_REGENERATION_FREQUENCY = 120 // Seconds (2 minutes)
+	COMMANDER_HEALTH_REGENERATION_DELAY     = 120 // Seconds without taking damage
 
 	// Player building settings
 	PLAYER_MAX_BUILDING_RADIUS = 306
@@ -158,7 +158,8 @@ const (
 	// Soldiers are swarms; boost only when colliding with enemy core.
 	SOLDIER_CORE_DAMAGE_MULTIPLIER = 3
 	// Restore legacy matchup feeling: soldier waves should punish commanders hard.
-	SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER = 3
+	// Base soldier damage is 6, so x2 => 12 damage per soldier collision on commander.
+	SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER = 2
 
 	// Spawn settings
 	MIN_PLAYER_SPAWN_DISTANCE = 1500 // Minimum distance between player spawns

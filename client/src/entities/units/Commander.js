@@ -3,7 +3,7 @@ import { UnitDetails, UnitTypes, UnitVariantTypes, darkenColor, getUnitBulletDet
 import Unit from "../Unit.js";
 
 export default class Commander extends Unit {
-    constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1, health = 1170, maxHealth = 1170) {
+    constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1, health = 2220, maxHealth = 2220) {
         const details = getUnitDetails(UnitTypes.COMMANDER, variant);
 
         super(id, UnitTypes.COMMANDER, color, details, position, variant, health, maxHealth);
