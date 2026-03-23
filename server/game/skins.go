@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"strings"
 )
@@ -14,21 +15,21 @@ var NonSkinColors [][]byte
 
 func InitializeNonSkinColors() {
 	rawColors := []string{
-		"#60eaff",
-		"#c0d7f6",
-		"#61b0ff",
-		"#ae97f6",
-		"#61ffb0",
-		"#a6ff60",
-		"#a1cd84",
-		"#3fc6a8",
-		"#fff070",
-		"#ffb061",
-		"#d88166",
-		"#ff794f",
-		"#ff605f",
-		"#f697b0",
-		"#ff6ef1",
+		"#00e5ff",
+		"#00b8ff",
+		"#2979ff",
+		"#7c4dff",
+		"#b388ff",
+		"#00e676",
+		"#00c853",
+		"#64dd17",
+		"#ffd600",
+		"#ffab00",
+		"#ff9100",
+		"#ff6d00",
+		"#ff5252",
+		"#ff4081",
+		"#f500ff",
 	}
 
 	NonSkinColors = make([][]byte, len(rawColors))
@@ -175,5 +176,103 @@ func ParseHexColor(hexColor string) []byte {
 		return []byte{0, 0, 0} // Default to black if error
 	}
 
-	return []byte{r, g, b}
+	return vividifyColor(r, g, b)
+}
+
+func vividifyColor(r, g, b byte) []byte {
+	rf := float64(r) / 255.0
+	gf := float64(g) / 255.0
+	bf := float64(b) / 255.0
+
+	maxv := math.Max(rf, math.Max(gf, bf))
+	minv := math.Min(rf, math.Min(gf, bf))
+	delta := maxv - minv
+
+	l := (maxv + minv) / 2.0
+	s := 0.0
+	h := 0.0
+
+	if delta > 0 {
+		if l > 0.5 {
+			s = delta / (2.0 - maxv - minv)
+		} else {
+			s = delta / (maxv + minv)
+		}
+
+		switch maxv {
+		case rf:
+			h = (gf - bf) / delta
+			if gf < bf {
+				h += 6.0
+			}
+		case gf:
+			h = (bf-rf)/delta + 2.0
+		default:
+			h = (rf-gf)/delta + 4.0
+		}
+		h /= 6.0
+	}
+
+	// Keep all base colors vivid and avoid pastel/washed tones.
+	if s < 0.90 {
+		s = 0.90
+	}
+	if l < 0.52 {
+		l = 0.52
+	} else if l > 0.66 {
+		l = 0.66
+	}
+
+	rOut, gOut, bOut := hslToRGB(h, s, l)
+	return []byte{rOut, gOut, bOut}
+}
+
+func hslToRGB(h, s, l float64) (byte, byte, byte) {
+	var rf, gf, bf float64
+	if s == 0 {
+		rf, gf, bf = l, l, l
+	} else {
+		q := l * (1 + s)
+		if l >= 0.5 {
+			q = l + s - l*s
+		}
+		p := 2*l - q
+		rf = hueToRGB(p, q, h+1.0/3.0)
+		gf = hueToRGB(p, q, h)
+		bf = hueToRGB(p, q, h-1.0/3.0)
+	}
+
+	r := byte(math.Round(clampColor01(rf) * 255.0))
+	g := byte(math.Round(clampColor01(gf) * 255.0))
+	b := byte(math.Round(clampColor01(bf) * 255.0))
+	return r, g, b
+}
+
+func hueToRGB(p, q, t float64) float64 {
+	if t < 0 {
+		t += 1
+	}
+	if t > 1 {
+		t -= 1
+	}
+	if t < 1.0/6.0 {
+		return p + (q-p)*6*t
+	}
+	if t < 1.0/2.0 {
+		return q
+	}
+	if t < 2.0/3.0 {
+		return p + (q-p)*(2.0/3.0-t)*6
+	}
+	return p
+}
+
+func clampColor01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }

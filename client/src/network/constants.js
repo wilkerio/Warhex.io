@@ -806,7 +806,7 @@ export const UnitBulletDetails = {
         BASIC: {
             variant: UnitVariantTypes.COMMANDER.BASIC,
             type: BulletTypes.BASIC,
-            speed: 700,
+            speed: 450,
             size: 12,
             range: 160
         },
@@ -816,7 +816,7 @@ export const UnitBulletDetails = {
         BASIC: {
             variant: UnitVariantTypes.TRI_COMMANDER.BASIC,
             type: BulletTypes.BASIC,
-            speed: 700,
+            speed: 450,
             size: 12,
             range: 160
         },
@@ -1023,6 +1023,71 @@ export function darkenColor (hex, percent) {
 
     // Convert RGB back to HEX
     return rgbToHex(r, g, b);
+}
+
+export function makeVividColor (hex) {
+    if (typeof hex !== "string") return hex;
+    const clean = hex.trim();
+    if (!/^#([0-9a-fA-F]{6})$/.test(clean)) return hex;
+
+    let r = parseInt(clean.slice(1, 3), 16) / 255;
+    let g = parseInt(clean.slice(3, 5), 16) / 255;
+    let b = parseInt(clean.slice(5, 7), 16) / 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const delta = max - min;
+
+    let h = 0;
+    let s = 0;
+    let l = (max + min) / 2;
+
+    if (delta > 0) {
+        s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+        switch (max) {
+        case r:
+            h = ((g - b) / delta + (g < b ? 6 : 0)) / 6;
+            break;
+        case g:
+            h = ((b - r) / delta + 2) / 6;
+            break;
+        default:
+            h = ((r - g) / delta + 4) / 6;
+            break;
+        }
+    }
+
+    // Strong saturation + bright mid tones for a cleaner, vivid look.
+    if (s < 0.92) s = 0.92;
+    if (l < 0.54) l = 0.54;
+    if (l > 0.68) l = 0.68;
+
+    const toRgb = (p, q, t) => {
+        let tt = t;
+        if (tt < 0) tt += 1;
+        if (tt > 1) tt -= 1;
+        if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+        if (tt < 1 / 2) return q;
+        if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+        return p;
+    };
+
+    if (s === 0) {
+        r = l;
+        g = l;
+        b = l;
+    } else {
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = toRgb(p, q, h + 1 / 3);
+        g = toRgb(p, q, h);
+        b = toRgb(p, q, h - 1 / 3);
+    }
+
+    const rr = Math.round(Math.max(0, Math.min(1, r)) * 255);
+    const gg = Math.round(Math.max(0, Math.min(1, g)) * 255);
+    const bb = Math.round(Math.max(0, Math.min(1, b)) * 255);
+    return rgbToHex(rr, gg, bb);
 }
 
 function rgbToHex (r, g, b) {

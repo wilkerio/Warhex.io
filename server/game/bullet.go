@@ -356,14 +356,14 @@ var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 			Behavior:         UnitBullet,
 		},
 	},
-	COMMANDER: {
-		BASIC_UNIT: {
-			Health:           Health{Current: 30, Max: 30},
-			Speed:            700,
-			Size:             12,
-			Polygon:          unitBulletPolygon,
-			DamageMultiplier: 1.0,
-			Behavior:         UnitBullet,
+		COMMANDER: {
+			BASIC_UNIT: {
+				Health:           Health{Current: 30, Max: 30},
+				Speed:            450,
+				Size:             12,
+				Polygon:          unitBulletPolygon,
+				DamageMultiplier: 1.0,
+				Behavior:         UnitBullet,
 		},
 	},
 }

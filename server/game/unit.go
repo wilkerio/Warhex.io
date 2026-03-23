@@ -445,14 +445,14 @@ var unitTypes = map[UnitType]map[UnitVariant]UnitStats{
 			Size:    40,
 		},
 	},
-	COMMANDER: {
-		BASIC_UNIT: {
-			Variant:            BASIC_UNIT,
-			Health:             Health{Current: 1110, Max: 1110},
-			Damage:             130,
-			Speed:              legacySpeedToPerSecond(0.16),
-			Size:               32,
-			RequiredPopulation: 0,
+		COMMANDER: {
+			BASIC_UNIT: {
+				Variant:            BASIC_UNIT,
+				Health:             Health{Current: 1104, Max: 1104},
+				Damage:             130,
+				Speed:              legacySpeedToPerSecond(0.16),
+				Size:               32,
+				RequiredPopulation: 0,
 		},
 	},
 }

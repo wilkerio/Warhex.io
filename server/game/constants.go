@@ -157,8 +157,8 @@ const (
 	COMMANDER_CORE_DAMAGE_MULTIPLIER = 3
 	// Soldiers are swarms; boost only when colliding with enemy core.
 	SOLDIER_CORE_DAMAGE_MULTIPLIER = 3
-	// No extra modifier: commander survivability is balanced through commander health.
-	SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER = 1
+	// Each soldier counts as "2" versus commander in direct unit collisions.
+	SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER = 2
 
 	// Spawn settings
 	MIN_PLAYER_SPAWN_DISTANCE = 1500 // Minimum distance between player spawns

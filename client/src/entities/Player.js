@@ -3,7 +3,7 @@ import Building from "./Building.js";
 import Unit from "./Unit.js";
 import ThemeManager from "../components/managers/ThemeManager.js";
 import SkinCache from "../components/SkinCache.js";
-import { BuildingSizes } from "../network/constants.js";
+import { BuildingSizes, makeVividColor } from "../network/constants.js";
 
 export default class Player extends Renderable {
     constructor (id, name = "Warhex.io", color, skinID = null, position = { x: 0, y: 0 }, health = 2000, hasSpawnProtection = true) {
@@ -14,7 +14,7 @@ export default class Player extends Renderable {
         this.capturedNeutralIds = []; // Holds id's of captured neutrals
         this.name = name;
         this.nameWidth = null;
-        this.color = color;
+        this.color = makeVividColor(color) || color;
         this.skin = null; // Initially no skin
         this.skinID = skinID; // The skin ID/name to fetch
         this.skinLoaded = false;
@@ -136,6 +136,10 @@ export default class Player extends Renderable {
     setHealth (health) {
         const safeHealth = Number.isFinite(health) ? health : this.targetHealth;
         this.targetHealth = Math.max(0, Math.min(safeHealth, this.health.max));
+    }
+
+    setColor (color) {
+        this.color = makeVividColor(color) || color;
     }
 
     addBullet (bullet) { //! Just used for trapper bullets currently

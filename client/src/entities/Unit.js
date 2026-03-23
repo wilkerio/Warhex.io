@@ -120,8 +120,8 @@ export default class Unit extends Renderable {
         }
         context.globalAlpha = this.alpha;
 
-        // Add health bar rendering here
-        if (this.type === UnitTypes.COMMANDER || this.health < this.maxHealth) { // Only show if not full health
+        // Add health bar rendering here (Commander/Tri Commander don't show health bars)
+        if (this.type !== UnitTypes.COMMANDER && this.type !== UnitTypes.TRI_COMMANDER && this.health < this.maxHealth) { // Only show if not full health
             const healthBarWidth = this.size * 1.5;
             const healthBarHeight = 5;
             const x = worldPosition.x - healthBarWidth / 2;
