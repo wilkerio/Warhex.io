@@ -1,4 +1,4 @@
-import { BuildingTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
+import { BuildingTypes, BuildingVariantTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
 import * as supabaseClientApi from "../../network/supabaseClient.js";
@@ -79,6 +79,10 @@ export default class UIManager {
         this.musicControlsPlayPauseButton = null;
         this.musicControlsMuteButton = null;
         this._musicControlsResizeHandler = null;
+        this.screenNoticeElement = null;
+        this.screenNoticeHideTimeout = null;
+        this._baseLayoutHotkeyLoadInFlight = false;
+        this._cameraZoomInitialized = false;
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -426,6 +430,13 @@ export default class UIManager {
                 selectSoldiersOnly: "x",
                 selectTanksOnly: "v",
                 selectSiegeOnly: "b",
+                selectCommanderSoldiers: "",
+                selectCommanderTanks: "",
+                selectCommanderSiege: "",
+                selectCommanderSoldiersTanks: "",
+                selectCommanderSoldiersSiege: "",
+                selectCommanderTanksSiege: "",
+                selectCommanderArmy: "",
                 upgrade1: "q",
                 upgrade2: "e",
                 upgrade3: "t",
@@ -433,6 +444,11 @@ export default class UIManager {
                 upgradeBarracksToggle: "f",
                 upgradeAllMode: "y",
                 upgradeDestroyAll: "u"
+            },
+            upgradeHotkeys: {},
+            cameraControls: {
+                speed: 3,
+                zoom: 1.5
             },
             unitShapes: {
                 soldier: "triangle",
@@ -473,6 +489,13 @@ export default class UIManager {
             keybinds: {
                 ...defaults.keybinds,
                 ...(incoming?.keybinds || {})
+            },
+            upgradeHotkeys: (incoming?.upgradeHotkeys && typeof incoming.upgradeHotkeys === "object")
+                ? { ...incoming.upgradeHotkeys }
+                : {},
+            cameraControls: {
+                ...defaults.cameraControls,
+                ...((incoming?.cameraControls && typeof incoming.cameraControls === "object") ? incoming.cameraControls : {})
             },
             unitShapes: {
                 ...defaults.unitShapes,
@@ -526,6 +549,7 @@ export default class UIManager {
                 this.hudConfig = this.mergeHudConfig(result.data);
                 this.saveHudConfigLocal();
                 this.applyHudConfig();
+                this.applyCameraControlsFromHudConfig({ applyZoom: true });
                 this.refreshCustomizationSettingsUI();
             }
         } catch (error) {
@@ -543,9 +567,382 @@ export default class UIManager {
         }
     }
 
+    normalizeKeybindValue (keyValue) {
+        if (keyValue === null || keyValue === undefined) return "";
+        const raw = String(keyValue);
+        if (raw === " ") return "space";
+        const normalized = raw.trim().toLowerCase();
+        if (!normalized) return "";
+
+        const aliases = {
+            ctrl: "control",
+            ctl: "control",
+            esc: "escape",
+            del: "delete",
+            ins: "insert",
+            return: "enter",
+            spacebar: "space",
+            left: "arrowleft",
+            right: "arrowright",
+            up: "arrowup",
+            down: "arrowdown",
+            cmd: "meta",
+            win: "meta",
+            windows: "meta",
+            option: "alt",
+            pgup: "pageup",
+            pgdn: "pagedown",
+            xbutton1: "mouse4",
+            xbutton2: "mouse5",
+            mouseleft: "mouse1",
+            mouseright: "mouse3",
+            mousemiddle: "mouse2",
+            mousebutton1: "mouse1",
+            mousebutton2: "mouse2",
+            mousebutton3: "mouse3",
+            mousebutton4: "mouse4",
+            mousebutton5: "mouse5"
+        };
+
+        return aliases[normalized] || normalized;
+    }
+
+    isReservedGameplayKeybind (keyValue) {
+        const normalized = this.normalizeKeybindValue(keyValue);
+        return normalized === "delete";
+    }
+
+    getReservedGameplayKeybindNotice (keyValue) {
+        const normalized = this.normalizeKeybindValue(keyValue);
+        if (normalized === "delete") {
+            return "Key DELETE is reserved for Sell/Destroy. Choose another key.";
+        }
+        return "";
+    }
+
+    formatKeybindLabel (keyValue) {
+        const normalized = this.normalizeKeybindValue(keyValue);
+        if (!normalized) return this.t("hud.none");
+        if (/^mouse\d+$/.test(normalized)) {
+            return `MOUSE ${normalized.slice(5)}`;
+        }
+        const displayAliases = {
+            control: "CTRL",
+            meta: "META",
+            alt: "ALT",
+            shift: "SHIFT",
+            enter: "ENTER",
+            tab: "TAB",
+            escape: "ESC",
+            backspace: "BACKSPACE",
+            delete: "DELETE",
+            insert: "INSERT",
+            home: "HOME",
+            end: "END",
+            pageup: "PAGE UP",
+            pagedown: "PAGE DOWN",
+            arrowup: "ARROW UP",
+            arrowdown: "ARROW DOWN",
+            arrowleft: "ARROW LEFT",
+            arrowright: "ARROW RIGHT",
+            space: "SPACE"
+        };
+        return displayAliases[normalized] || normalized.toUpperCase();
+    }
+
     getHudKeybind (actionName, fallbackKey) {
-        const key = this.hudConfig?.keybinds?.[actionName];
-        return (typeof key === "string" && key.trim()) ? key.trim().toLowerCase() : fallbackKey;
+        const all = this.hudConfig?.keybinds || {};
+        if (Object.prototype.hasOwnProperty.call(all, actionName)) {
+            return this.normalizeKeybindValue(all[actionName]);
+        }
+        return this.normalizeKeybindValue(fallbackKey);
+    }
+
+    formatEnumLabel (rawValue) {
+        return String(rawValue || "")
+            .toLowerCase()
+            .split("_")
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
+    }
+
+    getUpgradeHotkeyDefinitions () {
+        const defs = [];
+        const known = new Set();
+        const addDef = (id, label, section) => {
+            const safeId = String(id || "");
+            if (!safeId || known.has(safeId)) return;
+            known.add(safeId);
+            defs.push({
+                id: safeId,
+                label: String(label || safeId),
+                section: String(section || "Other")
+            });
+        };
+
+        const visibleArmoryVariants = [
+            BuildingVariantTypes?.ARMORY?.POWER_ARMOR,
+            BuildingVariantTypes?.ARMORY?.BOOSTER_ENGINES,
+            BuildingVariantTypes?.ARMORY?.PANZER_CANNONS,
+            BuildingVariantTypes?.ARMORY?.CLOAKING_DEVICE
+        ]
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0)
+            .sort((a, b) => a - b);
+        visibleArmoryVariants.forEach((variant) => {
+            const details = getBuildingDetails(BuildingTypes.ARMORY, variant);
+            if (!details) return;
+            addDef(`armory:${variant}`, `Armory: ${details.name}`, "Armory Upgrades");
+        });
+
+        return defs.sort((a, b) => {
+            return String(a.label).localeCompare(String(b.label));
+        });
+    }
+
+    getUpgradeHotkeyDefinitionById (upgradeId) {
+        const normalizedId = String(upgradeId || "");
+        if (!normalizedId) return null;
+        const defs = this.getUpgradeHotkeyDefinitions();
+        return defs.find((entry) => entry.id === normalizedId) || null;
+    }
+
+    getUpgradeHotkeyLabel (upgradeId) {
+        const found = this.getUpgradeHotkeyDefinitionById(upgradeId);
+        if (found?.label) return found.label;
+        return `Upgrade ${String(upgradeId || "").trim() || "Hotkey"}`;
+    }
+
+    getUpgradeHotkeyValue (upgradeId) {
+        const id = String(upgradeId || "");
+        if (!id) return "";
+        const hotkeys = (this.hudConfig?.upgradeHotkeys && typeof this.hudConfig.upgradeHotkeys === "object")
+            ? this.hudConfig.upgradeHotkeys
+            : {};
+        return this.normalizeKeybindValue(hotkeys[id] || "");
+    }
+
+    setUpgradeHotkeyValue (upgradeId, keyValue, options = {}) {
+        const id = String(upgradeId || "");
+        if (!id) return { ok: false };
+        const normalized = this.normalizeKeybindValue(keyValue);
+        if (!this.hudConfig.upgradeHotkeys || typeof this.hudConfig.upgradeHotkeys !== "object") {
+            this.hudConfig.upgradeHotkeys = {};
+        }
+
+        if (normalized === "unidentified" || normalized === "process") {
+            return { ok: false };
+        }
+
+        if (!normalized) {
+            delete this.hudConfig.upgradeHotkeys[id];
+            this.scheduleHudConfigSync();
+            this.refreshCustomizationSettingsUI();
+            return { ok: true };
+        }
+
+        if (this.isReservedGameplayKeybind(normalized)) {
+            if (options?.warnOnConflict !== false) {
+                this.notifySystemWarning(this.getReservedGameplayKeybindNotice(normalized));
+            }
+            this.refreshCustomizationSettingsUI();
+            return { ok: false, reserved: true };
+        }
+
+        const conflict = this.findConfiguredKeyConflict(normalized, {
+            excludeScope: "upgrade-item",
+            excludeId: id
+        });
+        if (conflict) {
+            if (options?.warnOnConflict !== false) {
+                this.showKeyConflictNotice(normalized, conflict);
+            }
+            this.refreshCustomizationSettingsUI();
+            return { ok: false, conflict };
+        }
+
+        this.hudConfig.upgradeHotkeys[id] = normalized;
+        this.scheduleHudConfigSync();
+        this.refreshCustomizationSettingsUI();
+        return { ok: true };
+    }
+
+    getUpgradeHotkeyIdForItem (buildingType, upgradeInfo, options = {}) {
+        const variant = Number(upgradeInfo?.variant);
+        if (!Number.isFinite(variant)) return "";
+
+        const isArmory = Boolean(options?.isArmory);
+        if (isArmory) {
+            return `armory:${variant}`;
+        }
+
+        const safeBuildingType = Number(buildingType);
+        if (!Number.isFinite(safeBuildingType)) return "";
+        return `building:${safeBuildingType}:${variant}`;
+    }
+
+    getUpgradeHotkeyBindingForItem (buildingType, upgradeInfo, options = {}) {
+        const upgradeId = this.getUpgradeHotkeyIdForItem(buildingType, upgradeInfo, options);
+        const configured = this.getUpgradeHotkeyValue(upgradeId);
+        if (configured) {
+            return {
+                upgradeId,
+                key: configured,
+                label: this.formatKeybindLabel(configured)
+            };
+        }
+
+        const index = Number(options?.index);
+        const fallbackActions = ["upgrade1", "upgrade2", "upgrade3"];
+        const fallbackKeyByAction = { upgrade1: "q", upgrade2: "e", upgrade3: "t" };
+        const fallbackAction = Number.isFinite(index) ? (fallbackActions[index] || "") : "";
+        const fallbackValue = fallbackAction
+            ? this.getHudKeybind(fallbackAction, fallbackKeyByAction[fallbackAction] || "")
+            : "";
+
+        return {
+            upgradeId,
+            key: "",
+            label: fallbackValue ? this.formatKeybindLabel(fallbackValue) : "-"
+        };
+    }
+
+    stopPreviewAnimationsIn (containerElement) {
+        if (!containerElement || !containerElement.querySelectorAll) return;
+        const canvases = containerElement.querySelectorAll("canvas");
+        canvases.forEach((canvas) => {
+            if (typeof canvas?.stopAnimation === "function") {
+                canvas.stopAnimation();
+            }
+        });
+    }
+
+    appendUpgradeHotkeyPreview (rowElement, def, options = {}) {
+        if (!rowElement || !def?.id) return;
+        const size = Math.max(24, Number(options?.size) || 40);
+        const preview = document.createElement("canvas");
+        preview.className = "hud-upgrade-hotkey-preview";
+        preview.width = size;
+        preview.height = size;
+
+        const armoryMatch = /^armory:(\d+)$/.exec(String(def.id));
+        if (!armoryMatch) {
+            rowElement.appendChild(preview);
+            return;
+        }
+
+        const armoryVariant = Number(armoryMatch[1]);
+        const details = getBuildingDetails(BuildingTypes.ARMORY, armoryVariant);
+        const unitType = Number(details?.unitType);
+        const unitVariant = Number(details?.unitVariant);
+        if (!Number.isFinite(unitType) || !Number.isFinite(unitVariant)) {
+            rowElement.appendChild(preview);
+            return;
+        }
+
+        const UnitClass = UnitManager.getUnitClassByType(unitType);
+        if (!UnitClass) {
+            rowElement.appendChild(preview);
+            return;
+        }
+
+        const previewColor = this.core?.gameManager?.player?.color || "#6dd7ff";
+        try {
+            const renderable = new UnitClass(previewColor, { x: 0, y: 0 }, unitVariant);
+            this.animatePreview(preview, renderable);
+        } catch (error) {}
+        rowElement.appendChild(preview);
+    }
+
+    findUpgradeHotkeyActionIdByKey (keyValue) {
+        const key = this.normalizeKeybindValue(keyValue);
+        if (!key) return "";
+        const hotkeys = (this.hudConfig?.upgradeHotkeys && typeof this.hudConfig.upgradeHotkeys === "object")
+            ? this.hudConfig.upgradeHotkeys
+            : {};
+        const matchingIds = Object.keys(hotkeys).filter((upgradeId) => {
+            return this.normalizeKeybindValue(hotkeys[upgradeId]) === key;
+        });
+        if (matchingIds.length <= 1) return matchingIds[0] || "";
+        this.notifySystemWarning(`Key ${this.formatKeybindLabel(key)} is mapped to multiple upgrade actions. Keep only one.`);
+        return "";
+    }
+
+    triggerGlobalUpgradeHotkey (keyValue) {
+        const upgradeId = this.findUpgradeHotkeyActionIdByKey(keyValue);
+        if (!upgradeId) return false;
+        const matchBuilding = /^building:(\d+):(\d+)$/.exec(upgradeId);
+        const matchArmory = /^armory:(\d+)$/.exec(upgradeId);
+
+        let buildingType = null;
+        let targetVariant = null;
+        if (matchBuilding) {
+            buildingType = Number(matchBuilding[1]);
+            targetVariant = Number(matchBuilding[2]);
+        } else if (matchArmory) {
+            buildingType = Number(BuildingTypes.ARMORY);
+            targetVariant = Number(matchArmory[1]);
+        } else {
+            return false;
+        }
+        if (!Number.isFinite(buildingType) || !Number.isFinite(targetVariant)) {
+            return true;
+        }
+        this.core?.buildingManager?.upgradeAllOwnedBuildingsToVariant?.(buildingType, targetVariant, {
+            triggerLabel: this.getUpgradeHotkeyLabel(upgradeId)
+        });
+        return true;
+    }
+
+    getCameraControlValue (key, fallback = null) {
+        const raw = this.hudConfig?.cameraControls?.[key];
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    setCameraControlValue (key, rawValue, options = {}) {
+        if (!this.hudConfig.cameraControls || typeof this.hudConfig.cameraControls !== "object") {
+            this.hudConfig.cameraControls = { ...this.getDefaultHudConfig().cameraControls };
+        }
+        const defaults = this.getDefaultHudConfig().cameraControls;
+        let parsed = Number(rawValue);
+        if (!Number.isFinite(parsed)) {
+            parsed = Number(defaults?.[key]);
+        }
+        if (!Number.isFinite(parsed)) return;
+
+        if (key === "speed") {
+            parsed = Math.max(0.5, Math.min(20, parsed));
+            parsed = Math.round(parsed * 10) / 10;
+        } else if (key === "zoom") {
+            parsed = Math.max(0.05, Math.min(8, parsed));
+            parsed = Math.round(parsed * 100) / 100;
+        }
+
+        this.hudConfig.cameraControls[key] = parsed;
+        this.scheduleHudConfigSync();
+        this.applyCameraControlsFromHudConfig({ applyZoom: key === "zoom" || options?.applyZoom === true });
+        this.refreshCustomizationSettingsUI();
+    }
+
+    applyCameraControlsFromHudConfig (options = {}) {
+        const camera = this.core?.camera;
+        if (!camera) return;
+
+        const speed = this.getCameraControlValue("speed", 3);
+        if (Number.isFinite(speed)) {
+            camera.cameraSpeed = Math.max(0.5, Math.min(20, speed));
+        }
+
+        if (!options?.applyZoom) return;
+        const desiredZoom = this.getCameraControlValue("zoom", camera.zoom);
+        if (!Number.isFinite(desiredZoom)) return;
+        const minZoom = Number.isFinite(camera.minZoom) ? camera.minZoom : 0.02;
+        const maxZoom = Number.isFinite(camera.maxZoom) ? camera.maxZoom : 50;
+        const clampedZoom = Math.max(minZoom, Math.min(maxZoom, desiredZoom));
+        camera.zoom = clampedZoom;
+        camera.targetZoom = clampedZoom;
     }
 
     getKeybindActionDefinitions () {
@@ -556,6 +953,13 @@ export default class UIManager {
             { key: "selectSiegeOnly", label: this.t("key.action.selectSiegeOnly"), group: this.t("key.group.selection") },
             { key: "selectCommander", label: this.t("key.action.selectCommander"), group: this.t("key.group.selection") },
             { key: "selectAllUnits", label: this.t("key.action.selectAllUnits"), group: this.t("key.group.selection") },
+            { key: "selectCommanderSoldiers", label: "Commander + Soldiers", group: this.t("key.group.selection") },
+            { key: "selectCommanderTanks", label: "Commander + Tanks", group: this.t("key.group.selection") },
+            { key: "selectCommanderSiege", label: "Commander + Siege", group: this.t("key.group.selection") },
+            { key: "selectCommanderSoldiersTanks", label: "Commander + Soldiers + Tanks", group: this.t("key.group.selection") },
+            { key: "selectCommanderSoldiersSiege", label: "Commander + Soldiers + Siege", group: this.t("key.group.selection") },
+            { key: "selectCommanderTanksSiege", label: "Commander + Tanks + Siege", group: this.t("key.group.selection") },
+            { key: "selectCommanderArmy", label: "Commander + Army", group: this.t("key.group.selection") },
             { key: "toggleMap", label: this.t("key.action.toggleMap"), group: this.t("key.group.hud") },
             { key: "toggleGroupTroops", label: this.t("key.action.toggleGroupTroops"), group: this.t("key.group.hud") },
             { key: "upgrade1", label: this.t("key.action.upgrade1"), group: this.t("key.group.upgrades") },
@@ -568,28 +972,75 @@ export default class UIManager {
         ];
     }
 
-    setHudKeybindValue (actionKey, keyValue) {
-        const normalized = (keyValue || "").trim().toLowerCase().slice(0, 1);
+    getHudKeybindLabel (actionKey) {
+        const defs = this.getKeybindActionDefinitions();
+        const found = defs.find((def) => def.key === actionKey);
+        return found?.label || actionKey;
+    }
+
+    findHudKeybindConflict (actionKey, keyValue) {
+        const normalized = this.normalizeKeybindValue(keyValue);
+        if (!normalized) return null;
+        const all = this.hudConfig?.keybinds || {};
+        const keys = Object.keys(all);
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            if (k === actionKey) continue;
+            const candidate = this.normalizeKeybindValue(all[k]);
+            if (candidate && candidate === normalized) {
+                return {
+                    actionKey: k,
+                    label: this.getHudKeybindLabel(k)
+                };
+            }
+        }
+        return null;
+    }
+
+    setHudKeybindValue (actionKey, keyValue, options = {}) {
+        const { warnOnConflict = true } = options || {};
+        const normalized = this.normalizeKeybindValue(keyValue);
         if (!this.hudConfig.keybinds) this.hudConfig.keybinds = {};
+
+        if (normalized === "unidentified" || normalized === "process") {
+            return { ok: false };
+        }
 
         if (!normalized) {
             this.hudConfig.keybinds[actionKey] = "";
             this.scheduleHudConfigSync();
             this.refreshCustomizationSettingsUI();
             this.refreshKeybindEditorUI();
-            return;
+            return { ok: true };
         }
 
-        // Prevent duplicate bindings by clearing the previous owner of the same key.
-        Object.keys(this.hudConfig.keybinds).forEach((k) => {
-            if (k !== actionKey && this.hudConfig.keybinds[k] === normalized) {
-                this.hudConfig.keybinds[k] = "";
+        if (this.isReservedGameplayKeybind(normalized)) {
+            if (warnOnConflict) {
+                this.notifySystemWarning(this.getReservedGameplayKeybindNotice(normalized));
             }
-        });
+            this.refreshCustomizationSettingsUI();
+            this.refreshKeybindEditorUI();
+            return { ok: false, reserved: true };
+        }
+
+        const conflict = this.findConfiguredKeyConflict(normalized, {
+            excludeScope: "hud",
+            excludeId: actionKey
+        }) || this.findHudKeybindConflict(actionKey, normalized);
+        if (conflict) {
+            if (warnOnConflict) {
+                this.showKeyConflictNotice(normalized, conflict);
+            }
+            this.refreshCustomizationSettingsUI();
+            this.refreshKeybindEditorUI();
+            return { ok: false, conflict };
+        }
+
         this.hudConfig.keybinds[actionKey] = normalized;
         this.scheduleHudConfigSync();
         this.refreshCustomizationSettingsUI();
         this.refreshKeybindEditorUI();
+        return { ok: true };
     }
 
     getUnitStyleOption (key, fallback) {
@@ -776,6 +1227,8 @@ export default class UIManager {
         applyPanel("#shield", this.hudConfig?.hud?.protection, { left: "8px", bottom: "80px" });
         applyPanel("#toolbar-container", this.hudConfig?.hud?.toolbar, { bottom: "0px", left: "" }, { clearTransformOnCustom: true });
         applyPanel("#upgrade-container", this.hudConfig?.hud?.upgrades, { left: "8px", top: "" });
+        this.applyCameraControlsFromHudConfig({ applyZoom: !this._cameraZoomInitialized });
+        this._cameraZoomInitialized = true;
         this.ensureHudCollapseControls();
         this.applyHudCollapsedStates();
     }
@@ -1024,70 +1477,72 @@ export default class UIManager {
         wrap.className = "hud-customization-panel";
         wrap.innerHTML = `
             <h3>HUD Customization</h3>
-            <p class="hud-customization-help">Drag/resize Chat and Leaderboards when edit mode is ON. Layout is saved locally and to your account (when logged in).</p>
+            <p class="hud-customization-help">Use Keybind Manager to configure all keys (selection, commander combos, upgrades and direct upgrade hotkeys with preview). Layout edit controls stay here.</p>
             <div class="hud-customization-actions">
+                <button type="button" id="hud-open-keybind-screen">Keybind Manager</button>
                 <button type="button" id="hud-customize-toggle">Enable HUD Edit</button>
                 <button type="button" id="hud-customize-save">Save Layout</button>
                 <button type="button" id="hud-customize-reset">Reset HUD</button>
             </div>
-            <div class="hud-customization-grid">
-                <label>Army Select Key <input id="hud-key-select-army" maxlength="1" value="q"></label>
-                <label>Commander Key <input id="hud-key-select-commander" maxlength="1" value="c"></label>
-                <label>Select All Key <input id="hud-key-select-all" maxlength="1" value="e"></label>
-                <label>Map Toggle Key <input id="hud-key-toggle-map" maxlength="1" value="m"></label>
-                <label>Group Troops Key <input id="hud-key-group-troops" maxlength="1" value="z"></label>
-                <label>Only Soldiers Key <input id="hud-key-select-soldiers-only" maxlength="1" value="x"></label>
-                <label>Only Tanks Key <input id="hud-key-select-tanks-only" maxlength="1" value="v"></label>
-                <label>Only Siege Key <input id="hud-key-select-siege-only" maxlength="1" value="b"></label>
-                <label>Upgrade #1 Key <input id="hud-key-upgrade-1" maxlength="1" value="q"></label>
-                <label>Upgrade #2 Key <input id="hud-key-upgrade-2" maxlength="1" value="e"></label>
-                <label>Upgrade #3 Key <input id="hud-key-upgrade-3" maxlength="1" value="t"></label>
-                <label>Destroy Upgrade Key <input id="hud-key-upgrade-destroy" maxlength="1" value="r"></label>
-                <label>Barracks Toggle Key <input id="hud-key-upgrade-barracks" maxlength="1" value="f"></label>
-                <label>Upgrade All Mode Key <input id="hud-key-upgrade-all-mode" maxlength="1" value="y"></label>
-                <label>Sell All Key <input id="hud-key-upgrade-destroy-all" maxlength="1" value="u"></label>
-                <label>Soldier Shape
-                    <select id="hud-shape-soldier">
-                        <option value="round">Round</option>
-                        <option value="triangle">Triangle</option>
-                    </select>
-                </label>
-                <label>Tank Shape
-                    <select id="hud-shape-tank">
-                        <option value="round">Round</option>
-                        <option value="triangle">Triangle</option>
-                    </select>
-                </label>
-                <label>Siege Shape
-                    <select id="hud-shape-siege">
-                        <option value="round">Round</option>
-                        <option value="triangle">Triangle</option>
-                    </select>
-                </label>
+            <div class="hud-camera-controls">
+                <label>Camera Speed <input id="hud-camera-speed" type="number" min="0.5" max="20" step="0.1" value="3"></label>
+                <label>Camera Zoom <input id="hud-camera-zoom" type="number" min="0.05" max="8" step="0.05" value="1.5"></label>
+            </div>
+            <div class="hud-customization-shortcuts">
+                <span>Tip: Key changes are saved automatically while you edit in Keybind Manager.</span>
             </div>
         `;
         settingsPanel.appendChild(wrap);
 
+        const openKeyScreenBtn = wrap.querySelector("#hud-open-keybind-screen");
         const toggleBtn = wrap.querySelector("#hud-customize-toggle");
         const saveBtn = wrap.querySelector("#hud-customize-save");
         const resetBtn = wrap.querySelector("#hud-customize-reset");
+        const bindMouseHotkeyInput = (el) => {
+            if (!el) return;
+            el.addEventListener("contextmenu", (event) => {
+                event.preventDefault();
+            });
+            el.addEventListener("mousedown", (event) => {
+                if (!Number.isInteger(event.button) || event.button < 1) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const mouseKey = this.normalizeKeybindValue(`mouse${event.button + 1}`);
+                if (!mouseKey) return;
+                el.value = mouseKey;
+                el.dispatchEvent(new Event("input"));
+            });
+        };
         const bindInput = (id, path, key) => {
             const el = wrap.querySelector(id);
             if (!el) return;
             el.addEventListener("input", () => {
-                const value = (el.value || "").trim().toLowerCase().slice(0, 1);
+                const value = this.normalizeKeybindValue(el.value);
                 el.value = value;
-                if (path === "keybinds") this.hudConfig.keybinds[key] = value || this.getDefaultHudConfig().keybinds[key];
+                if (path === "keybinds") {
+                    const result = this.setHudKeybindValue(key, value, { warnOnConflict: true });
+                    if (!result?.ok) {
+                        el.value = this.normalizeKeybindValue(this.hudConfig?.keybinds?.[key] || "");
+                    }
+                    return;
+                }
                 if (path === "unitShapes") this.hudConfig.unitShapes[key] = value || this.getDefaultHudConfig().unitShapes[key];
                 this.scheduleHudConfigSync();
             });
             el.addEventListener("keydown", (e) => {
-                if (e.key.length === 1) {
-                    e.preventDefault();
-                    el.value = e.key.toLowerCase();
+                if (e.key === "Tab") return;
+                e.preventDefault();
+                if (e.key === "Backspace" || e.key === "Delete") {
+                    el.value = "";
                     el.dispatchEvent(new Event("input"));
+                    return;
                 }
+                const pressed = this.normalizeKeybindValue(e.key);
+                if (!pressed || pressed === "escape") return;
+                el.value = pressed;
+                el.dispatchEvent(new Event("input"));
             });
+            bindMouseHotkeyInput(el);
         };
         const bindSelect = (id, key) => {
             const el = wrap.querySelector(id);
@@ -1097,7 +1552,17 @@ export default class UIManager {
                 this.scheduleHudConfigSync();
             });
         };
+        const bindCameraInput = (id, key) => {
+            const el = wrap.querySelector(id);
+            if (!el) return;
+            const applyFromField = () => {
+                this.setCameraControlValue(key, el.value, { applyZoom: key === "zoom" });
+            };
+            el.addEventListener("change", applyFromField);
+            el.addEventListener("blur", applyFromField);
+        };
 
+        openKeyScreenBtn?.addEventListener("click", () => this.showKeybindEditor(true));
         toggleBtn?.addEventListener("click", () => this.setHudCustomizeMode(!this.hudCustomizeMode));
         saveBtn?.addEventListener("click", () => {
             this.saveHudLayoutFromPanels({ onlyIfDirty: true });
@@ -1120,6 +1585,8 @@ export default class UIManager {
         bindInput("#hud-key-upgrade-barracks", "keybinds", "upgradeBarracksToggle");
         bindInput("#hud-key-upgrade-all-mode", "keybinds", "upgradeAllMode");
         bindInput("#hud-key-upgrade-destroy-all", "keybinds", "upgradeDestroyAll");
+        bindCameraInput("#hud-camera-speed", "speed");
+        bindCameraInput("#hud-camera-zoom", "zoom");
         bindSelect("#hud-shape-soldier", "soldier");
         bindSelect("#hud-shape-tank", "tank");
         bindSelect("#hud-shape-siege", "siege");
@@ -1134,26 +1601,122 @@ export default class UIManager {
             const el = wrap.querySelector(sel);
             if (el && value != null) el.value = value;
         };
-        setVal("#hud-key-select-army", this.hudConfig?.keybinds?.selectArmy || "q");
-        setVal("#hud-key-select-commander", this.hudConfig?.keybinds?.selectCommander || "c");
-        setVal("#hud-key-select-all", this.hudConfig?.keybinds?.selectAllUnits || "e");
-        setVal("#hud-key-toggle-map", this.hudConfig?.keybinds?.toggleMap || "m");
-        setVal("#hud-key-group-troops", this.hudConfig?.keybinds?.toggleGroupTroops || "z");
-        setVal("#hud-key-select-soldiers-only", this.hudConfig?.keybinds?.selectSoldiersOnly || "x");
-        setVal("#hud-key-select-tanks-only", this.hudConfig?.keybinds?.selectTanksOnly || "v");
-        setVal("#hud-key-select-siege-only", this.hudConfig?.keybinds?.selectSiegeOnly || "b");
-        setVal("#hud-key-upgrade-1", this.hudConfig?.keybinds?.upgrade1 || "q");
-        setVal("#hud-key-upgrade-2", this.hudConfig?.keybinds?.upgrade2 || "e");
-        setVal("#hud-key-upgrade-3", this.hudConfig?.keybinds?.upgrade3 || "t");
-        setVal("#hud-key-upgrade-destroy", this.hudConfig?.keybinds?.upgradeDestroy || "r");
-        setVal("#hud-key-upgrade-barracks", this.hudConfig?.keybinds?.upgradeBarracksToggle || "f");
-        setVal("#hud-key-upgrade-all-mode", this.hudConfig?.keybinds?.upgradeAllMode || "y");
-        setVal("#hud-key-upgrade-destroy-all", this.hudConfig?.keybinds?.upgradeDestroyAll || "u");
+        setVal("#hud-key-select-army", this.hudConfig?.keybinds?.selectArmy ?? "q");
+        setVal("#hud-key-select-commander", this.hudConfig?.keybinds?.selectCommander ?? "c");
+        setVal("#hud-key-select-all", this.hudConfig?.keybinds?.selectAllUnits ?? "e");
+        setVal("#hud-key-toggle-map", this.hudConfig?.keybinds?.toggleMap ?? "m");
+        setVal("#hud-key-group-troops", this.hudConfig?.keybinds?.toggleGroupTroops ?? "z");
+        setVal("#hud-key-select-soldiers-only", this.hudConfig?.keybinds?.selectSoldiersOnly ?? "x");
+        setVal("#hud-key-select-tanks-only", this.hudConfig?.keybinds?.selectTanksOnly ?? "v");
+        setVal("#hud-key-select-siege-only", this.hudConfig?.keybinds?.selectSiegeOnly ?? "b");
+        setVal("#hud-key-upgrade-1", this.hudConfig?.keybinds?.upgrade1 ?? "q");
+        setVal("#hud-key-upgrade-2", this.hudConfig?.keybinds?.upgrade2 ?? "e");
+        setVal("#hud-key-upgrade-3", this.hudConfig?.keybinds?.upgrade3 ?? "t");
+        setVal("#hud-key-upgrade-destroy", this.hudConfig?.keybinds?.upgradeDestroy ?? "r");
+        setVal("#hud-key-upgrade-barracks", this.hudConfig?.keybinds?.upgradeBarracksToggle ?? "f");
+        setVal("#hud-key-upgrade-all-mode", this.hudConfig?.keybinds?.upgradeAllMode ?? "y");
+        setVal("#hud-key-upgrade-destroy-all", this.hudConfig?.keybinds?.upgradeDestroyAll ?? "u");
+        setVal("#hud-camera-speed", String(this.getCameraControlValue("speed", 3)));
+        setVal("#hud-camera-zoom", String(this.getCameraControlValue("zoom", 1.5)));
         setVal("#hud-shape-soldier", this.hudConfig?.unitShapes?.soldier || "triangle");
         setVal("#hud-shape-tank", this.hudConfig?.unitShapes?.tank || "triangle");
         setVal("#hud-shape-siege", this.hudConfig?.unitShapes?.siege || "triangle");
+        this.renderUpgradeHotkeySettingsUI(wrap);
+        const keyScreenBtn = wrap.querySelector("#hud-open-keybind-screen");
+        if (keyScreenBtn) keyScreenBtn.textContent = "Keybind Manager";
         const toggleBtn = wrap.querySelector("#hud-customize-toggle");
         if (toggleBtn) toggleBtn.textContent = this.hudCustomizeMode ? "Disable HUD Edit" : "Enable HUD Edit";
+    }
+
+    renderUpgradeHotkeySettingsUI (wrap = null) {
+        const panel = wrap || document.getElementById("hud-customization-panel");
+        if (!panel) return;
+        const list = panel.querySelector("#hud-upgrade-hotkey-list");
+        if (!list) return;
+
+        this.stopPreviewAnimationsIn(list);
+        list.innerHTML = "";
+        const defs = this.getUpgradeHotkeyDefinitions();
+        const validIds = new Set(defs.map((def) => def.id));
+        if (this.hudConfig?.upgradeHotkeys && typeof this.hudConfig.upgradeHotkeys === "object") {
+            let removedAny = false;
+            Object.keys(this.hudConfig.upgradeHotkeys).forEach((id) => {
+                if (!validIds.has(id)) {
+                    delete this.hudConfig.upgradeHotkeys[id];
+                    removedAny = true;
+                }
+            });
+            if (removedAny) {
+                this.scheduleHudConfigSync();
+            }
+        }
+        let renderedSection = "";
+        defs.forEach((def) => {
+            const currentSection = String(def.section || "Other");
+            if (renderedSection !== currentSection) {
+                renderedSection = currentSection;
+                const sectionTitle = document.createElement("div");
+                sectionTitle.className = "hud-upgrade-hotkey-group";
+                sectionTitle.dataset.hotkeySection = currentSection;
+                sectionTitle.textContent = currentSection;
+                list.appendChild(sectionTitle);
+            }
+
+            const row = document.createElement("label");
+            row.className = "hud-upgrade-hotkey-row";
+
+            this.appendUpgradeHotkeyPreview(row, def, { size: 42 });
+
+            const title = document.createElement("span");
+            title.className = "hud-upgrade-hotkey-label";
+            title.textContent = def.label;
+
+            const input = document.createElement("input");
+            input.type = "text";
+            input.maxLength = 24;
+            input.value = this.getUpgradeHotkeyValue(def.id);
+            input.placeholder = "Set key";
+            input.dataset.upgradeHotkeyId = def.id;
+
+            input.addEventListener("input", () => {
+                const normalized = this.normalizeKeybindValue(input.value);
+                input.value = normalized;
+                const result = this.setUpgradeHotkeyValue(def.id, normalized, { warnOnConflict: true });
+                if (!result?.ok) {
+                    input.value = this.getUpgradeHotkeyValue(def.id);
+                }
+            });
+
+            input.addEventListener("keydown", (event) => {
+                if (event.key === "Tab") return;
+                event.preventDefault();
+                if (event.key === "Backspace" || event.key === "Delete") {
+                    input.value = "";
+                    input.dispatchEvent(new Event("input"));
+                    return;
+                }
+                const pressed = this.normalizeKeybindValue(event.key);
+                if (!pressed || pressed === "escape") return;
+                input.value = pressed;
+                input.dispatchEvent(new Event("input"));
+            });
+            input.addEventListener("contextmenu", (event) => {
+                event.preventDefault();
+            });
+            input.addEventListener("mousedown", (event) => {
+                if (!Number.isInteger(event.button) || event.button < 1) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const mouseKey = this.normalizeKeybindValue(`mouse${event.button + 1}`);
+                if (!mouseKey) return;
+                input.value = mouseKey;
+                input.dispatchEvent(new Event("input"));
+            });
+
+            row.appendChild(title);
+            row.appendChild(input);
+            list.appendChild(row);
+        });
     }
 
     openCustomizationCenter (options = {}) {
@@ -1173,6 +1736,11 @@ export default class UIManager {
 
     showKeybindEditor (show = true) {
         if (!show) {
+            if (typeof this.keybindCaptureCleanup === "function") {
+                this.keybindCaptureCleanup();
+            }
+            this.keybindCaptureCleanup = null;
+            this.stopPreviewAnimationsIn(this.keybindEditorOverlay);
             if (this.keybindEditorOverlay?.parentNode) {
                 this.keybindEditorOverlay.parentNode.removeChild(this.keybindEditorOverlay);
             }
@@ -1187,10 +1755,13 @@ export default class UIManager {
         overlay.innerHTML = `
             <div class="keybind-editor-card">
                 <div class="keybind-editor-header">
-                    <h3>Keybind Editor</h3>
+                    <h3>Keybind Manager</h3>
                     <button type="button" class="keybind-editor-close">x</button>
                 </div>
-                <p class="keybind-editor-help">${this.t("hud.keybindHelp")}</p>
+                <p class="keybind-editor-help">${this.t("hud.keybindHelp")} Mouse buttons are supported (MOUSE 4/MOUSE 5).</p>
+                <div class="keybind-editor-toolbar">
+                    <input type="text" id="keybind-editor-filter" placeholder="Search keybind..." />
+                </div>
                 <div class="keybind-editor-list"></div>
                 <div class="keybind-editor-footer">
                     <button type="button" class="keybind-editor-reset">${this.t("hud.resetKeybinds")}</button>
@@ -1201,11 +1772,13 @@ export default class UIManager {
         overlay.addEventListener("click", (e) => {
             if (e.target === overlay) this.showKeybindEditor(false);
         });
+        overlay.querySelector("#keybind-editor-filter")?.addEventListener("input", () => this.refreshKeybindEditorUI());
         overlay.querySelector(".keybind-editor-close")?.addEventListener("click", () => this.showKeybindEditor(false));
         overlay.querySelector(".keybind-editor-done")?.addEventListener("click", () => this.showKeybindEditor(false));
         overlay.querySelector(".keybind-editor-reset")?.addEventListener("click", () => {
             const defaults = this.getDefaultHudConfig().keybinds;
             this.hudConfig.keybinds = { ...defaults };
+            this.hudConfig.upgradeHotkeys = {};
             this.scheduleHudConfigSync();
             this.refreshCustomizationSettingsUI();
             this.refreshKeybindEditorUI();
@@ -1221,63 +1794,185 @@ export default class UIManager {
         if (!overlay) return;
         const list = overlay.querySelector(".keybind-editor-list");
         if (!list) return;
+        this.stopPreviewAnimationsIn(list);
         list.innerHTML = "";
+        const filterInput = overlay.querySelector("#keybind-editor-filter");
+        const filter = String(filterInput?.value || "").trim().toLowerCase();
 
-        const defs = this.getKeybindActionDefinitions();
-        let currentGroup = "";
-        defs.forEach((def) => {
-            if (def.group && def.group !== currentGroup) {
-                currentGroup = def.group;
-                const groupHeader = document.createElement("div");
-                groupHeader.className = "keybind-editor-group";
-                groupHeader.textContent = def.group;
-                list.appendChild(groupHeader);
+        const sectionsWrap = document.createElement("div");
+        sectionsWrap.className = "keybind-editor-sections";
+        list.appendChild(sectionsWrap);
+
+        const createSection = (title, subtitle = "") => {
+            const section = document.createElement("section");
+            section.className = "keybind-editor-section";
+            const header = document.createElement("div");
+            header.className = "keybind-editor-group";
+            header.textContent = title;
+            section.appendChild(header);
+            if (subtitle) {
+                const note = document.createElement("p");
+                note.className = "keybind-editor-section-note";
+                note.textContent = subtitle;
+                section.appendChild(note);
             }
+            const body = document.createElement("div");
+            body.className = "keybind-editor-section-body";
+            section.appendChild(body);
+            sectionsWrap.appendChild(section);
+            return body;
+        };
+
+        const startCapture = (valueElement, onSetValue, onClearValue) => {
+            valueElement.textContent = this.t("hud.pressKey");
+            const cleanup = () => {
+                document.removeEventListener("keydown", onKey, true);
+                document.removeEventListener("mousedown", onMouse, true);
+                if (this.keybindCaptureCleanup === cleanup) {
+                    this.keybindCaptureCleanup = null;
+                }
+            };
+            if (typeof this.keybindCaptureCleanup === "function") {
+                this.keybindCaptureCleanup();
+            }
+            this.keybindCaptureCleanup = cleanup;
+            const onKey = (event) => {
+                if (event.key === "Tab") return;
+                event.preventDefault();
+                event.stopPropagation();
+                const key = this.normalizeKeybindValue(event.key);
+                if (key === "escape") {
+                    cleanup();
+                    this.refreshKeybindEditorUI();
+                    return;
+                }
+                if (key === "backspace" || key === "delete") {
+                    cleanup();
+                    onClearValue?.();
+                    return;
+                }
+                if (!key) return;
+                cleanup();
+                onSetValue?.(key);
+            };
+            const onMouse = (event) => {
+                if (!Number.isInteger(event.button) || event.button < 1) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const key = this.normalizeKeybindValue(`mouse${event.button + 1}`);
+                if (!key) return;
+                cleanup();
+                onSetValue?.(key);
+            };
+            document.addEventListener("keydown", onKey, true);
+            document.addEventListener("mousedown", onMouse, true);
+        };
+
+        const createRow = (labelText, valueText, options) => {
             const row = document.createElement("div");
             row.className = "keybind-editor-row";
 
+            if (options?.previewDef) {
+                row.classList.add("has-preview");
+                this.appendUpgradeHotkeyPreview(row, options.previewDef, { size: 34 });
+            }
+
             const label = document.createElement("div");
             label.className = "keybind-editor-label";
-            label.textContent = def.label;
+            label.textContent = labelText;
 
             const value = document.createElement("div");
             value.className = "keybind-editor-value";
-            value.textContent = (this.hudConfig?.keybinds?.[def.key] || "").toUpperCase() || this.t("hud.none");
+            value.textContent = valueText;
 
             const setBtn = document.createElement("button");
             setBtn.type = "button";
             setBtn.className = "keybind-editor-btn";
             setBtn.textContent = this.t("hud.set");
             setBtn.addEventListener("click", () => {
-                value.textContent = this.t("hud.pressKey");
-                const onKey = (event) => {
-                    event.preventDefault();
-                    const key = (event.key || "").toLowerCase();
-                    if (key === "escape") {
-                        document.removeEventListener("keydown", onKey, true);
-                        this.refreshKeybindEditorUI();
-                        return;
-                    }
-                    if (key.length === 1) {
-                        document.removeEventListener("keydown", onKey, true);
-                        this.setHudKeybindValue(def.key, key);
-                    }
-                };
-                document.addEventListener("keydown", onKey, true);
+                startCapture(
+                    value,
+                    (nextValue) => options?.onSet?.(nextValue),
+                    () => options?.onClear?.()
+                );
             });
 
             const clearBtn = document.createElement("button");
             clearBtn.type = "button";
             clearBtn.className = "keybind-editor-btn ghost";
             clearBtn.textContent = this.t("hud.clear");
-            clearBtn.addEventListener("click", () => this.setHudKeybindValue(def.key, ""));
+            clearBtn.addEventListener("click", () => options?.onClear?.());
 
             row.appendChild(label);
             row.appendChild(value);
             row.appendChild(setBtn);
             row.appendChild(clearBtn);
-            list.appendChild(row);
+            return row;
+        };
+
+        const defs = this.getKeybindActionDefinitions();
+        const groupedActions = new Map();
+        defs.forEach((def) => {
+            const groupName = String(def.group || "Other");
+            if (!groupedActions.has(groupName)) groupedActions.set(groupName, []);
+            groupedActions.get(groupName).push(def);
         });
+
+        groupedActions.forEach((entries, groupName) => {
+            const visibleEntries = entries.filter((entry) => {
+                if (!filter) return true;
+                const haystack = `${entry.label} ${groupName}`.toLowerCase();
+                return haystack.includes(filter);
+            });
+            if (visibleEntries.length === 0) return;
+            const body = createSection(groupName);
+            visibleEntries.forEach((entry) => {
+                body.appendChild(createRow(
+                    entry.label,
+                    this.formatKeybindLabel(this.hudConfig?.keybinds?.[entry.key] || ""),
+                    {
+                        onSet: (nextValue) => this.setHudKeybindValue(entry.key, nextValue, { warnOnConflict: true }),
+                        onClear: () => this.setHudKeybindValue(entry.key, "")
+                    }
+                ));
+            });
+        });
+
+        const upgradeDefs = this.getUpgradeHotkeyDefinitions();
+        const groupedUpgrades = new Map();
+        upgradeDefs.forEach((def) => {
+            const groupName = String(def.section || "Other");
+            if (!groupedUpgrades.has(groupName)) groupedUpgrades.set(groupName, []);
+            groupedUpgrades.get(groupName).push(def);
+        });
+
+        groupedUpgrades.forEach((entries, groupName) => {
+            const visibleEntries = entries.filter((entry) => {
+                if (!filter) return true;
+                const haystack = `${entry.label} ${groupName}`.toLowerCase();
+                return haystack.includes(filter);
+            });
+            if (visibleEntries.length === 0) return;
+            const body = createSection(groupName, "Specific upgrade hotkeys");
+            visibleEntries.forEach((entry) => {
+                body.appendChild(createRow(
+                    entry.label,
+                    this.formatKeybindLabel(this.getUpgradeHotkeyValue(entry.id)),
+                    {
+                        previewDef: entry,
+                        onSet: (nextValue) => this.setUpgradeHotkeyValue(entry.id, nextValue, { warnOnConflict: true }),
+                        onClear: () => this.setUpgradeHotkeyValue(entry.id, "")
+                    }
+                ));
+            });
+        });
+
+        if (!sectionsWrap.children.length) {
+            const empty = document.createElement("div");
+            empty.className = "keybind-editor-empty";
+            empty.textContent = "No keybinds found for this search.";
+            list.appendChild(empty);
+        }
     }
 
     startHudEditSession () {
@@ -3904,8 +4599,6 @@ export default class UIManager {
     }
 
     showCoreUpgrades (onUpgradeSelect) {
-        const upgradeHotkeys = ["Q", "E", "T"];
-
         // Inline helper to fetch available upgrades based on type
         const getAvailableUpgrades = () => {
             //! Get available upgrades for the core from constants.js
@@ -3946,6 +4639,11 @@ export default class UIManager {
         const createUpgradeItem = (upgradeInfo, index) => {
             const upgradeItem = document.createElement("div");
             upgradeItem.classList.add("upgrade-item");
+            upgradeItem.dataset.upgradeName = String(upgradeInfo?.name || "");
+            if (upgradeInfo?.name === "Repair") {
+                // Prevent accidental 6000-power spend from hotkeys.
+                upgradeItem.dataset.clickOnly = "1";
+            }
 
             const preview = document.createElement("canvas");
             preview.classList.add("preview");
@@ -3972,7 +4670,7 @@ export default class UIManager {
             description.innerHTML = `
                 <p class="header">${upgradeInfo.name}</p>
                 <p class="text">${upgradeInfo.description}</p>
-                <p class="hotkey">[${upgradeHotkeys[index]}]</p>
+                <p class="hotkey">[CLICK]</p>
                 <p class="cost">${upgradeInfo.cost} Power</p>
             `;
             this.upgradeCostElements.push({ cost: upgradeInfo.cost, element: description.querySelector(".cost") });
@@ -4008,6 +4706,7 @@ export default class UIManager {
         // Stop and clear previous animations, then clear the upgrade list
         this.hideUpgrades();
         this.DOM.game.upgrades.list.innerHTML = "";
+        this.DOM.game.upgrades.container.dataset.mode = "core";
 
 
         // Populate available upgrades
@@ -4025,6 +4724,7 @@ export default class UIManager {
     showUpgrades (building, onUpgradeSelect, onDestroyClicked) {
         this.hideUpgrades(false);
         this.DOM.game.upgrades.list.innerHTML = "";
+        this.DOM.game.upgrades.container.dataset.mode = "building";
 
         const oldDestroyAllButton = document.getElementById("upgrade-destroy-all-button");
         if (oldDestroyAllButton?.parentNode) {
@@ -4081,7 +4781,6 @@ export default class UIManager {
             // SINGLE BUILDING TYPE
             const isArmory = BuildingTypes.ARMORY === building.type;
             const isBarracks = BuildingTypes.BARRACKS === building.type;
-            const upgradeHotkeys = ["Q", "E", "T", "R", "Y"];
             const keyUpgradeAllMode = String(this.getHudKeybind("upgradeAllMode", "y") || "y").toUpperCase();
             const allCount = Number.isFinite(Number(building?.allCount))
                 ? Number(building.allCount)
@@ -4198,17 +4897,29 @@ export default class UIManager {
                 description.style.cursor = "pointer";
                 preview.style.cursor = "pointer";
 
-                const hotkey = upgradeHotkeys[index] ?? "-";
+                const hotkeyBinding = this.getUpgradeHotkeyBindingForItem(building.type, upgradeInfo, {
+                    isArmory,
+                    selectedUnitType: this.selectedUpgradeTab,
+                    index
+                });
                 description.innerHTML = `
                     <p class="header">${upgradeInfo.name}</p>
                     <p class="text">${upgradeInfo.description}</p>
-                    <p class="hotkey">[${hotkey}]</p>
+                    <p class="hotkey">[${hotkeyBinding.label}]</p>
                     <p class="cost">${upgradeInfo.cost} Power</p>
                 `;
                 this.upgradeCostElements.push({ cost: upgradeInfo.cost, element: description.querySelector(".cost") });
 
                 upgradeItem.appendChild(preview);
                 upgradeItem.appendChild(description);
+                if (hotkeyBinding.upgradeId) {
+                    upgradeItem.dataset.upgradeHotkeyId = hotkeyBinding.upgradeId;
+                }
+                if (hotkeyBinding.key) {
+                    upgradeItem.dataset.upgradeHotkey = hotkeyBinding.key;
+                } else {
+                    delete upgradeItem.dataset.upgradeHotkey;
+                }
                 attachNextEvolutionTooltip(upgradeItem, upgradeInfo);
 
                 const triggerUpgradeFromItem = () => {
@@ -4462,9 +5173,39 @@ export default class UIManager {
         this.DOM.game.upgrades.tabs = tabContainerClone; // Update reference
 
         this.DOM.game.upgrades.container.style.display = "none"; // Hide the panel
+        this.DOM.game.upgrades.container.dataset.mode = "";
     }
 
     addChatMessage (username, message, color, player = null) {
+        const safeUsername = String(username || "");
+        const safeMessage = String(message || "").trim();
+        if (!safeMessage) return;
+
+        if (safeUsername.toLowerCase() === "system") {
+            const lowerColor = String(color || "").toLowerCase();
+            const isWarn = lowerColor.includes("ffcc66") || lowerColor.includes("ffa");
+            const isSuccess = lowerColor.includes("7cfc00") || lowerColor.includes("6bff");
+            if (isWarn) {
+                this.showScreenNotice(safeMessage, {
+                    textColor: "#ffeec9",
+                    borderColor: "rgba(255, 205, 120, 0.82)"
+                });
+            } else if (isSuccess) {
+                this.showScreenNotice(safeMessage, {
+                    textColor: "#e8ffef",
+                    borderColor: "rgba(120, 255, 165, 0.78)",
+                    background: "linear-gradient(145deg, rgba(14, 48, 34, 0.92), rgba(18, 62, 40, 0.92))"
+                });
+            } else {
+                this.showScreenNotice(safeMessage, {
+                    textColor: "#eaf4ff",
+                    borderColor: "rgba(120, 205, 255, 0.82)",
+                    background: "linear-gradient(145deg, rgba(14, 23, 56, 0.95), rgba(20, 35, 72, 0.95))"
+                });
+            }
+            return;
+        }
+
         if (!this.DOM.chat.messages) return;
 
         // Create a new chat message div
@@ -4472,16 +5213,16 @@ export default class UIManager {
         messageDiv.classList.add("message");
 
         // Check for mention
-        if (this.core.gameManager.player && message.includes('@' + this.core.gameManager.player.name)) {
+        if (this.core.gameManager.player && safeMessage.includes('@' + this.core.gameManager.player.name)) {
             messageDiv.classList.add("mention-highlight");
         }
 
         // Create and set username span
         const usernameSpan = document.createElement("span");
         usernameSpan.classList.add("name");
-        usernameSpan.textContent = username;
+        usernameSpan.textContent = safeUsername;
         usernameSpan.style.color = color;
-        if (this.core?.networkManager?.isOwnerDisplayName?.(username)) {
+        if (this.core?.networkManager?.isOwnerDisplayName?.(safeUsername)) {
             messageDiv.classList.add("owner-message");
             usernameSpan.classList.add("owner-name");
         }
@@ -4494,7 +5235,7 @@ export default class UIManager {
         // Create and set message span
         const messageSpan = document.createElement("span");
         messageSpan.classList.add("text");
-        messageSpan.textContent = message;
+        messageSpan.textContent = safeMessage;
 
         // Append username and message spans to message div
         messageDiv.appendChild(usernameSpan);
@@ -4505,6 +5246,73 @@ export default class UIManager {
 
         // Scroll to the bottom to show the latest message
         this.DOM.chat.messages.scrollTop = this.DOM.chat.messages.scrollHeight;
+    }
+
+    showScreenNotice (message, options = {}) {
+        if (!message) return;
+        const {
+            durationMs = 2800,
+            textColor = "#fff4d6",
+            borderColor = "rgba(255, 205, 120, 0.82)",
+            background = "linear-gradient(145deg, rgba(26, 16, 46, 0.95), rgba(34, 20, 60, 0.95))"
+        } = options || {};
+
+        if (!this.screenNoticeElement) {
+            const element = document.createElement("div");
+            element.style.position = "fixed";
+            element.style.left = "50%";
+            element.style.top = "72px";
+            element.style.transform = "translateX(-50%)";
+            element.style.zIndex = "25050";
+            element.style.maxWidth = "min(82vw, 780px)";
+            element.style.padding = "10px 14px";
+            element.style.borderRadius = "10px";
+            element.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+            element.style.fontSize = "13px";
+            element.style.fontWeight = "800";
+            element.style.letterSpacing = "0.02em";
+            element.style.pointerEvents = "none";
+            element.style.boxShadow = "0 10px 22px rgba(0,0,0,0.42), 0 0 12px rgba(149, 124, 255, 0.28)";
+            element.style.opacity = "0";
+            element.style.transition = "opacity 140ms ease";
+            document.body.appendChild(element);
+            this.screenNoticeElement = element;
+        }
+
+        if (this.screenNoticeHideTimeout) {
+            clearTimeout(this.screenNoticeHideTimeout);
+            this.screenNoticeHideTimeout = null;
+        }
+
+        this.screenNoticeElement.textContent = String(message);
+        this.screenNoticeElement.style.color = textColor;
+        this.screenNoticeElement.style.background = background;
+        this.screenNoticeElement.style.border = `1px solid ${borderColor}`;
+        this.screenNoticeElement.style.opacity = "1";
+
+        this.screenNoticeHideTimeout = setTimeout(() => {
+            if (!this.screenNoticeElement) return;
+            this.screenNoticeElement.style.opacity = "0";
+        }, Math.max(900, Number(durationMs) || 2800));
+    }
+
+    notifySystemWarning (message) {
+        const text = String(message || "").trim();
+        if (!text) return;
+        this.showScreenNotice(text, {
+            textColor: "#ffeec9",
+            borderColor: "rgba(255, 205, 120, 0.82)"
+        });
+    }
+
+    notifySystemInfo (message) {
+        const text = String(message || "").trim();
+        if (!text) return;
+        this.showScreenNotice(text, {
+            textColor: "#eaf4ff",
+            borderColor: "rgba(120, 205, 255, 0.82)",
+            background: "linear-gradient(145deg, rgba(14, 23, 56, 0.95), rgba(20, 35, 72, 0.95))"
+        });
     }
 
     handleUsernameClick (player) {
@@ -4994,18 +5802,14 @@ export default class UIManager {
     }
 
     positionSettingsPanelForTopMenu (anchorElement) {
-        if (!this.DOM?.settings?.panel || !anchorElement) return;
-
-        const anchorRect = anchorElement.getBoundingClientRect();
+        if (!this.DOM?.settings?.panel) return;
         const panel = this.DOM.settings.panel;
-        const panelWidth = panel.offsetWidth || 250;
-        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-
-        let left = anchorRect.left + (anchorRect.width / 2) - (panelWidth / 2);
-        left = Math.max(8, Math.min(left, viewportWidth - panelWidth - 8));
-
-        panel.style.left = `${Math.round(left)}px`;
-        panel.style.top = `${Math.round(anchorRect.bottom + 10)}px`;
+        // Keep Theme panel fixed and centered regardless of which top button opened it.
+        panel.style.left = "50%";
+        panel.style.top = "84px";
+        panel.style.right = "auto";
+        panel.style.bottom = "auto";
+        panel.style.transform = "translateX(-50%)";
     }
 
     closeSettingsAfterChoice () {
@@ -6614,6 +7418,248 @@ export default class UIManager {
         }
     }
 
+    getPublicBaseHotkeyStorageKey () {
+        return "saved_public_base_layout_hotkeys_v1";
+    }
+
+    getPublicBaseHotkeyMetaStorageKey () {
+        return "saved_public_base_layout_hotkeys_meta_v1";
+    }
+
+    getSavedPublicBaseHotkeys () {
+        try {
+            const raw = localStorage.getItem(this.getPublicBaseHotkeyStorageKey());
+            const parsed = raw ? JSON.parse(raw) : {};
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+            const out = {};
+            Object.keys(parsed).forEach((layoutKey) => {
+                const normalized = this.normalizeKeybindValue(parsed[layoutKey]);
+                if (normalized) out[String(layoutKey)] = normalized;
+            });
+            return out;
+        } catch (error) {
+            console.error("Could not parse public base layout hotkeys:", error);
+            return {};
+        }
+    }
+
+    setSavedPublicBaseHotkeys (map) {
+        try {
+            localStorage.setItem(this.getPublicBaseHotkeyStorageKey(), JSON.stringify(map || {}));
+        } catch (error) {
+            console.error("Could not store public base layout hotkeys:", error);
+        }
+    }
+
+    getSavedPublicBaseHotkeyMeta () {
+        try {
+            const raw = localStorage.getItem(this.getPublicBaseHotkeyMetaStorageKey());
+            const parsed = raw ? JSON.parse(raw) : {};
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+            return parsed;
+        } catch (error) {
+            console.error("Could not parse public base layout hotkey metadata:", error);
+            return {};
+        }
+    }
+
+    setSavedPublicBaseHotkeyMeta (map) {
+        try {
+            localStorage.setItem(this.getPublicBaseHotkeyMetaStorageKey(), JSON.stringify(map || {}));
+        } catch (error) {
+            console.error("Could not store public base layout hotkey metadata:", error);
+        }
+    }
+
+    getBaseLayoutEntryKey (layout) {
+        const rawId = layout?.id;
+        if (rawId !== null && rawId !== undefined && String(rawId).trim() !== "") {
+            return `id:${String(rawId)}`;
+        }
+        return `meta:${String(layout?.name || "")}:${String(layout?.createdAt || layout?.created_at || "")}`;
+    }
+
+    normalizeBaseLayoutBuildings (value) {
+        if (Array.isArray(value)) {
+            return value.filter((entry) => entry && typeof entry === "object");
+        }
+        if (value && typeof value === "object") {
+            return Object.values(value).filter((entry) => entry && typeof entry === "object");
+        }
+        return [];
+    }
+
+    normalizeBaseLayoutForLoading (layout) {
+        const normalizedLayout = (layout && typeof layout === "object") ? layout : {};
+        const buildings = this.normalizeBaseLayoutBuildings(normalizedLayout.buildings).length > 0
+            ? this.normalizeBaseLayoutBuildings(normalizedLayout.buildings)
+            : this.normalizeBaseLayoutBuildings(normalizedLayout?.layout_json?.buildings);
+
+        return {
+            ...normalizedLayout,
+            name: normalizedLayout.name || "Unnamed Base",
+            createdAt: normalizedLayout.createdAt || normalizedLayout.created_at || null,
+            authorName: normalizedLayout.authorName || normalizedLayout.author_name || "",
+            hotkey: this.normalizeKeybindValue(normalizedLayout.hotkey || ""),
+            snapshot: this.normalizeBaseLayoutSnapshot(normalizedLayout.snapshot),
+            buildings
+        };
+    }
+
+    getConfiguredKeyUsageEntries () {
+        const entries = [];
+        const push = (scope, id, keyValue, label) => {
+            const key = this.normalizeKeybindValue(keyValue);
+            if (!key) return;
+            entries.push({ scope, id, key, label: String(label || id || scope) });
+        };
+
+        const hudKeybinds = this.hudConfig?.keybinds || {};
+        Object.keys(hudKeybinds).forEach((actionKey) => {
+            push("hud", actionKey, hudKeybinds[actionKey], this.getHudKeybindLabel(actionKey));
+        });
+
+        const upgradeHotkeys = (this.hudConfig?.upgradeHotkeys && typeof this.hudConfig.upgradeHotkeys === "object")
+            ? this.hudConfig.upgradeHotkeys
+            : {};
+        Object.keys(upgradeHotkeys).forEach((upgradeId) => {
+            push("upgrade-item", upgradeId, upgradeHotkeys[upgradeId], this.getUpgradeHotkeyLabel(upgradeId));
+        });
+
+        this.getSavedBaseLayouts().forEach((layout) => {
+            const normalizedLayout = this.normalizeBaseLayoutForLoading(layout);
+            const id = this.getBaseLayoutEntryKey(normalizedLayout);
+            const name = normalizedLayout?.name || "Unnamed Base";
+            push("base-local", id, normalizedLayout.hotkey, `Local Base: ${name}`);
+        });
+
+        const publicMap = this.getSavedPublicBaseHotkeys();
+        const publicMeta = this.getSavedPublicBaseHotkeyMeta();
+        Object.keys(publicMap).forEach((layoutKey) => {
+            const idText = String(layoutKey || "");
+            const fallbackLabel = idText.startsWith("id:")
+                ? `Public Base #${idText.slice(3)}`
+                : "Public Base";
+            const metaName = String(publicMeta?.[layoutKey]?.name || "").trim();
+            push("base-public", layoutKey, publicMap[layoutKey], metaName ? `Public Base: ${metaName}` : fallbackLabel);
+        });
+
+        const buildingManager = this.core?.buildingManager;
+        push("defense", "placement", buildingManager?.defensePlacementKey, "Defense Placement");
+        push("defense", "remount", buildingManager?.defenseRemountKey, "Defense Remount");
+
+        return entries;
+    }
+
+    findConfiguredKeyConflict (keyValue, options = {}) {
+        const normalized = this.normalizeKeybindValue(keyValue);
+        if (!normalized) return null;
+        const excluded = new Set();
+        const excludeScope = options?.excludeScope ? String(options.excludeScope) : "";
+        const excludeId = options?.excludeId ? String(options.excludeId) : "";
+        if (excludeScope && excludeId) excluded.add(`${excludeScope}:${excludeId}`);
+        (Array.isArray(options?.excludeEntries) ? options.excludeEntries : []).forEach((entry) => {
+            if (!entry || typeof entry !== "object") return;
+            const scope = String(entry.scope || "");
+            const id = String(entry.id || "");
+            if (scope && id) excluded.add(`${scope}:${id}`);
+        });
+
+        const entries = this.getConfiguredKeyUsageEntries();
+        for (let i = 0; i < entries.length; i += 1) {
+            const entry = entries[i];
+            if (entry.key !== normalized) continue;
+            const token = `${entry.scope}:${entry.id}`;
+            if (excluded.has(token)) continue;
+            return entry;
+        }
+        return null;
+    }
+
+    showKeyConflictNotice (keyValue, conflictEntry = null) {
+        const keyLabel = this.formatKeybindLabel(keyValue || "");
+        const targetLabel = String(conflictEntry?.label || "another action").trim();
+        this.notifySystemWarning(`Key ${keyLabel} is already used by "${targetLabel}". Choose another key.`);
+    }
+
+    triggerBaseLayoutHotkeyLoad (keyValue) {
+        const key = this.normalizeKeybindValue(keyValue);
+        if (!key) return false;
+        if (this.isReservedGameplayKeybind(key)) return false;
+        if (!this.core?.gameManager?.player) return false;
+        if (this.isChatInputFocused) return false;
+        if (this.baseLayoutDialogElement && this.baseLayoutDialogElement.parentNode) return false;
+        if (this._baseLayoutHotkeyLoadInFlight) return true;
+
+        const localLayouts = this.getSavedBaseLayouts()
+            .map((layout) => this.normalizeBaseLayoutForLoading(layout))
+            .filter((layout) => this.normalizeKeybindValue(layout.hotkey || "") === key);
+
+        const publicMap = this.getSavedPublicBaseHotkeys();
+        const publicMeta = this.getSavedPublicBaseHotkeyMeta();
+        const publicMatches = Object.keys(publicMap)
+            .filter((layoutKey) => this.normalizeKeybindValue(publicMap[layoutKey]) === key);
+
+        if (localLayouts.length === 0 && publicMatches.length === 0) return false;
+
+        if (localLayouts.length > 0 && publicMatches.length > 0) {
+            this.notifySystemWarning(`Key ${this.formatKeybindLabel(key)} is assigned to both Local and Public base. Pick a unique key.`);
+            return true;
+        }
+
+        if (localLayouts.length > 0) {
+            const targetLayout = localLayouts[0];
+            if (!Array.isArray(targetLayout.buildings) || targetLayout.buildings.length === 0) {
+                this.notifySystemWarning("This local base has no buildings to load.");
+                return true;
+            }
+            this.showScreenNotice(`Loading base "${targetLayout.name || "Base"}"...`, {
+                textColor: "#e8ffef",
+                borderColor: "rgba(120, 255, 165, 0.74)"
+            });
+            this.core.buildingManager.loadBaseLayout(targetLayout);
+            return true;
+        }
+
+        const targetPublicKey = publicMatches[0];
+        const match = /^id:(.+)$/.exec(String(targetPublicKey || ""));
+        const publicId = match && match[1] ? match[1] : "";
+        if (!publicId) {
+            this.notifySystemWarning("Public base hotkey is outdated. Open Load Base and set the key again.");
+            return true;
+        }
+
+        this._baseLayoutHotkeyLoadInFlight = true;
+        this.showScreenNotice("Loading public base...", {
+            textColor: "#e8ffef",
+            borderColor: "rgba(120, 205, 255, 0.74)"
+        });
+
+        fetchPublicBaseLayoutByIdSafe(publicId).then((result) => {
+            if (!result?.success || !result?.data) {
+                this.notifySystemWarning("Could not load this public base.");
+                return;
+            }
+            const details = result.data;
+            const normalized = this.normalizeBaseLayoutForLoading({
+                ...details,
+                id: details?.id ?? publicId,
+                name: details?.name || publicMeta?.[targetPublicKey]?.name || `Public Base #${publicId}`
+            });
+            if (!Array.isArray(normalized.buildings) || normalized.buildings.length === 0) {
+                this.notifySystemWarning("This public base has no buildings to load.");
+                return;
+            }
+            this.core.buildingManager.loadBaseLayout(normalized);
+        }).catch(() => {
+            this.notifySystemWarning("Could not load this public base.");
+        }).finally(() => {
+            this._baseLayoutHotkeyLoadInFlight = false;
+        });
+
+        return true;
+    }
+
     getCurrentBaseCaptureBounds (player) {
         const buildings = (player?.buildings || []).filter(b => b && !b.removeFlag);
 
@@ -7018,9 +8064,19 @@ export default class UIManager {
     showLoadBaseLayoutDialog () {
         this.hideBaseLayoutDialog();
 
-        const localLayouts = this.getSavedBaseLayouts();
+        let localLayouts = this.getSavedBaseLayouts();
         let publicLayouts = [];
+        let publicLayoutCache = {};
         let activeSource = "local";
+        let visibleLayouts = [];
+        let layoutLoadInFlight = false;
+        let draggedLocalLayoutKey = null;
+        let isCapturingLayoutKey = false;
+        let pendingLayoutKeyCapture = null;
+        const loadPublicHotkeyMap = () => this.getSavedPublicBaseHotkeys();
+        const savePublicHotkeyMap = (map) => this.setSavedPublicBaseHotkeys(map);
+        let publicLayoutHotkeys = loadPublicHotkeyMap();
+        let publicLayoutHotkeyMeta = this.getSavedPublicBaseHotkeyMeta();
 
         const overlay = document.createElement("div");
         overlay.style.position = "fixed";
@@ -7107,6 +8163,13 @@ export default class UIManager {
         searchInput.style.padding = "0 12px";
         searchInput.style.outline = "none";
         searchInput.style.boxSizing = "border-box";
+
+        const hotkeyHint = document.createElement("div");
+        hotkeyHint.style.marginTop = "8px";
+        hotkeyHint.style.fontSize = "12px";
+        hotkeyHint.style.opacity = "0.86";
+        hotkeyHint.style.letterSpacing = "0.03em";
+        hotkeyHint.textContent = "Local: drag the grip icon to reorder, click Key to set a shortcut (keyboard or mouse side button).";
 
         const list = document.createElement("div");
         list.style.marginTop = "12px";
@@ -7227,21 +8290,211 @@ export default class UIManager {
             });
         };
 
-        const normalizeLayout = (layout) => ({
-            id: (layout && typeof layout === "object") ? layout.id : null,
-            name: ((layout && typeof layout === "object") ? layout.name : "") || "Unnamed Base",
-            snapshot: this.normalizeBaseLayoutSnapshot((layout && typeof layout === "object") ? layout.snapshot : null),
-            createdAt: (layout && typeof layout === "object") ? (layout.createdAt || layout.created_at || null) : null,
-            authorName: (layout && typeof layout === "object") ? (layout.author_name || "") : "",
-            buildings: Array.isArray(layout?.buildings)
-                ? layout.buildings
-                : (Array.isArray(layout?.layout_json?.buildings) ? layout.layout_json.buildings : [])
-        });
+        const normalizeLayout = (layout) => this.normalizeBaseLayoutForLoading(layout);
+
+        const getLayoutKey = (layout) => {
+            return this.getBaseLayoutEntryKey(layout);
+        };
+
+        const clearPendingLayoutKeyCapture = () => {
+            if (typeof pendingLayoutKeyCapture === "function") {
+                pendingLayoutKeyCapture();
+            }
+            pendingLayoutKeyCapture = null;
+            isCapturingLayoutKey = false;
+        };
+
+        const setLocalLayoutHotkey = (layout, keyValue) => {
+            const targetKey = getLayoutKey(layout);
+            const normalizedHotkey = this.normalizeKeybindValue(keyValue);
+            const next = this.getSavedBaseLayouts().map(item => ({ ...item }));
+            const targetIndex = next.findIndex(item => getLayoutKey(item) === targetKey);
+            if (targetIndex < 0) return false;
+
+            next[targetIndex].hotkey = normalizedHotkey;
+            this.setSavedBaseLayouts(next);
+            localLayouts = next;
+            return true;
+        };
+
+        const setPublicLayoutHotkey = (layout, keyValue) => {
+            const targetKey = getLayoutKey(layout);
+            if (!targetKey) return false;
+            const normalizedHotkey = this.normalizeKeybindValue(keyValue);
+            const next = { ...publicLayoutHotkeys };
+            if (normalizedHotkey) {
+                next[targetKey] = normalizedHotkey;
+                publicLayoutHotkeyMeta[targetKey] = {
+                    id: layout?.id ?? null,
+                    name: layout?.name || "Public Base",
+                    createdAt: layout?.createdAt || layout?.created_at || null
+                };
+            } else {
+                delete next[targetKey];
+                delete publicLayoutHotkeyMeta[targetKey];
+            }
+            publicLayoutHotkeys = next;
+            this.setSavedPublicBaseHotkeyMeta(publicLayoutHotkeyMeta);
+            savePublicHotkeyMap(next);
+            return true;
+        };
+
+        const getLayoutHotkey = (layout, source) => {
+            if (source === "local") {
+                return this.normalizeKeybindValue(layout?.hotkey || "");
+            }
+            return this.normalizeKeybindValue(publicLayoutHotkeys[getLayoutKey(layout)] || "");
+        };
+
+        const setLayoutHotkey = (layout, source, keyValue) => {
+            if (source === "local") return setLocalLayoutHotkey(layout, keyValue);
+            if (source === "public") return setPublicLayoutHotkey(layout, keyValue);
+            return false;
+        };
+
+        const normalizeMouseButtonHotkey = (button) => {
+            const buttonIndex = Number(button);
+            if (!Number.isInteger(buttonIndex) || buttonIndex < 0) return "";
+            return `mouse${buttonIndex + 1}`;
+        };
+
+        const findLayoutHotkeyConflict = (layout, source, keyValue) => {
+            const normalizedHotkey = this.normalizeKeybindValue(keyValue);
+            if (!normalizedHotkey) return null;
+
+            const targetKey = getLayoutKey(layout);
+            return this.findConfiguredKeyConflict(normalizedHotkey, {
+                excludeScope: source === "public" ? "base-public" : "base-local",
+                excludeId: targetKey
+            });
+        };
+
+        const applyLayoutHotkey = (layout, source, keyValue) => {
+            const normalizedHotkey = this.normalizeKeybindValue(keyValue);
+            if (!normalizedHotkey) {
+                return { ok: setLayoutHotkey(layout, source, "") };
+            }
+
+            if (this.isReservedGameplayKeybind(normalizedHotkey)) {
+                this.notifySystemWarning(this.getReservedGameplayKeybindNotice(normalizedHotkey));
+                return { ok: false, reserved: true };
+            }
+
+            const conflict = findLayoutHotkeyConflict(layout, source, normalizedHotkey);
+            if (conflict) {
+                this.showKeyConflictNotice(normalizedHotkey, conflict);
+                return { ok: false, conflict: true };
+            }
+
+            return { ok: setLayoutHotkey(layout, source, normalizedHotkey) };
+        };
+
+        const beginLayoutHotkeyCapture = (layout, source, keyBtn) => {
+            clearPendingLayoutKeyCapture();
+            isCapturingLayoutKey = true;
+            keyBtn.textContent = "Press key/mouse...";
+
+            const finalizeCapture = async () => {
+                clearPendingLayoutKeyCapture();
+                await renderLayouts(searchInput.value);
+            };
+
+            const onKeyCapture = async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                const pressed = this.normalizeKeybindValue(event.key);
+                if (!pressed) return;
+
+                if (pressed === "escape") {
+                    await finalizeCapture();
+                    return;
+                }
+                if (pressed === "backspace" || pressed === "delete") {
+                    setLayoutHotkey(layout, source, "");
+                    await finalizeCapture();
+                    return;
+                }
+                applyLayoutHotkey(layout, source, pressed);
+                await finalizeCapture();
+            };
+
+            const onMouseCapture = async (event) => {
+                const pressed = normalizeMouseButtonHotkey(event.button);
+                if (!pressed || event.button < 3) return;
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                applyLayoutHotkey(layout, source, pressed);
+                await finalizeCapture();
+            };
+
+            document.addEventListener("keydown", onKeyCapture, true);
+            document.addEventListener("mousedown", onMouseCapture, true);
+            pendingLayoutKeyCapture = () => {
+                document.removeEventListener("keydown", onKeyCapture, true);
+                document.removeEventListener("mousedown", onMouseCapture, true);
+            };
+        };
+
+        const reorderLocalLayouts = (dragKey, targetKey) => {
+            if (!dragKey || !targetKey || dragKey === targetKey) return false;
+            const next = this.getSavedBaseLayouts().map(item => ({ ...item }));
+            const fromIndex = next.findIndex(item => getLayoutKey(item) === dragKey);
+            const toIndex = next.findIndex(item => getLayoutKey(item) === targetKey);
+            if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return false;
+            const [moved] = next.splice(fromIndex, 1);
+            next.splice(toIndex, 0, moved);
+            this.setSavedBaseLayouts(next);
+            localLayouts = next;
+            return true;
+        };
+
+        const loadLayoutFromDialog = async (layout, source, triggerButton = null) => {
+            if (!layout || layoutLoadInFlight) return false;
+            const button = triggerButton || null;
+            const oldText = button ? button.textContent : "";
+            layoutLoadInFlight = true;
+            if (button) {
+                button.disabled = true;
+                button.textContent = "Loading...";
+            }
+            try {
+                let layoutToLoad = this.normalizeBaseLayoutForLoading(layout);
+                const hasBuildings = Array.isArray(layoutToLoad?.buildings) && layoutToLoad.buildings.length > 0;
+                if (source === "public" && !hasBuildings) {
+                    const detailResult = await fetchPublicBaseLayoutByIdSafe(layout.id);
+                    if (!detailResult?.success || !detailResult?.data) {
+                        this.notifySystemWarning("Could not load this public base.");
+                        return false;
+                    }
+                    const details = detailResult.data;
+                    layoutToLoad = this.normalizeBaseLayoutForLoading({
+                        ...layout,
+                        ...details
+                    });
+                }
+                if (!Array.isArray(layoutToLoad?.buildings) || layoutToLoad.buildings.length === 0) {
+                    this.notifySystemWarning("Layout has no buildings to load.");
+                    return false;
+                }
+                this.hideBaseLayoutDialog();
+                this.core.buildingManager.loadBaseLayout(layoutToLoad);
+                return true;
+            } finally {
+                layoutLoadInFlight = false;
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = oldText;
+                }
+            }
+        };
 
         const renderLayouts = async (queryText = "") => {
             const requestId = ++renderRequestId;
             try {
                 list.innerHTML = "";
+                visibleLayouts = [];
                 const query = (queryText || "").trim();
                 let filtered = [];
 
@@ -7259,18 +8512,45 @@ export default class UIManager {
                     }
 
                     publicLayouts = responseRows.map(normalizeLayout);
-                    filtered = publicLayouts;
+                    publicLayouts.forEach((layout) => {
+                        publicLayoutCache[getLayoutKey(layout)] = layout;
+                    });
+                    const nextMeta = { ...publicLayoutHotkeyMeta };
+                    publicLayouts.forEach((layout) => {
+                        const layoutKey = getLayoutKey(layout);
+                        nextMeta[layoutKey] = {
+                            id: layout?.id ?? null,
+                            name: layout?.name || "Public Base",
+                            createdAt: layout?.createdAt || layout?.created_at || null
+                        };
+                    });
+                    publicLayoutHotkeyMeta = nextMeta;
+                    this.setSavedPublicBaseHotkeyMeta(nextMeta);
+                    filtered = publicLayouts.map((layout) => ({
+                        ...layout,
+                        hotkey: getLayoutHotkey(layout, "public")
+                    }));
                 } else {
                     const q = query.toLowerCase();
                     filtered = !q
                         ? localLayouts.map(normalizeLayout)
                         : localLayouts.map(normalizeLayout).filter(layout => layout.name.toLowerCase().includes(q));
+                    filtered = filtered.map((layout) => ({
+                        ...layout,
+                        hotkey: getLayoutHotkey(layout, "local")
+                    }));
                 }
+
+                hotkeyHint.textContent = activeSource === "local"
+                    ? "Local: drag the grip icon to reorder, click Key to set a shortcut (keyboard or mouse side button), then press it to load."
+                    : "Public: click Key to set a shortcut (keyboard or mouse side button), then press it to load.";
+                visibleLayouts = filtered;
 
                 // Replace loading skeleton/content from previous render before drawing final rows.
                 list.innerHTML = "";
 
                 if (filtered.length === 0) {
+                    visibleLayouts = [];
                     const empty = document.createElement("div");
                     empty.textContent = (activeSource === "local" ? localLayouts.length : publicLayouts.length) === 0
                         ? "No saved layouts yet."
@@ -7284,6 +8564,8 @@ export default class UIManager {
                 }
 
                 filtered.forEach((layout) => {
+                const layoutSource = activeSource;
+                const localLayoutKey = layoutSource === "local" ? getLayoutKey(layout) : "";
                 const item = document.createElement("div");
                 item.style.display = "grid";
                 item.style.gridTemplateColumns = "180px 1fr auto";
@@ -7293,6 +8575,45 @@ export default class UIManager {
                 item.style.border = "1px solid rgba(120, 180, 255, 0.4)";
                 item.style.borderRadius = "10px";
                 item.style.background = "rgba(10, 22, 48, 0.55)";
+                const resetItemBorder = () => {
+                    item.style.border = "1px solid rgba(120, 180, 255, 0.4)";
+                };
+
+                if (layoutSource === "local") {
+                    item.draggable = true;
+                    item.addEventListener("dragstart", (event) => {
+                        draggedLocalLayoutKey = localLayoutKey;
+                        item.style.opacity = "0.72";
+                        if (event.dataTransfer) {
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", localLayoutKey);
+                        }
+                    });
+                    item.addEventListener("dragend", () => {
+                        draggedLocalLayoutKey = null;
+                        item.style.opacity = "1";
+                        resetItemBorder();
+                    });
+                    item.addEventListener("dragover", (event) => {
+                        if (!draggedLocalLayoutKey || draggedLocalLayoutKey === localLayoutKey) return;
+                        event.preventDefault();
+                        item.style.border = "1px solid rgba(255, 210, 120, 0.95)";
+                    });
+                    item.addEventListener("dragleave", () => {
+                        resetItemBorder();
+                    });
+                    item.addEventListener("drop", async (event) => {
+                        if (!draggedLocalLayoutKey || draggedLocalLayoutKey === localLayoutKey) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        resetItemBorder();
+                        const changed = reorderLocalLayouts(draggedLocalLayoutKey, localLayoutKey);
+                        draggedLocalLayoutKey = null;
+                        if (changed) {
+                            await renderLayouts(searchInput.value);
+                        }
+                    });
+                }
 
                 const preview = document.createElement("div");
                 preview.style.width = "180px";
@@ -7344,68 +8665,80 @@ export default class UIManager {
                 }
 
                 const info = document.createElement("div");
+                const nameRow = document.createElement("div");
+                nameRow.style.display = "flex";
+                nameRow.style.alignItems = "center";
+                nameRow.style.gap = "8px";
+                if (layoutSource === "local") {
+                    const dragHandle = document.createElement("span");
+                    dragHandle.textContent = "↕";
+                    dragHandle.title = "Drag to reorder";
+                    dragHandle.style.display = "inline-grid";
+                    dragHandle.style.placeItems = "center";
+                    dragHandle.style.width = "22px";
+                    dragHandle.style.height = "22px";
+                    dragHandle.style.borderRadius = "6px";
+                    dragHandle.style.border = "1px solid rgba(255, 210, 120, 0.65)";
+                    dragHandle.style.background = "rgba(112, 84, 32, 0.24)";
+                    dragHandle.style.color = "#ffe9bc";
+                    dragHandle.style.fontSize = "14px";
+                    dragHandle.style.fontWeight = "900";
+                    dragHandle.style.cursor = "grab";
+                    nameRow.appendChild(dragHandle);
+                }
                 const name = document.createElement("div");
                 name.textContent = layout.name || "Unnamed Base";
                 name.style.fontSize = "16px";
                 name.style.fontWeight = "800";
+                nameRow.appendChild(name);
                 const meta = document.createElement("div");
                 const created = layout.createdAt ? new Date(layout.createdAt).toLocaleString() : "Unknown date";
                 const count = Array.isArray(layout.buildings) ? layout.buildings.length : 0;
                 const author = layout.authorName ? ` by ${layout.authorName}` : "";
-                meta.textContent = `${count} buildings - ${created}${author}`;
+                const layoutHotkeyLabel = this.formatKeybindLabel(getLayoutHotkey(layout, layoutSource) || "");
+                meta.textContent = `${count} buildings - ${created}${author} - key: ${layoutHotkeyLabel}`;
                 meta.style.marginTop = "6px";
                 meta.style.fontSize = "12px";
                 meta.style.opacity = "0.86";
-                info.appendChild(name);
+                info.appendChild(nameRow);
                 info.appendChild(meta);
 
                 const actions = document.createElement("div");
                 actions.style.display = "grid";
                 actions.style.gap = "8px";
 
-                const loadBtn = document.createElement("button");
-                loadBtn.textContent = "Load";
-                loadBtn.style.border = "1px solid rgba(120, 255, 165, 0.75)";
-                loadBtn.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
-                loadBtn.style.color = "#e8ffef";
-                loadBtn.style.padding = "8px 12px";
-                loadBtn.style.borderRadius = "9px";
-                loadBtn.style.cursor = "pointer";
-                loadBtn.style.fontWeight = "800";
-                loadBtn.addEventListener("click", async () => {
-                    if (loadBtn.disabled) return;
-                    const oldText = loadBtn.textContent;
-                    loadBtn.disabled = true;
-                    let layoutToLoad = layout;
-                    try {
-                        const hasBuildings = Array.isArray(layout?.buildings) && layout.buildings.length > 0;
-                        if (activeSource === "public" && !hasBuildings) {
-                            loadBtn.textContent = "Loading...";
-                            const detailResult = await fetchPublicBaseLayoutByIdSafe(layout.id);
-                            if (!detailResult?.success || !detailResult?.data) {
-                                this.addChatMessage("System", "Could not load this public base.", "#ffcc66");
-                                return;
-                            }
-                            const details = detailResult.data;
-                            const buildings = Array.isArray(details?.layout_json?.buildings) ? details.layout_json.buildings : [];
-                            layoutToLoad = {
-                                ...layout,
-                                snapshot: details.snapshot || layout.snapshot || null,
-                                buildings
-                            };
-                        }
+                if (layoutSource === "public") {
+                    const keyBtn = document.createElement("button");
+                    const keyLabel = this.formatKeybindLabel(getLayoutHotkey(layout, layoutSource) || "");
+                    keyBtn.textContent = keyLabel === this.t("hud.none") ? "Key" : `Key: ${keyLabel}`;
+                    keyBtn.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+                    keyBtn.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+                    keyBtn.style.color = "#e8ffef";
+                    keyBtn.style.padding = "8px 12px";
+                    keyBtn.style.borderRadius = "9px";
+                    keyBtn.style.cursor = "pointer";
+                    keyBtn.style.fontWeight = "800";
+                    keyBtn.addEventListener("click", () => {
+                        beginLayoutHotkeyCapture(layout, layoutSource, keyBtn);
+                    });
 
-                        this.hideBaseLayoutDialog();
-                        this.core.buildingManager.loadBaseLayout(layoutToLoad);
-                    } finally {
-                        loadBtn.disabled = false;
-                        loadBtn.textContent = oldText;
-                    }
-                });
+                    const loadBtn = document.createElement("button");
+                    loadBtn.textContent = "Load";
+                    loadBtn.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+                    loadBtn.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+                    loadBtn.style.color = "#e8ffef";
+                    loadBtn.style.padding = "8px 12px";
+                    loadBtn.style.borderRadius = "9px";
+                    loadBtn.style.cursor = "pointer";
+                    loadBtn.style.fontWeight = "800";
+                    loadBtn.addEventListener("click", async () => {
+                        await loadLayoutFromDialog(layout, layoutSource, loadBtn);
+                    });
+                    actions.appendChild(keyBtn);
+                    actions.appendChild(loadBtn);
+                }
 
-                actions.appendChild(loadBtn);
-
-                if (activeSource === "public" && !layout.snapshot && layout.id) {
+                if (layoutSource === "public" && !layout.snapshot && layout.id) {
                     noPreviewLabel.textContent = "Loading preview...";
                     noPreviewLabel.classList.add("warhex-load-base-preview-loading");
                     const previewTimeout = setTimeout(() => {
@@ -7431,7 +8764,7 @@ export default class UIManager {
                     });
                 }
 
-                if (activeSource === "local") {
+                if (layoutSource === "local") {
                     const publishBtn = document.createElement("button");
                     publishBtn.textContent = "Publish";
                     publishBtn.style.border = "1px solid rgba(120, 205, 255, 0.7)";
@@ -7495,6 +8828,20 @@ export default class UIManager {
                         }
                     });
 
+                    const keyBtn = document.createElement("button");
+                    const keyLabel = this.formatKeybindLabel(getLayoutHotkey(layout, layoutSource) || "");
+                    keyBtn.textContent = keyLabel === this.t("hud.none") ? "Key" : `Key: ${keyLabel}`;
+                    keyBtn.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+                    keyBtn.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+                    keyBtn.style.color = "#e8ffef";
+                    keyBtn.style.padding = "8px 12px";
+                    keyBtn.style.borderRadius = "9px";
+                    keyBtn.style.cursor = "pointer";
+                    keyBtn.style.fontWeight = "800";
+                    keyBtn.addEventListener("click", () => {
+                        beginLayoutHotkeyCapture(layout, layoutSource, keyBtn);
+                    });
+
                     const deleteBtn = document.createElement("button");
                     deleteBtn.textContent = "Delete";
                     deleteBtn.style.border = "1px solid rgba(255, 130, 130, 0.65)";
@@ -7504,10 +8851,12 @@ export default class UIManager {
                     deleteBtn.style.borderRadius = "9px";
                     deleteBtn.style.cursor = "pointer";
                     deleteBtn.addEventListener("click", () => {
-                        const remaining = this.getSavedBaseLayouts().filter(item => item.id !== layout.id);
+                        const targetKey = getLayoutKey(layout);
+                        const remaining = this.getSavedBaseLayouts().filter(item => getLayoutKey(item) !== targetKey);
                         this.setSavedBaseLayouts(remaining);
                         this.showLoadBaseLayoutDialog();
                     });
+                    actions.appendChild(keyBtn);
                     actions.appendChild(publishBtn);
                     actions.appendChild(deleteBtn);
                 }
@@ -7520,6 +8869,7 @@ export default class UIManager {
             } catch (error) {
                 if (requestId !== renderRequestId) return;
                 list.innerHTML = "";
+                visibleLayouts = [];
                 const isTimeout = String(error?.message || "").toLowerCase().includes("timeout");
                 const errorInfo = document.createElement("div");
                 errorInfo.textContent = isTimeout
@@ -7537,6 +8887,58 @@ export default class UIManager {
             await renderLayouts(searchInput.value);
         });
         renderLayouts();
+
+        const onDialogKeyDown = async (event) => {
+            if (!this.baseLayoutDialogElement || !this.baseLayoutDialogElement.parentNode) return;
+            if (event.repeat) return;
+            if (isCapturingLayoutKey) return;
+
+            const key = this.normalizeKeybindValue(event.key);
+            if (!key) return;
+            const sourceLayouts = activeSource === "public"
+                ? Object.values(publicLayoutCache).map(normalizeLayout)
+                : localLayouts.map(normalizeLayout);
+            const selectedLayout = visibleLayouts.find((layout) => {
+                const layoutKey = this.normalizeKeybindValue(layout?.hotkey || "");
+                return layoutKey && layoutKey === key;
+            }) || sourceLayouts.find((layout) => {
+                const layoutKey = getLayoutHotkey(layout, activeSource);
+                return layoutKey && layoutKey === key;
+            });
+            if (selectedLayout) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                await loadLayoutFromDialog(selectedLayout, activeSource, null);
+            }
+        };
+
+        const onDialogMouseDown = async (event) => {
+            if (!this.baseLayoutDialogElement || !this.baseLayoutDialogElement.parentNode) return;
+            if (isCapturingLayoutKey) return;
+
+            const key = normalizeMouseButtonHotkey(event.button);
+            if (!key || event.button < 3) return;
+            const sourceLayouts = activeSource === "public"
+                ? Object.values(publicLayoutCache).map(normalizeLayout)
+                : localLayouts.map(normalizeLayout);
+            const selectedLayout = visibleLayouts.find((layout) => {
+                const layoutKey = this.normalizeKeybindValue(layout?.hotkey || "");
+                return layoutKey && layoutKey === key;
+            }) || sourceLayouts.find((layout) => {
+                const layoutKey = getLayoutHotkey(layout, activeSource);
+                return layoutKey && layoutKey === key;
+            });
+            if (selectedLayout) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                await loadLayoutFromDialog(selectedLayout, activeSource, null);
+            }
+        };
+
+        document.addEventListener("keydown", onDialogKeyDown, true);
+        document.addEventListener("mousedown", onDialogMouseDown, true);
 
         const closeRow = document.createElement("div");
         closeRow.style.marginTop = "10px";
@@ -7559,12 +8961,17 @@ export default class UIManager {
         card.appendChild(subtitle);
         card.appendChild(tabsRow);
         card.appendChild(searchInput);
+        card.appendChild(hotkeyHint);
         card.appendChild(list);
         card.appendChild(closeRow);
         overlay.appendChild(card);
         document.body.appendChild(overlay);
         this.baseLayoutDialogElement = overlay;
-        searchInput.focus();
+        this.baseLayoutDialogCleanup = () => {
+            document.removeEventListener("keydown", onDialogKeyDown, true);
+            document.removeEventListener("mousedown", onDialogMouseDown, true);
+            clearPendingLayoutKeyCapture();
+        };
     }
 
     showRelocateBasePrompt(cost, onConfirm, onCancel) {

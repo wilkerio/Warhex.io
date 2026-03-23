@@ -2167,6 +2167,7 @@ export default class NetworkManager {
     handleUnitSpawnBullet (payload) {
         const { playerID, objectID, bulletID } = payload;
         const bulletPosition = payload.position || payload.targetPosition;
+        const bulletTargetPosition = payload.targetPosition || null;
         const unitID = objectID;
         const player = this.core.gameManager.getPlayerById(playerID);
         if (!player || !bulletPosition) return;
@@ -2175,7 +2176,18 @@ export default class NetworkManager {
         if (!unit?.bulletDetails) return;
 
         const bullet = new Bullet(unit.bulletDetails, player.color, bulletPosition, bulletID);
-        const initialTargetPosition = unit.targetPosition || bulletPosition;
+        let initialTargetPosition = bulletTargetPosition || unit.targetPosition || bulletPosition;
+        if (!bulletTargetPosition && unit.type === UnitTypes.COMMANDER && bulletPosition) {
+            const unitPosition = unit.position || unit.targetPosition || bulletPosition;
+            const dirX = Number(bulletPosition.x) - Number(unitPosition.x);
+            const dirY = Number(bulletPosition.y) - Number(unitPosition.y);
+            if (Number.isFinite(dirX) && Number.isFinite(dirY) && Math.hypot(dirX, dirY) > 0.01) {
+                initialTargetPosition = {
+                    x: unitPosition.x + dirX * 2,
+                    y: unitPosition.y + dirY * 2
+                };
+            }
+        }
         player.spawnBullet(bullet, initialTargetPosition, unit);
     }
 

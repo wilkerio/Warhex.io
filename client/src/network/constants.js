@@ -208,7 +208,7 @@ export const BuildingDetails = {
             variant: BuildingVariantTypes.WALL.BASIC,
             name: "Basic Wall",
             description: "Simple defensive structure.",
-            cost: 60,
+            cost: 40,
             size: BuildingSizes.WALL.size,
             next: [BuildingVariantTypes.WALL.BOULDER, BuildingVariantTypes.WALL.MICRO_GENERATOR]
         },

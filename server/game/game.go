@@ -769,6 +769,114 @@ func spawnTurretVolley(base *Base, spawning *BulletSpawning, target PositionFloa
 	return firedAny
 }
 
+func estimateUnitVelocity(unit *Unit) (float64, float64) {
+	if unit == nil {
+		return 0, 0
+	}
+
+	unit.RLock()
+	position := unit.Position
+	target := unit.TargetPosition
+	speed := unit.Speed
+	unit.RUnlock()
+
+	dx := float64(target.X - position.X)
+	dy := float64(target.Y - position.Y)
+	distance := math.Sqrt(dx*dx + dy*dy)
+	if distance < 1e-3 || speed <= 0 {
+		return 0, 0
+	}
+
+	scale := speed / distance
+	return dx * scale, dy * scale
+}
+
+func predictInterceptPosition(shooterPos PositionFloat, targetPos PositionFloat, targetVelX, targetVelY, projectileSpeed, maxLookaheadSec float64) PositionFloat {
+	if projectileSpeed <= 1e-3 {
+		return targetPos
+	}
+
+	relativeX := float64(targetPos.X - shooterPos.X)
+	relativeY := float64(targetPos.Y - shooterPos.Y)
+
+	a := targetVelX*targetVelX + targetVelY*targetVelY - projectileSpeed*projectileSpeed
+	b := 2 * (relativeX*targetVelX + relativeY*targetVelY)
+	c := relativeX*relativeX + relativeY*relativeY
+
+	bestT := -1.0
+	if math.Abs(a) < 1e-6 {
+		if math.Abs(b) > 1e-6 {
+			t := -c / b
+			if t > 0 {
+				bestT = t
+			}
+		}
+	} else {
+		discriminant := b*b - 4*a*c
+		if discriminant >= 0 {
+			sqrtDisc := math.Sqrt(discriminant)
+			t1 := (-b - sqrtDisc) / (2 * a)
+			t2 := (-b + sqrtDisc) / (2 * a)
+			if t1 > 0 {
+				bestT = t1
+			}
+			if t2 > 0 && (bestT <= 0 || t2 < bestT) {
+				bestT = t2
+			}
+		}
+	}
+
+	if bestT <= 0 {
+		distance := math.Sqrt(c)
+		bestT = distance / projectileSpeed
+	}
+	if maxLookaheadSec > 0 && bestT > maxLookaheadSec {
+		bestT = maxLookaheadSec
+	}
+
+	return PositionFloat{
+		X: float32(float64(targetPos.X) + targetVelX*bestT),
+		Y: float32(float64(targetPos.Y) + targetVelY*bestT),
+	}
+}
+
+func getUnitAimPositionForSpawning(spawning *BulletSpawning, shooter *Unit, target *Unit) PositionFloat {
+	if target == nil {
+		return PositionFloat{}
+	}
+
+	targetPos := target.GetPosition()
+	if shooter == nil || shooter.Type != COMMANDER {
+		return targetPos
+	}
+
+	projectileSpeed, ok := GetBulletSpeed(shooter.Type, shooter.Variant)
+	if !ok || projectileSpeed <= 0 {
+		return targetPos
+	}
+
+	velocityX, velocityY := estimateUnitVelocity(target)
+	if math.Abs(velocityX) < 1e-3 && math.Abs(velocityY) < 1e-3 {
+		return targetPos
+	}
+
+	shooterPos := shooter.GetPosition()
+	maxLookaheadSec := float64(spawning.Range) / projectileSpeed
+	if maxLookaheadSec < 0.05 {
+		maxLookaheadSec = 0.05
+	}
+	return predictInterceptPosition(shooterPos, targetPos, velocityX, velocityY, projectileSpeed, maxLookaheadSec)
+}
+
+func isCommanderOneShotSoldierHit(bullet *Bullet, unit *Unit) bool {
+	return bullet != nil &&
+		unit != nil &&
+		bullet.IsFiredByUnit() &&
+		bullet.FiredByCommander &&
+		bullet.Behavior == UnitBullet &&
+		unit.Type == SOLDIER
+}
+
 func processPlayerUnitTurrets(player *Player, duration time.Duration, players []*Player, neutrals []*NeutralBase) {
 	player.RLock()
 	unitSpawnings := make([]*BulletSpawning, 0, len(player.UnitBulletSpawning))
@@ -792,8 +900,8 @@ func processPlayerUnitTurrets(player *Player, duration time.Duration, players []
 			closestUnit := findClosestUnitInRange(spawning, players, player)
 			if closestUnit != nil {
 				spawning.Frequency.Reset()
-				closestUnitPosition := closestUnit.GetPosition()
-				bullet, ok := player.Base.AddBullet(spawning, closestUnitPosition, 0)
+				targetPosition := getUnitAimPositionForSpawning(spawning, unit, closestUnit)
+				bullet, ok := player.Base.AddBullet(spawning, targetPosition, 0)
 				if ok {
 					TriggerUnitBulletSpawnEvent(player, bullet, unit)
 				} else {
@@ -1482,6 +1590,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 							damage *= 7
 						}
 					}
+					if isCommanderOneShotSoldierHit(bullet, unit) {
+						damage = unitHealth
+					}
 
 					isAlive = unit.TakeDamage(damage)
 					if !isAlive { // Unit is destroyed
@@ -1686,6 +1797,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 							// Keep legacy feeling: anti-tank should punish commanders heavily.
 							damage *= 7
 						}
+					}
+					if isCommanderOneShotSoldierHit(bullet, unit) {
+						damage = unitHealth
 					}
 
 					isAlive = unit.TakeDamage(damage)

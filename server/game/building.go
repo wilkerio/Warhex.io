@@ -58,14 +58,14 @@ type BuildingUpgrade struct {
 }
 
 var buildingTypes = map[BuildingType]map[BuildingVariant]BuildingUpgrade{
-	WALL: {
-		BASIC_BUILDING: {
-			Variant: BASIC_BUILDING,
-			Health:  Health{Current: 100, Max: 100},
-			Damage:  50,
-			Next:    []BuildingVariant{MICRO_GENERATOR, BOULDER},
-			Cost:    60,
-		},
+		WALL: {
+			BASIC_BUILDING: {
+				Variant: BASIC_BUILDING,
+				Health:  Health{Current: 100, Max: 100},
+				Damage:  50,
+				Next:    []BuildingVariant{MICRO_GENERATOR, BOULDER},
+				Cost:    40,
+			},
 		MICRO_GENERATOR: {
 			Variant: MICRO_GENERATOR,
 			Health:  Health{Current: 50, Max: 50},

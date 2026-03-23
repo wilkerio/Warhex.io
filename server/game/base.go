@@ -48,6 +48,7 @@ func (b *Base) AddBullet(spawning *BulletSpawning, targetPosition PositionFloat,
 	var bulletStats BulletStats
 	var bulletPosition PositionFloat
 	firedByUnit := false
+	firedByCommander := false
 
 	// Check if the Shooter is a Building or Unit
 	switch shooter := spawning.Shooter.(type) {
@@ -71,6 +72,7 @@ func (b *Base) AddBullet(spawning *BulletSpawning, targetPosition PositionFloat,
 		bulletPosition = CalculateBulletSpawnPosition(shooter, targetPosition, 40, horizontalOffset)
 
 		firedByUnit = true
+		firedByCommander = shooter.Type == COMMANDER
 
 	default:
 		log.Println("Unknown shooter type")
@@ -115,6 +117,7 @@ func (b *Base) AddBullet(spawning *BulletSpawning, targetPosition PositionFloat,
 		Polygon:          polygon,
 		Health:           bulletStats.Health,
 		FiredByUnit:      firedByUnit,
+		FiredByCommander: firedByCommander,
 		StayDuration:     bulletStats.StayDuration,
 		DamageMultiplier: bulletStats.DamageMultiplier,
 		Behavior:         bulletStats.Behavior,

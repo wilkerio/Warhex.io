@@ -930,8 +930,16 @@ function decodeSpawnUnitBullet (payload) {
     const bulletID = dataView.getUint8(2);
     const positionX = dataView.getFloat32(3);
     const positionY = dataView.getFloat32(7);
+    let targetPosition = null;
+    if (payload.byteLength >= 19) {
+        const targetX = dataView.getFloat32(11);
+        const targetY = dataView.getFloat32(15);
+        if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
+            targetPosition = { x: targetX, y: targetY };
+        }
+    }
 
-    return { playerID, objectID, bulletID, position: { x: positionX, y: positionY } };
+    return { playerID, objectID, bulletID, position: { x: positionX, y: positionY }, targetPosition };
 }
 
 

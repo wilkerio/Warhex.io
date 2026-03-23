@@ -1018,6 +1018,8 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 		}
 	}
 	BroadcastUnitsRotationUpdate(player.ID, unitsToUpdate)
+	// Push an immediate position sync so opponents see commander/unit movement start instantly.
+	game.TriggerUnitPositionUpdatesEvent(player, unitsToUpdate)
 }
 
 // isSuspiciousMovement checks if the current movement is suspicious based on the last 5 movement packages

@@ -17,6 +17,7 @@ type Bullet struct {
 	Speed            float64
 	Size             int
 	FiredByUnit      bool
+	FiredByCommander bool
 	RemoveFlag       bool // Flag to mark bullet for removal
 	DamageMultiplier float32
 	Behavior         BulletBehavior
@@ -99,24 +100,27 @@ func (b *Bullet) UpdatePosition(deltaTime time.Duration) bool {
 	// Calculate base distance to move in this frame
 	distanceToMove := b.Speed * float64(deltaTime) / float64(time.Second)
 
-	// Apply ease-out only when within a threshold distance to the target
-	easeThreshold := 100.0
-	minMovementThreshold := 0.05 // Minimum movement threshold to consider easing
+	// Apply ease-out only when within a threshold distance to the target.
+	// Commander bullets keep full speed for better hit consistency on moving soldiers.
+	if !b.FiredByCommander {
+		easeThreshold := 100.0
+		minMovementThreshold := 0.05 // Minimum movement threshold to consider easing
 
-	// If the distance is within easeThreshold, apply easing
-	if distance < easeThreshold {
-		// Calculate easing progress based on distance to target
-		progress := distance / easeThreshold
-		easedProgress := easeOut(progress)
+		// If the distance is within easeThreshold, apply easing
+		if distance < easeThreshold {
+			// Calculate easing progress based on distance to target
+			progress := distance / easeThreshold
+			easedProgress := easeOut(progress)
 
-		// Scale the distanceToMove by eased progress, while ensuring a minimum movement threshold
-		if easedProgress*distanceToMove < minMovementThreshold {
-			easedProgress = 1.0 // Disable easing if the progress is too small
+			// Scale the distanceToMove by eased progress, while ensuring a minimum movement threshold
+			if easedProgress*distanceToMove < minMovementThreshold {
+				easedProgress = 1.0 // Disable easing if the progress is too small
+			}
+
+			// We want the speed to drop to 30% of the normal speed as it approaches the target
+			easedProgress = 0.3 + (0.7 * easedProgress) // Scale to 30% speed when close to the target
+			distanceToMove *= easedProgress
 		}
-
-		// We want the speed to drop to 30% of the normal speed as it approaches the target
-		easedProgress = 0.3 + (0.7 * easedProgress) // Scale to 30% speed when close to the target
-		distanceToMove *= easedProgress
 	}
 
 	// Limit distanceToMove to the remaining distance to avoid overshoot
@@ -207,7 +211,7 @@ type BulletSpawning struct {
 }
 
 var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
-		SIMPLE_TURRET: {
+	SIMPLE_TURRET: {
 		BASIC_BUILDING: {
 			Health:       Health{Current: 20, Max: 20},
 			Speed:        500,
@@ -232,48 +236,48 @@ var turretBulletStats = map[BuildingType]map[BuildingVariant]BulletStats{
 			StayDuration: 0, // No stay duration for non-trapper bullets
 			Behavior:     NormalBullet,
 		},
-			HEAVY_TURRET: {
-				Health:       Health{Current: 30, Max: 30},
-				Speed:        800,
-				Size:         12,
-				Polygon:      GeneratePolygon(ShapeCircle, 12, 0),
-				StayDuration: 0, // No stay duration for non-trapper bullets
-				Behavior:     NormalBullet,
-			},
-			RAGE_TURRET: {
-				Health:       Health{Current: 18, Max: 18},
-				Speed:        700,
-				Size:         9,
-				Polygon:      GeneratePolygon(ShapeCircle, 9, 0),
-				StayDuration: 0, // No stay duration for non-trapper bullets
-				Behavior:     NormalBullet,
-			},
-				RANGED_TURRET: {
-					Health:       Health{Current: 30, Max: 30},
-					Speed:        500,
-					Size:         10,
-					Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
-					StayDuration: 0, // No stay duration for non-trapper bullets
-					Behavior:     NormalBullet,
-				},
-				TWIN_TURRET: {
-					Health:       Health{Current: 24, Max: 24},
-					Speed:        700,
-					Size:         10,
-					Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
-					StayDuration: 0, // No stay duration for non-trapper bullets
-					Behavior:     NormalBullet,
-				},
-				SPOTTER_TURRET: {
-					Health:       Health{Current: 30, Max: 30},
-					Speed:        900,
-					Size:         10,
-					Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
-				StayDuration: 0, // No stay duration for non-trapper bullets
-				Behavior:     NormalBullet,
-			},
+		HEAVY_TURRET: {
+			Health:       Health{Current: 30, Max: 30},
+			Speed:        800,
+			Size:         12,
+			Polygon:      GeneratePolygon(ShapeCircle, 12, 0),
+			StayDuration: 0, // No stay duration for non-trapper bullets
+			Behavior:     NormalBullet,
 		},
-		SNIPER_TURRET: {
+		RAGE_TURRET: {
+			Health:       Health{Current: 18, Max: 18},
+			Speed:        700,
+			Size:         9,
+			Polygon:      GeneratePolygon(ShapeCircle, 9, 0),
+			StayDuration: 0, // No stay duration for non-trapper bullets
+			Behavior:     NormalBullet,
+		},
+		RANGED_TURRET: {
+			Health:       Health{Current: 30, Max: 30},
+			Speed:        500,
+			Size:         10,
+			Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
+			StayDuration: 0, // No stay duration for non-trapper bullets
+			Behavior:     NormalBullet,
+		},
+		TWIN_TURRET: {
+			Health:       Health{Current: 24, Max: 24},
+			Speed:        700,
+			Size:         10,
+			Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
+			StayDuration: 0, // No stay duration for non-trapper bullets
+			Behavior:     NormalBullet,
+		},
+		SPOTTER_TURRET: {
+			Health:       Health{Current: 30, Max: 30},
+			Speed:        900,
+			Size:         10,
+			Polygon:      GeneratePolygon(ShapeCircle, 10, 0),
+			StayDuration: 0, // No stay duration for non-trapper bullets
+			Behavior:     NormalBullet,
+		},
+	},
+	SNIPER_TURRET: {
 		BASIC_BUILDING: {
 			Health:       Health{Current: 30, Max: 30},
 			Speed:        800,
@@ -358,7 +362,7 @@ var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 	COMMANDER: {
 		BASIC_UNIT: {
 			Health:           Health{Current: 30, Max: 30},
-			Speed:            700,
+			Speed:            980,
 			Size:             12,
 			Polygon:          unitBulletPolygon,
 			DamageMultiplier: 1.0,
@@ -368,7 +372,7 @@ var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 }
 
 var turretBulletSpawningConfig = map[BuildingType]map[BuildingVariant]BulletSpawning{
-		SIMPLE_TURRET: {
+	SIMPLE_TURRET: {
 		BASIC_BUILDING: BulletSpawning{
 			Shooter:   nil,
 			Frequency: SpawnFrequency{Current: 0, Original: 800},
@@ -384,32 +388,32 @@ var turretBulletSpawningConfig = map[BuildingType]map[BuildingVariant]BulletSpaw
 			Frequency: SpawnFrequency{Current: 0, Original: 140},
 			Range:     180,
 		},
-			HEAVY_TURRET: BulletSpawning{
-				Shooter:   nil,
-				Frequency: SpawnFrequency{Current: 0, Original: 800},
-				Range:     240,
-			},
-			RAGE_TURRET: BulletSpawning{
-				Shooter:   nil,
-				Frequency: SpawnFrequency{Current: 0, Original: 220},
-				Range:     200,
-			},
-			RANGED_TURRET: BulletSpawning{
-				Shooter:   nil,
-				Frequency: SpawnFrequency{Current: 0, Original: 800},
-				Range:     180,
-			},
-			TWIN_TURRET: BulletSpawning{
-				Shooter:   nil,
-				Frequency: SpawnFrequency{Current: 0, Original: 700},
-				Range:     210,
-			},
-			SPOTTER_TURRET: BulletSpawning{
-				Shooter:   nil,
-				Frequency: SpawnFrequency{Current: 0, Original: 800},
-				Range:     290,
-			},
+		HEAVY_TURRET: BulletSpawning{
+			Shooter:   nil,
+			Frequency: SpawnFrequency{Current: 0, Original: 800},
+			Range:     240,
 		},
+		RAGE_TURRET: BulletSpawning{
+			Shooter:   nil,
+			Frequency: SpawnFrequency{Current: 0, Original: 220},
+			Range:     200,
+		},
+		RANGED_TURRET: BulletSpawning{
+			Shooter:   nil,
+			Frequency: SpawnFrequency{Current: 0, Original: 800},
+			Range:     180,
+		},
+		TWIN_TURRET: BulletSpawning{
+			Shooter:   nil,
+			Frequency: SpawnFrequency{Current: 0, Original: 700},
+			Range:     210,
+		},
+		SPOTTER_TURRET: BulletSpawning{
+			Shooter:   nil,
+			Frequency: SpawnFrequency{Current: 0, Original: 800},
+			Range:     290,
+		},
+	},
 	SNIPER_TURRET: {
 		BASIC_BUILDING: BulletSpawning{
 			Shooter:   nil,
@@ -426,11 +430,11 @@ var turretBulletSpawningConfig = map[BuildingType]map[BuildingVariant]BulletSpaw
 			Frequency: SpawnFrequency{Current: 0, Original: 2000},
 			Range:     240,
 		},
-			ANTI_TANK_GUN: BulletSpawning{
-				Shooter:   nil,
-				Frequency: SpawnFrequency{Current: 0, Original: 4000},
-				Range:     280,
-			},
+		ANTI_TANK_GUN: BulletSpawning{
+			Shooter:   nil,
+			Frequency: SpawnFrequency{Current: 0, Original: 4000},
+			Range:     280,
+		},
 		TRAPPER: BulletSpawning{
 			Shooter:   nil,
 			Frequency: SpawnFrequency{Current: 0, Original: 6000},
@@ -464,14 +468,14 @@ var unitBulletSpawningConfig = map[UnitType]map[UnitVariant]BulletSpawning{
 			Range:     400,
 		},
 	},
-		COMMANDER: {
-			BASIC_UNIT: BulletSpawning{
-				Shooter:   nil,
-				Frequency: SpawnFrequency{Current: 0, Original: 500},
-				Range:     160,
-			},
+	COMMANDER: {
+		BASIC_UNIT: BulletSpawning{
+			Shooter:   nil,
+			Frequency: SpawnFrequency{Current: 0, Original: 500},
+			Range:     220,
 		},
-	}
+	},
+}
 
 func GetBulletStats(entityType interface{}, variant interface{}) (BulletStats, bool) {
 	switch t := entityType.(type) {

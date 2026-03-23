@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultBotCount  = 10
+	defaultBotCount  = 5
 	maxBotCount      = 32
 	botNameReuseTTL  = 15 * time.Minute
 	minBotPersistTTL = 70 * time.Second
@@ -373,6 +373,12 @@ var globalBotSocialChatLog []botSocialChatEntry
 var globalBotSocialChatLogMu sync.RWMutex
 var globalBotSocialTick int
 var globalBotFastestElimination *botSocialFastestElimination
+var globalRecentHumanChatPulses []humanChatPulse
+
+type humanChatPulse struct {
+	From string
+	At   time.Time
+}
 
 var activeBotRuntimes = make(map[ID]*botRuntime)
 var activeBotRuntimesMu sync.RWMutex
@@ -466,7 +472,7 @@ func startBotController() {
 
 				if now.After(rt.nextChatAt) && now.After(globalNextChatAt) {
 					if runBotChat(player, rt) {
-						globalNextChatAt = now.Add(randomDuration(4*time.Second, 8*time.Second))
+						globalNextChatAt = now.Add(randomDuration(18*time.Second, 40*time.Second))
 					}
 					rt.nextChatAt = now.Add(nextChatDelay(rt))
 				}
@@ -1618,18 +1624,18 @@ func nextMoveDelay(rt *botRuntime) time.Duration {
 }
 
 func nextChatDelay(rt *botRuntime) time.Duration {
-	// Chattier bots write more frequently, but still with realistic spacing.
-	baseMin := 28 * time.Second
-	baseMax := 75 * time.Second
-	reduction := time.Duration(rt.chatter*18) * time.Second
+	// Keep chat sparse so bots don't dominate chat flow.
+	baseMin := 75 * time.Second
+	baseMax := 180 * time.Second
+	reduction := time.Duration(rt.chatter*22) * time.Second
 
 	min := baseMin - reduction
 	max := baseMax - reduction/2
-	if min < 10*time.Second {
-		min = 10 * time.Second
+	if min < 35*time.Second {
+		min = 35 * time.Second
 	}
-	if max < min+8*time.Second {
-		max = min + 8*time.Second
+	if max < min+15*time.Second {
+		max = min + 15*time.Second
 	}
 	return randomDuration(min, max)
 }
@@ -5243,25 +5249,30 @@ func runBotChat(player *Player, rt *botRuntime) bool {
 	}
 
 	now := time.Now()
-	if !rt.lastChatAt.IsZero() && now.Sub(rt.lastChatAt) < 12*time.Second {
+	if hasActiveHumanConversation(now) {
+		rt.thought.chat = ""
+		rt.thought.reactionChat = ""
+		return false
+	}
+	if !rt.lastChatAt.IsZero() && now.Sub(rt.lastChatAt) < 30*time.Second {
 		return false
 	}
 
-	staleChat := rt.lastChatAt.IsZero() || now.Sub(rt.lastChatAt) > 90*time.Second
-	shouldSpeak := 0.58 + float64(rt.chatter)*0.34
+	staleChat := rt.lastChatAt.IsZero() || now.Sub(rt.lastChatAt) > 180*time.Second
+	shouldSpeak := 0.10 + float64(rt.chatter)*0.15
 	if player.WasBaseDamagedWithin(12 * time.Second) {
-		shouldSpeak += 0.22
+		shouldSpeak += 0.09
 	}
 	if now.Before(rt.attackCommitUntil) {
-		shouldSpeak += 0.14
+		shouldSpeak += 0.06
 	}
 	if staleChat {
-		shouldSpeak += 0.18
+		shouldSpeak += 0.08
 	}
-	if shouldSpeak > 0.96 {
-		shouldSpeak = 0.96
+	if shouldSpeak > 0.44 {
+		shouldSpeak = 0.44
 	}
-	if !staleChat && rand.Float64() > shouldSpeak {
+	if rand.Float64() > shouldSpeak {
 		return false
 	}
 
@@ -5314,7 +5325,7 @@ func runBotChat(player *Player, rt *botRuntime) bool {
 		messages = append(messages, reaction)
 	}
 
-	cleaned := make([]string, 0, 2)
+	cleaned := make([]string, 0, 1)
 	for _, msg := range messages {
 		text := sanitizeBotChat(msg)
 		if text == "" {
@@ -5324,7 +5335,7 @@ func runBotChat(player *Player, rt *botRuntime) bool {
 			continue
 		}
 		cleaned = append(cleaned, text)
-		if len(cleaned) >= 2 {
+		if len(cleaned) >= 1 {
 			break
 		}
 	}
@@ -5564,6 +5575,37 @@ func appendBotChatHistory(rt *botRuntime, text string) {
 	}
 }
 
+func hasActiveHumanConversation(now time.Time) bool {
+	const conversationWindow = 35 * time.Second
+	const minMessages = 2
+	const minParticipants = 2
+
+	globalBotSocialChatLogMu.RLock()
+	defer globalBotSocialChatLogMu.RUnlock()
+	if len(globalRecentHumanChatPulses) < minMessages {
+		return false
+	}
+
+	cutoff := now.Add(-conversationWindow)
+	recentCount := 0
+	participants := make(map[string]struct{}, 3)
+	for i := len(globalRecentHumanChatPulses) - 1; i >= 0; i-- {
+		pulse := globalRecentHumanChatPulses[i]
+		if pulse.At.Before(cutoff) {
+			break
+		}
+		recentCount++
+		name := strings.TrimSpace(pulse.From)
+		if name != "" {
+			participants[name] = struct{}{}
+		}
+		if recentCount >= minMessages && len(participants) >= minParticipants {
+			return true
+		}
+	}
+	return false
+}
+
 func RecordBotObservedChatMessage(playerID ID, text string) {
 	text = sanitizeBotChat(text)
 	if text == "" {
@@ -5604,6 +5646,20 @@ func RecordBotObservedChatMessage(playerID ID, text string) {
 	globalBotSocialChatLog = append(globalBotSocialChatLog, entry)
 	if len(globalBotSocialChatLog) > 140 {
 		globalBotSocialChatLog = globalBotSocialChatLog[len(globalBotSocialChatLog)-140:]
+	}
+	if isHuman {
+		globalRecentHumanChatPulses = append(globalRecentHumanChatPulses, humanChatPulse{
+			From: senderName,
+			At:   time.Now(),
+		})
+		cutoff := time.Now().Add(-2 * time.Minute)
+		keepFrom := 0
+		for keepFrom < len(globalRecentHumanChatPulses) && globalRecentHumanChatPulses[keepFrom].At.Before(cutoff) {
+			keepFrom++
+		}
+		if keepFrom > 0 {
+			globalRecentHumanChatPulses = append([]humanChatPulse(nil), globalRecentHumanChatPulses[keepFrom:]...)
+		}
 	}
 	globalBotSocialChatLogMu.Unlock()
 }
@@ -6018,6 +6074,7 @@ func ResetBotSocialMatchData() {
 	globalBotSocialChatLog = nil
 	globalBotSocialTick = 0
 	globalBotFastestElimination = nil
+	globalRecentHumanChatPulses = nil
 	globalBotSocialChatLogMu.Unlock()
 }
 

@@ -55,10 +55,19 @@ export default class InputManager {
 
     initializeKeyListeners () {
         document.addEventListener("keydown", (event) => {
-            const key = event.key.toLowerCase();
             const ui = this.core.uiManager;
+            const normalizeHudKey = (value) => {
+                const fromUI = ui?.normalizeKeybindValue?.(value);
+                if (typeof fromUI === "string" && fromUI) return fromUI;
+                return String(value || "").toLowerCase();
+            };
+            const key = normalizeHudKey(event.key);
             const gameplayInputBlocked = Boolean(ui?.isGameplayInputBlocked?.());
-            const bindKey = (action, fallback) => String(ui?.getHudKeybind?.(action, fallback) || fallback).toLowerCase();
+            const bindKey = (action, fallback) => {
+                const resolved = ui?.getHudKeybind?.(action, fallback);
+                if (resolved === null || resolved === undefined) return normalizeHudKey(fallback);
+                return normalizeHudKey(resolved);
+            };
             const keySelectArmy = bindKey("selectArmy", "q");
             const keySelectCommander = bindKey("selectCommander", "c");
             const keySelectAll = bindKey("selectAllUnits", "e");
@@ -67,15 +76,13 @@ export default class InputManager {
             const keySelectSoldiersOnly = bindKey("selectSoldiersOnly", "x");
             const keySelectTanksOnly = bindKey("selectTanksOnly", "v");
             const keySelectSiegeOnly = bindKey("selectSiegeOnly", "b");
-            const upgradeHotkeys = [
-                bindKey("upgrade1", "q"),
-                bindKey("upgrade2", "e"),
-                bindKey("upgrade3", "t"),
-                bindKey("upgradeDestroy", "r"),
-                bindKey("upgradeBarracksToggle", "f"),
-                bindKey("upgradeAllMode", "y"),
-                bindKey("upgradeDestroyAll", "u")
-            ];
+            const keySelectCommanderSoldiers = bindKey("selectCommanderSoldiers", "");
+            const keySelectCommanderTanks = bindKey("selectCommanderTanks", "");
+            const keySelectCommanderSiege = bindKey("selectCommanderSiege", "");
+            const keySelectCommanderSoldiersTanks = bindKey("selectCommanderSoldiersTanks", "");
+            const keySelectCommanderSoldiersSiege = bindKey("selectCommanderSoldiersSiege", "");
+            const keySelectCommanderTanksSiege = bindKey("selectCommanderTanksSiege", "");
+            const keySelectCommanderArmy = bindKey("selectCommanderArmy", "");
             this.activeKeys.add(key); // Add key to active keys
             if (event.key === "Shift") {
                 this.shiftPressed = true;
@@ -88,17 +95,56 @@ export default class InputManager {
 
             const upgradesContainer = this.core.uiManager?.DOM?.game?.upgrades?.container;
             const upgradePanelOpenBeforeAction = upgradesContainer?.style?.display !== "none";
-            if (upgradePanelOpenBeforeAction && upgradeHotkeys.includes(key)) {
-                this.handleUpgradeKeyPress(key);
-                return;
-            }
-            const isTabKey = event.key === "Tab";
             const activeElement = document.activeElement;
             const activeTag = activeElement?.tagName?.toLowerCase?.() || "";
             const isFormFocused = Boolean(
                 activeElement &&
                 (activeTag === "input" || activeTag === "textarea" || activeTag === "select" || activeElement.isContentEditable)
             );
+            const consumedByBaseLayoutHotkey = Boolean(
+                !event.repeat
+                && !this.core.uiManager?.isChatInputFocused
+                && !gameplayInputBlocked
+                && !isFormFocused
+                && ui?.triggerBaseLayoutHotkeyLoad?.(key)
+            );
+            if (consumedByBaseLayoutHotkey) {
+                event.preventDefault();
+                return;
+            }
+            const consumedByGlobalUpgradeHotkey = Boolean(
+                !event.repeat
+                && !this.core.uiManager?.isChatInputFocused
+                && !gameplayInputBlocked
+                && !isFormFocused
+                && ui?.triggerGlobalUpgradeHotkey?.(key)
+            );
+            if (consumedByGlobalUpgradeHotkey) {
+                event.preventDefault();
+                return;
+            }
+
+            const isDeleteSellHotkey = (
+                key === "delete"
+                && !this.core.uiManager?.isChatInputFocused
+                && !gameplayInputBlocked
+                && !isFormFocused
+            );
+            if (isDeleteSellHotkey) {
+                if (!event.repeat) {
+                    this.triggerDeleteSellHotkey({
+                        upgradePanelOpen: upgradePanelOpenBeforeAction
+                    });
+                }
+                event.preventDefault();
+                return;
+            }
+
+            if (!isFormFocused && !gameplayInputBlocked && upgradePanelOpenBeforeAction && this.handleUpgradeKeyPress(key)) {
+                event.preventDefault();
+                return;
+            }
+            const isTabKey = event.key === "Tab";
             const isEnterKey = event.key === "Enter";
             if (isEnterKey && !ui?.isChatInputFocused) {
                 if (!gameplayInputBlocked && !isFormFocused && !event.repeat) {
@@ -111,6 +157,13 @@ export default class InputManager {
                 if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
                     const rotated = this.core.buildingManager?.rotateCurrentPlacement?.(1);
                     if (rotated) {
+                        event.preventDefault();
+                        return;
+                    }
+                    if (this.core.gameManager.player) {
+                        const playerPosition = this.core.gameManager.player.position;
+                        this.core.camera.setPosition(playerPosition);
+                        this.core.buildingManager.updateBuildingPosition();
                         event.preventDefault();
                         return;
                     }
@@ -135,9 +188,9 @@ export default class InputManager {
                     this.core.miniMap.toggleFullScreen();
                 }
             }
-            if(event.key == 'g'){
+            if (key === "g") {
                 if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
-                    return
+                    return;
                 }
                 this.core.unitManager.selectAllUnits();
             }
@@ -178,18 +231,53 @@ export default class InputManager {
                 if (event.repeat) return;
                 this.core.unitManager.selectCommanderOrBuy();
             }
+            if (keySelectCommanderSoldiers && key === keySelectCommanderSoldiers) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
+                this.core.unitManager.selectCommanderAndSoldiers();
+            }
+            if (keySelectCommanderTanks && key === keySelectCommanderTanks) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
+                this.core.unitManager.selectCommanderAndTanks();
+            }
+            if (keySelectCommanderSiege && key === keySelectCommanderSiege) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
+                this.core.unitManager.selectCommanderAndSiege();
+            }
+            if (keySelectCommanderSoldiersTanks && key === keySelectCommanderSoldiersTanks) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
+                this.core.unitManager.selectCommanderAndSoldiersTanks();
+            }
+            if (keySelectCommanderSoldiersSiege && key === keySelectCommanderSoldiersSiege) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
+                this.core.unitManager.selectCommanderAndSoldiersSiege();
+            }
+            if (keySelectCommanderTanksSiege && key === keySelectCommanderTanksSiege) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
+                this.core.unitManager.selectCommanderAndTanksSiege();
+            }
+            if (keySelectCommanderArmy && key === keySelectCommanderArmy) {
+                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
+                this.core.unitManager.selectCommanderAndArmy();
+            }
             if (this.core.buildingManager?.handleDefenseHotkeyDown) {
                 this.core.buildingManager.handleDefenseHotkeyDown(key);
             }
         });
 
         document.addEventListener("keyup", (event) => {
-            this.activeKeys.delete(event.key.toLowerCase()); // Remove key from active keys
+            const ui = this.core.uiManager;
+            const normalizeHudKey = (value) => {
+                const fromUI = ui?.normalizeKeybindValue?.(value);
+                if (typeof fromUI === "string" && fromUI) return fromUI;
+                return String(value || "").toLowerCase();
+            };
+            const key = normalizeHudKey(event.key);
+            this.activeKeys.delete(key); // Remove key from active keys
             if (event.key === "Shift") {
                 this.shiftPressed = false;
             }
             if (this.core.buildingManager?.handleDefenseHotkeyUp) {
-                this.core.buildingManager.handleDefenseHotkeyUp(event.key.toLowerCase());
+                this.core.buildingManager.handleDefenseHotkeyUp(key);
             }
         });
     }
@@ -355,6 +443,21 @@ export default class InputManager {
     }
 
     onMouseDown (event) {
+        const ui = this.core.uiManager;
+        if (
+            ui
+            && !ui.isGameplayInputBlocked?.()
+            && !ui.isChatInputFocused
+            && Number.isInteger(event?.button)
+            && event.button >= 3
+        ) {
+            const mouseHotkey = ui.normalizeKeybindValue(`mouse${event.button + 1}`);
+            const consumed = ui.triggerBaseLayoutHotkeyLoad?.(mouseHotkey);
+            if (consumed) {
+                event.preventDefault?.();
+                return;
+            }
+        }
         if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
         this.invokeMouseDownHandlers(this.core.eventManager.mousePosition, event.button);
     }
@@ -378,13 +481,22 @@ export default class InputManager {
 
     handleUpgradeKeyPress (key) {
         if (this.core.uiManager.DOM.game.upgrades.container.style.display === "none") {
-            return;
+            return false;
         }
         if (this.core.uiManager.isChatInputFocused) {
-            return;
+            return false;
         }
         const ui = this.core.uiManager;
-        const bindKey = (action, fallback) => String(ui?.getHudKeybind?.(action, fallback) || fallback).toLowerCase();
+        const normalizeHudKey = (value) => {
+            const fromUI = ui?.normalizeKeybindValue?.(value);
+            if (typeof fromUI === "string" && fromUI) return fromUI;
+            return String(value || "").toLowerCase();
+        };
+        const bindKey = (action, fallback) => {
+            const resolved = ui?.getHudKeybind?.(action, fallback);
+            if (resolved === null || resolved === undefined) return normalizeHudKey(fallback);
+            return normalizeHudKey(resolved);
+        };
         const keyUpgrade1 = bindKey("upgrade1", "q");
         const keyUpgrade2 = bindKey("upgrade2", "e");
         const keyUpgrade3 = bindKey("upgrade3", "t");
@@ -398,40 +510,79 @@ export default class InputManager {
         // Check if the upgrade list element exists
         if (upgradeListElement) {
             const upgradeItems = upgradeListElement.querySelectorAll('.upgrade-item'); // Get all upgrade items
+            const triggerUpgradeItem = (index) => {
+                const item = upgradeItems[index];
+                if (!item) return;
+                if (item.dataset?.clickOnly === "1") {
+                    this.core.uiManager?.notifySystemWarning?.("Repair is click-only to avoid accidental purchase.");
+                    return true;
+                }
+                item.click();
+                return true;
+            };
+
+            // Specific per-upgrade hotkeys configured from the Theme menu.
+            const directMatch = Array.from(upgradeItems).find((item) => {
+                const itemKey = normalizeHudKey(item?.dataset?.upgradeHotkey || "");
+                return itemKey && itemKey === key;
+            });
+            if (directMatch) {
+                if (directMatch.dataset?.clickOnly === "1") {
+                    this.core.uiManager?.notifySystemWarning?.("Repair is click-only to avoid accidental purchase.");
+                    return true;
+                }
+                directMatch.click();
+                return true;
+            }
 
             if (key === keyUpgrade1 && upgradeItems.length > 0) {
-                // If 'Q' is pressed, click the first upgrade item
-                upgradeItems[0].click();
+                return triggerUpgradeItem(0);
             } else if (key === keyUpgrade2 && upgradeItems.length > 1) {
-                // If 'E' is pressed, click the second upgrade item
-                upgradeItems[1].click();
+                return triggerUpgradeItem(1);
             } else if (key === keyUpgrade3 && upgradeItems.length > 2) {
-                // If 'T' is pressed, click the third upgrade item
-                upgradeItems[2].click();
+                return triggerUpgradeItem(2);
             } else if (key === keyUpgradeDestroy) {
                 // If 'R' is pressed, click the destroy button
                 const upgradeDestroyButton = this.core.uiManager.DOM.game.upgrades.destroyButton;
                 if (upgradeDestroyButton) {
                     upgradeDestroyButton.click(); // Simulate a click on the destroy button
+                    return true;
                 }
             } else if (key === keyUpgradeDestroyAll) {
                 const upgradeDestroyAllButton = document.getElementById("upgrade-destroy-all-button");
                 if (upgradeDestroyAllButton) {
                     upgradeDestroyAllButton.click();
+                    return true;
                 }
             } else if (key === keyUpgradeBarracks) {
                 // If 'F' is pressed, simulate a click on the barracks activation tab
                 const barracksTab = document.querySelector('[data-type="barracks-activation-toggle"]');
                 if (barracksTab) {
                     barracksTab.click();
+                    return true;
                 }
             } else if (key === keyUpgradeAllMode) {
                 const upgradeBulkToggleButton = document.getElementById("upgrade-bulk-toggle-button");
                 if (upgradeBulkToggleButton) {
                     upgradeBulkToggleButton.click();
+                    return true;
                 }
             }
         }
+        return false;
+    }
+
+    triggerDeleteSellHotkey (options = {}) {
+        const upgradePanelOpen = Boolean(options?.upgradePanelOpen);
+        if (upgradePanelOpen) {
+            const destroyBtn = this.core.uiManager?.DOM?.game?.upgrades?.destroyButton;
+            if (destroyBtn) {
+                destroyBtn.click();
+                return true;
+            }
+        }
+        const removed = this.core.buildingManager?.destroySelectedBuildings?.() || 0;
+        return removed > 0;
     }
 
     handleKeys (deltaTime) {
@@ -459,12 +610,7 @@ export default class InputManager {
             this.handleCameraMovement(dx, dy, deltaTime);
         }
 
-        // Handle other actions like resetting camera position
-        if (this.activeKeys.has(' ') && this.core.gameManager.player) {
-            const playerPosition = this.core.gameManager.player.position;
-            this.core.camera.setPosition(playerPosition);
-            this.core.buildingManager.updateBuildingPosition();
-        }
+        // Camera recenter hotkey is handled on keydown.
     }
 
 

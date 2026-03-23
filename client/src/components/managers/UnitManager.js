@@ -353,6 +353,42 @@ export default class UnitManager {
         this.core?.networkManager?.sendBuyCommander?.();
     }
 
+    selectCommanderWithTypes (types = []) {
+        this.selectUnitsByTypes([
+            UnitTypes.COMMANDER,
+            UnitTypes.TRI_COMMANDER,
+            ...(Array.isArray(types) ? types : [])
+        ]);
+    }
+
+    selectCommanderAndSoldiers () {
+        this.selectCommanderWithTypes([UnitTypes.SOLDIER]);
+    }
+
+    selectCommanderAndTanks () {
+        this.selectCommanderWithTypes([UnitTypes.TANK]);
+    }
+
+    selectCommanderAndSiege () {
+        this.selectCommanderWithTypes([UnitTypes.SIEGE_TANK]);
+    }
+
+    selectCommanderAndSoldiersTanks () {
+        this.selectCommanderWithTypes([UnitTypes.SOLDIER, UnitTypes.TANK]);
+    }
+
+    selectCommanderAndSoldiersSiege () {
+        this.selectCommanderWithTypes([UnitTypes.SOLDIER, UnitTypes.SIEGE_TANK]);
+    }
+
+    selectCommanderAndTanksSiege () {
+        this.selectCommanderWithTypes([UnitTypes.TANK, UnitTypes.SIEGE_TANK]);
+    }
+
+    selectCommanderAndArmy () {
+        this.selectCommanderWithTypes([UnitTypes.SOLDIER, UnitTypes.TANK, UnitTypes.SIEGE_TANK]);
+    }
+
     selectUnits (selectionCircle) {
         if (!this.core.inputManager.shiftPressed) {
             this.clearSelection();

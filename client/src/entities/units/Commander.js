@@ -3,7 +3,7 @@ import { UnitDetails, UnitTypes, UnitVariantTypes, darkenColor, getUnitBulletDet
 import Unit from "../Unit.js";
 
 export default class Commander extends Unit {
-    constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1, health = 1000, maxHealth = 1000) {
+    constructor (color, position = { x: 0, y: 0 }, variant = 0, id = -1, health = 1170, maxHealth = 1170) {
         const details = getUnitDetails(UnitTypes.COMMANDER, variant);
 
         super(id, UnitTypes.COMMANDER, color, details, position, variant, health, maxHealth);
@@ -36,21 +36,26 @@ export default class Commander extends Unit {
     }
 
     setCannonTargetPoint (targetPoint) {
-        // Calculate the vector from the targetPosition to the targetPoint
-        const dx = targetPoint.x - this.targetPosition.x;
-        const dy = targetPoint.y - this.targetPosition.y;
+        if (!targetPoint || !Number.isFinite(targetPoint.x) || !Number.isFinite(targetPoint.y)) return;
+        const originX = Number.isFinite(this.position?.x) ? this.position.x : this.targetPosition.x;
+        const originY = Number.isFinite(this.position?.y) ? this.position.y : this.targetPosition.y;
+
+        // Calculate the vector from the current commander position to the target point.
+        const dx = targetPoint.x - originX;
+        const dy = targetPoint.y - originY;
+        if (Math.hypot(dx, dy) <= 0.001) return;
 
         // Scale the vector to make the target point further away
         const scaleFactor = 2;
         const extendedTargetPoint = {
-            x: this.targetPosition.x + dx * scaleFactor,
-            y: this.targetPosition.y + dy * scaleFactor
+            x: originX + dx * scaleFactor,
+            y: originY + dy * scaleFactor
         };
 
         // Update cannon rotation to point to the extended target point
         this.cannonAngleToTarget = Math.atan2(
-            extendedTargetPoint.y - this.targetPosition.y,
-            extendedTargetPoint.x - this.targetPosition.x
+            extendedTargetPoint.y - originY,
+            extendedTargetPoint.x - originX
         ) + this.cannonRotationOffset;
 
         // Reset the cannon target update timer
@@ -78,8 +83,8 @@ export default class Commander extends Unit {
             // Rotate the context so the final orientation equals the absolute target angle
             context.rotate(this.cannonAngleToTarget - this.rotation);
         } else {
-            // Keep idle cannon pointing down.
-            context.rotate(Math.PI - this.rotation);
+            // Keep idle cannon aligned with commander body orientation.
+            context.rotate(this.cannonRotationOffset);
         }
         const recoilOffset = this.recoil;
         const cannonWidth = this.size * 0.6;

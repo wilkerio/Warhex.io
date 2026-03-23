@@ -602,6 +602,8 @@ func broadcastUnitBulletSpawn(playerID game.ID, unitID game.ID, bullet *game.Bul
 
 	binary.Write(buffer, binary.BigEndian, bullet.Position.X)
 	binary.Write(buffer, binary.BigEndian, bullet.Position.Y)
+	binary.Write(buffer, binary.BigEndian, bullet.TargetPosition.X)
+	binary.Write(buffer, binary.BigEndian, bullet.TargetPosition.Y)
 
 	message.Payload = buffer.Bytes()
 	broadcastToAll(EncodeMessage(message))
