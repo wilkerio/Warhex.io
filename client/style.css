@@ -1660,22 +1660,22 @@ img {
 
 .hud-upgrade-hotkey-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 104px;
-  gap: 8px;
+  grid-template-columns: 36px minmax(0, 1fr) 88px;
+  gap: 6px;
   align-items: center;
   color: #d6e7ff;
-  font-size: 12px;
+  font-size: 11px;
   background: rgba(22, 30, 60, 0.52);
   border: 1px solid rgba(120, 160, 220, 0.25);
   border-radius: 10px;
-  padding: 6px 8px;
+  padding: 5px 6px;
   transition: border-color 110ms ease, background-color 110ms ease;
 }
 
 .hud-upgrade-hotkey-preview {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
   border: 1px solid rgba(138, 198, 255, 0.32);
   background: rgba(12, 20, 42, 0.88);
 }
@@ -1687,21 +1687,24 @@ img {
 
 .hud-upgrade-hotkey-label {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .hud-upgrade-hotkey-row input {
-  height: 30px;
+  height: 26px;
   border-radius: 9px;
   border: 1px solid rgba(136, 206, 255, 0.35);
   background: rgba(12, 20, 44, 0.9);
   color: #ebf5ff;
   text-transform: lowercase;
   text-align: center;
+  font-size: 11px;
   font-weight: 700;
   outline: none;
-  padding: 0 8px;
+  padding: 0 6px;
 }
 
 .hud-upgrade-hotkey-row input::placeholder {
@@ -2276,7 +2279,7 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
 
 .keybind-editor-sections {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   gap: 12px;
 }
 
@@ -2317,17 +2320,23 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
 
 .keybind-editor-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px 74px 74px;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 92px 58px 58px;
+  gap: 6px;
   align-items: center;
   border: 1px solid rgba(180,160,255,0.14);
   border-radius: 10px;
   background: rgba(255,255,255,0.02);
-  padding: 8px;
+  padding: 6px;
 }
 
 .keybind-editor-row.has-preview {
-  grid-template-columns: 38px minmax(0, 1fr) 110px 74px 74px;
+  grid-template-columns: 24px minmax(0, 1fr) 92px 58px 58px;
+}
+
+.keybind-editor-row .hud-upgrade-hotkey-preview {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
 }
 
 .keybind-editor-row:hover {
@@ -2336,11 +2345,12 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
 }
 
 .keybind-editor-label {
-  font-size: 13px;
+  font-size: 12px;
   color: #e7deff;
   font-weight: 600;
   line-height: 1.2;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .keybind-editor-value {
@@ -2348,7 +2358,8 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
   border: 1px solid rgba(180,160,255,0.18);
   background: rgba(18,10,34,0.9);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 5px 6px;
+  font-size: 12px;
   font-weight: 800;
   color: #fff;
 }
@@ -2358,8 +2369,8 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
   border: 1px solid rgba(180,160,255,0.24);
   background: rgba(180,160,255,0.12);
   color: #e0d6ff;
-  padding: 7px 8px;
-  font-size: 12px;
+  padding: 5px 6px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -2426,7 +2437,7 @@ body.hud-customize-mode .hud-customizable .hud-resize-handle {
     grid-template-columns: 1fr 70px 70px;
   }
   .keybind-editor-row.has-preview {
-    grid-template-columns: 34px 1fr 70px 70px;
+    grid-template-columns: 28px 1fr 70px 70px;
   }
   .keybind-editor-label {
     grid-column: 1 / -1;

@@ -1542,6 +1542,115 @@ export class BuildingManager {
         return { ok: true, consumed: true, upgraded: targets.length, available: candidates.length };
     }
 
+    sellAllOwnedBuildings (buildingType, options = {}) {
+        const safeType = Number(buildingType);
+        if (!Number.isFinite(safeType)) return { ok: false };
+
+        const hasVariantFilter = Number.isFinite(Number(options?.variant));
+        const safeVariant = hasVariantFilter ? Number(options.variant) : null;
+        const candidates = [];
+
+        this.getOwnedBasesForGlobalUpgrade().forEach(({ base, neutralBaseID }) => {
+            const allBuildings = Array.isArray(base?.buildings) ? base.buildings : [];
+            allBuildings.forEach((building) => {
+                if (!building || building.removeFlag) return;
+                if (!Number.isInteger(building.id)) return;
+                if (Number(building.type) !== safeType) return;
+                if (hasVariantFilter && Number(building.variant) !== safeVariant) return;
+                candidates.push({ building, neutralBaseID });
+            });
+        });
+
+        if (candidates.length === 0) {
+            this.core.uiManager.addChatMessage("System", "No matching buildings found to sell.", "#ffcc66");
+            return { ok: false, consumed: true };
+        }
+
+        const groupedByBase = new Map();
+        let totalRefund = 0;
+        candidates.forEach((entry) => {
+            const token = entry.neutralBaseID === null ? "player" : `neutral:${entry.neutralBaseID}`;
+            if (!groupedByBase.has(token)) {
+                groupedByBase.set(token, {
+                    neutralBaseID: entry.neutralBaseID,
+                    ids: []
+                });
+            }
+            groupedByBase.get(token).ids.push(entry.building.id);
+
+            const details = getBuildingDetails(entry.building.type, entry.building.variant);
+            const cost = Number(details?.cost || 0);
+            if (Number.isFinite(cost) && cost > 0) {
+                totalRefund += Math.floor(cost / 2);
+            }
+        });
+
+        groupedByBase.forEach((batch) => {
+            this.core.networkManager.removeBuildings(batch.ids, batch.neutralBaseID);
+        });
+
+        const label = String(options?.triggerLabel || "Sell");
+        const plural = candidates.length > 1 ? "buildings" : "building";
+        this.core.uiManager.addChatMessage(
+            "System",
+            `${label}: sold ${candidates.length} ${plural} (+${totalRefund} Power).`,
+            "#60c1ff"
+        );
+        this.core.uiManager._updateCost?.();
+        return { ok: true, consumed: true, sold: candidates.length, refund: totalRefund };
+    }
+
+    sellAllOwnedBuildingsAcrossBase (options = {}) {
+        const candidates = [];
+
+        this.getOwnedBasesForGlobalUpgrade().forEach(({ base, neutralBaseID }) => {
+            const allBuildings = Array.isArray(base?.buildings) ? base.buildings : [];
+            allBuildings.forEach((building) => {
+                if (!building || building.removeFlag) return;
+                if (!Number.isInteger(building.id)) return;
+                candidates.push({ building, neutralBaseID });
+            });
+        });
+
+        if (candidates.length === 0) {
+            this.core.uiManager.addChatMessage("System", "No buildings found to sell.", "#ffcc66");
+            return { ok: false, consumed: true };
+        }
+
+        const groupedByBase = new Map();
+        let totalRefund = 0;
+        candidates.forEach((entry) => {
+            const token = entry.neutralBaseID === null ? "player" : `neutral:${entry.neutralBaseID}`;
+            if (!groupedByBase.has(token)) {
+                groupedByBase.set(token, {
+                    neutralBaseID: entry.neutralBaseID,
+                    ids: []
+                });
+            }
+            groupedByBase.get(token).ids.push(entry.building.id);
+
+            const details = getBuildingDetails(entry.building.type, entry.building.variant);
+            const cost = Number(details?.cost || 0);
+            if (Number.isFinite(cost) && cost > 0) {
+                totalRefund += Math.floor(cost / 2);
+            }
+        });
+
+        groupedByBase.forEach((batch) => {
+            this.core.networkManager.removeBuildings(batch.ids, batch.neutralBaseID);
+        });
+
+        const label = String(options?.triggerLabel || "Sell All");
+        const plural = candidates.length > 1 ? "buildings" : "building";
+        this.core.uiManager.addChatMessage(
+            "System",
+            `${label}: sold ${candidates.length} ${plural} (+${totalRefund} Power).`,
+            "#60c1ff"
+        );
+        this.core.uiManager._updateCost?.();
+        return { ok: true, consumed: true, sold: candidates.length, refund: totalRefund };
+    }
+
     cleanupDefenseRemountUpgradeTracker (now = Date.now()) {
         if (!(this.defenseRemountUpgradeRequestAt instanceof Map) || this.defenseRemountUpgradeRequestAt.size === 0) return;
         for (const [key, lastSentAt] of this.defenseRemountUpgradeRequestAt.entries()) {

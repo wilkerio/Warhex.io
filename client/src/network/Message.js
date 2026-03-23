@@ -19,11 +19,21 @@ export default class Message {
     }
 
     static createJoinMessage (name, equippedSkin, preferredColorIndex, fingerprint) {
-        // Truncate the name if it exceeds 12 characters
-        name = name.slice(0, 12);
+        // Keep protocol compatibility (name <= 12 bytes) while supporting
+        // spaces/special characters.
+        const encoder = new TextEncoder();
+        let normalizedName = String(name || "")
+            .replace(/[\u0000-\u001F\u007F]/g, "")
+            .trim();
+        if (!normalizedName) normalizedName = "Player";
+        const chars = Array.from(normalizedName);
+        while (chars.length > 0 && encoder.encode(chars.join("")).length > 12) {
+            chars.pop();
+        }
+        normalizedName = chars.join("") || "Player";
 
         // Encode the name as bytes
-        const nameBytes = new TextEncoder().encode(name);
+        const nameBytes = encoder.encode(normalizedName);
 
         // Convert equippedSkin to a single byte. We now map Supabase skins to byte IDs client-side.
         let skinByte = 0;

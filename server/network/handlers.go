@@ -28,7 +28,7 @@ const (
 
 var (
 	enforceClientExtensionBlock    = envBoolDefaultTrue("ENFORCE_CLIENT_EXTENSION_BLOCK")
-	enforceClientSecurityAlertKick = envBoolDefaultTrue("ENFORCE_CLIENT_SECURITY_ALERT_KICK")
+	enforceClientSecurityAlertKick = envBoolDefaultFalse("ENFORCE_CLIENT_SECURITY_ALERT_KICK")
 )
 
 func envBoolDefaultTrue(key string) bool {
@@ -41,6 +41,19 @@ func envBoolDefaultTrue(key string) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+func envBoolDefaultFalse(key string) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if raw == "" {
+		return false
+	}
+	switch raw {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
 	}
 }
 

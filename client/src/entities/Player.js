@@ -436,8 +436,8 @@ export default class Player extends Renderable {
 
             // Draw the player's name smaller and outside the core to reduce visual competition.
             let maxWidth = this.buildingRadius.min * 1.15;
-            let fontSize = Math.min(healthRadius * 0.40, 28);
-            fontSize = Math.max(fontSize, 15);
+            let fontSize = Math.min(healthRadius * 0.40, 31);
+            fontSize = Math.max(fontSize, 18);
 
             context.font = `900 ${fontSize}px 'Ubuntu', sans-serif`;
 

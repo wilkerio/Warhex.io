@@ -427,6 +427,11 @@ export default class UIManager {
                 selectAllUnits: "e",
                 toggleMap: "m",
                 toggleGroupTroops: "z",
+                toggleHudMiniMap: "",
+                toggleHudChat: "",
+                toggleHudLeaderboard: "",
+                toggleHudToolbar: "",
+                toggleHudGroupTroopsPanel: "",
                 selectSoldiersOnly: "x",
                 selectTanksOnly: "v",
                 selectSiegeOnly: "b",
@@ -459,6 +464,11 @@ export default class UIManager {
                 soldierModel: "model1",
                 tankModel: "model1",
                 siegeModel: "model1"
+            },
+            hudVisibility: {
+                miniMap: true,
+                toolbar: true,
+                groupTroops: true
             },
             collapsedPanels: {
                 chat: false,
@@ -504,6 +514,10 @@ export default class UIManager {
             unitStyles: {
                 ...defaults.unitStyles,
                 ...(incoming?.unitStyles || {})
+            },
+            hudVisibility: {
+                ...defaults.hudVisibility,
+                ...((incoming?.hudVisibility && typeof incoming.hudVisibility === "object") ? incoming.hudVisibility : {})
             },
             collapsedPanels: {
                 ...defaults.collapsedPanels,
@@ -667,6 +681,43 @@ export default class UIManager {
             .join(" ");
     }
 
+    getBuildingTypeLabel (buildingType) {
+        const safeType = Number(buildingType);
+        const buildingKey = Object.keys(BuildingTypes).find((key) => Number(BuildingTypes[key]) === safeType);
+        return this.formatEnumLabel(buildingKey || `Type ${safeType}`);
+    }
+
+    getReachableBuildingUpgradeVariants (buildingType) {
+        const safeType = Number(buildingType);
+        if (!Number.isFinite(safeType)) return [];
+
+        const visited = new Set();
+        const queue = [];
+        const out = [];
+        const baseDetails = getBuildingDetails(safeType, 0);
+        const initialNext = Array.isArray(baseDetails?.next) ? baseDetails.next : [];
+        initialNext.forEach((variant) => queue.push(Number(variant)));
+
+        while (queue.length > 0) {
+            const variant = Number(queue.shift());
+            if (!Number.isFinite(variant) || variant <= 0 || visited.has(variant)) continue;
+            visited.add(variant);
+
+            const details = getBuildingDetails(safeType, variant);
+            if (!details || Number(details?.variant) !== variant) continue;
+            out.push(variant);
+
+            const nextList = Array.isArray(details?.next) ? details.next : [];
+            nextList.forEach((nextVariant) => {
+                const numeric = Number(nextVariant);
+                if (!Number.isFinite(numeric) || numeric <= 0 || visited.has(numeric)) return;
+                queue.push(numeric);
+            });
+        }
+
+        return out.sort((a, b) => a - b);
+    }
+
     getUpgradeHotkeyDefinitions () {
         const defs = [];
         const known = new Set();
@@ -681,22 +732,45 @@ export default class UIManager {
             });
         };
 
-        const visibleArmoryVariants = [
-            BuildingVariantTypes?.ARMORY?.POWER_ARMOR,
-            BuildingVariantTypes?.ARMORY?.BOOSTER_ENGINES,
-            BuildingVariantTypes?.ARMORY?.PANZER_CANNONS,
-            BuildingVariantTypes?.ARMORY?.CLOAKING_DEVICE
-        ]
-            .map((value) => Number(value))
-            .filter((value) => Number.isFinite(value) && value > 0)
-            .sort((a, b) => a - b);
-        visibleArmoryVariants.forEach((variant) => {
-            const details = getBuildingDetails(BuildingTypes.ARMORY, variant);
-            if (!details) return;
-            addDef(`armory:${variant}`, `Armory: ${details.name}`, "Armory Upgrades");
+        const visibleArmoryVariants = new Set([
+            Number(BuildingVariantTypes?.ARMORY?.POWER_ARMOR),
+            Number(BuildingVariantTypes?.ARMORY?.BOOSTER_ENGINES),
+            Number(BuildingVariantTypes?.ARMORY?.PANZER_CANNONS),
+            Number(BuildingVariantTypes?.ARMORY?.CLOAKING_DEVICE)
+        ].filter((value) => Number.isFinite(value) && value > 0));
+
+        Object.keys(BuildingTypes).forEach((buildingKey) => {
+            const buildingType = Number(BuildingTypes[buildingKey]);
+            if (!Number.isFinite(buildingType)) return;
+            if (buildingType === BuildingTypes.PORTAL) return;
+
+            const typeLabel = this.formatEnumLabel(buildingKey);
+            addDef(`sell-type:${buildingType}`, `Sell All ${typeLabel}`, `${typeLabel} Sell`);
+
+            const upgradeVariants = (buildingType === BuildingTypes.ARMORY)
+                ? Array.from(visibleArmoryVariants).sort((a, b) => a - b)
+                : this.getReachableBuildingUpgradeVariants(buildingType);
+
+            upgradeVariants.forEach((variant) => {
+                const details = getBuildingDetails(buildingType, variant);
+                if (!details) return;
+                const upgradeName = String(details?.name || `Variant ${variant}`);
+                const upgradeId = (buildingType === BuildingTypes.ARMORY)
+                    ? `armory:${variant}`
+                    : `building:${buildingType}:${variant}`;
+
+                addDef(upgradeId, `${typeLabel}: ${upgradeName}`, `${typeLabel} Upgrades`);
+                addDef(
+                    `sell-variant:${buildingType}:${variant}`,
+                    `${typeLabel}: Sell ${upgradeName}`,
+                    `${typeLabel} Sell`
+                );
+            });
         });
 
         return defs.sort((a, b) => {
+            const sectionCompare = String(a.section).localeCompare(String(b.section));
+            if (sectionCompare !== 0) return sectionCompare;
             return String(a.label).localeCompare(String(b.label));
         });
     }
@@ -732,6 +806,7 @@ export default class UIManager {
         }
 
         if (normalized === "unidentified" || normalized === "process") {
+            this.refreshKeybindEditorUI();
             return { ok: false };
         }
 
@@ -739,6 +814,7 @@ export default class UIManager {
             delete this.hudConfig.upgradeHotkeys[id];
             this.scheduleHudConfigSync();
             this.refreshCustomizationSettingsUI();
+            this.refreshKeybindEditorUI();
             return { ok: true };
         }
 
@@ -747,6 +823,7 @@ export default class UIManager {
                 this.notifySystemWarning(this.getReservedGameplayKeybindNotice(normalized));
             }
             this.refreshCustomizationSettingsUI();
+            this.refreshKeybindEditorUI();
             return { ok: false, reserved: true };
         }
 
@@ -759,12 +836,14 @@ export default class UIManager {
                 this.showKeyConflictNotice(normalized, conflict);
             }
             this.refreshCustomizationSettingsUI();
+            this.refreshKeybindEditorUI();
             return { ok: false, conflict };
         }
 
         this.hudConfig.upgradeHotkeys[id] = normalized;
         this.scheduleHudConfigSync();
         this.refreshCustomizationSettingsUI();
+        this.refreshKeybindEditorUI();
         return { ok: true };
     }
 
@@ -826,31 +905,63 @@ export default class UIManager {
         preview.width = size;
         preview.height = size;
 
-        const armoryMatch = /^armory:(\d+)$/.exec(String(def.id));
-        if (!armoryMatch) {
-            rowElement.appendChild(preview);
-            return;
-        }
-
-        const armoryVariant = Number(armoryMatch[1]);
-        const details = getBuildingDetails(BuildingTypes.ARMORY, armoryVariant);
-        const unitType = Number(details?.unitType);
-        const unitVariant = Number(details?.unitVariant);
-        if (!Number.isFinite(unitType) || !Number.isFinite(unitVariant)) {
-            rowElement.appendChild(preview);
-            return;
-        }
-
-        const UnitClass = UnitManager.getUnitClassByType(unitType);
-        if (!UnitClass) {
-            rowElement.appendChild(preview);
-            return;
-        }
+        const rawId = String(def.id || "");
+        const armoryMatch = /^armory:(\d+)$/.exec(rawId);
+        const buildingVariantMatch = /^(?:building|sell-variant):(\d+):(\d+)$/.exec(rawId);
+        const sellTypeMatch = /^sell-type:(\d+)$/.exec(rawId);
 
         const previewColor = this.core?.gameManager?.player?.color || "#6dd7ff";
+        const resolveScale = (renderable, fallback = 0.46) => {
+            const canvasSize = Math.max(1, Math.min(preview.width, preview.height));
+            const detailSize = Number(renderable?.details?.size);
+            const rawSize = Number.isFinite(detailSize) && detailSize > 0
+                ? detailSize
+                : Number(renderable?.size);
+            if (!Number.isFinite(rawSize) || rawSize <= 0) return fallback;
+            // detail size behaves as a radius for most entities; fit full diameter in the preview box.
+            const diameter = rawSize * 2;
+            const maxDrawable = canvasSize * 0.78;
+            const fitScale = maxDrawable / diameter;
+            return Math.max(0.08, Math.min(fallback, fitScale));
+        };
         try {
-            const renderable = new UnitClass(previewColor, { x: 0, y: 0 }, unitVariant);
-            this.animatePreview(preview, renderable);
+            if (armoryMatch) {
+                const armoryVariant = Number(armoryMatch[1]);
+                const details = getBuildingDetails(BuildingTypes.ARMORY, armoryVariant);
+                const unitType = Number(details?.unitType);
+                const unitVariant = Number(details?.unitVariant);
+                if (Number.isFinite(unitType) && Number.isFinite(unitVariant)) {
+                    const UnitClass = UnitManager.getUnitClassByType(unitType);
+                    if (UnitClass) {
+                        const renderable = new UnitClass(previewColor, { x: 0, y: 0 }, unitVariant);
+                        this.animatePreview(preview, renderable, {
+                            scale: resolveScale(renderable, 0.46),
+                            rotationSpeed: 0
+                        });
+                    }
+                }
+            } else if (buildingVariantMatch) {
+                const buildingType = Number(buildingVariantMatch[1]);
+                const buildingVariant = Number(buildingVariantMatch[2]);
+                const BuildingClass = BuildingManager.getBuildingClassByType(buildingType);
+                if (BuildingClass) {
+                    const renderable = new BuildingClass(previewColor, { x: 0, y: 0 }, buildingVariant);
+                    this.animatePreview(preview, renderable, {
+                        scale: resolveScale(renderable, 0.46),
+                        rotationSpeed: 0
+                    });
+                }
+            } else if (sellTypeMatch) {
+                const buildingType = Number(sellTypeMatch[1]);
+                const BuildingClass = BuildingManager.getBuildingClassByType(buildingType);
+                if (BuildingClass) {
+                    const renderable = new BuildingClass(previewColor, { x: 0, y: 0 }, 0);
+                    this.animatePreview(preview, renderable, {
+                        scale: resolveScale(renderable, 0.46),
+                        rotationSpeed: 0
+                    });
+                }
+            }
         } catch (error) {}
         rowElement.appendChild(preview);
     }
@@ -861,7 +972,9 @@ export default class UIManager {
         const hotkeys = (this.hudConfig?.upgradeHotkeys && typeof this.hudConfig.upgradeHotkeys === "object")
             ? this.hudConfig.upgradeHotkeys
             : {};
+        const validIds = new Set(this.getUpgradeHotkeyDefinitions().map((entry) => String(entry?.id || "")));
         const matchingIds = Object.keys(hotkeys).filter((upgradeId) => {
+            if (!validIds.has(String(upgradeId || ""))) return false;
             return this.normalizeKeybindValue(hotkeys[upgradeId]) === key;
         });
         if (matchingIds.length <= 1) return matchingIds[0] || "";
@@ -874,6 +987,31 @@ export default class UIManager {
         if (!upgradeId) return false;
         const matchBuilding = /^building:(\d+):(\d+)$/.exec(upgradeId);
         const matchArmory = /^armory:(\d+)$/.exec(upgradeId);
+        const matchSellVariant = /^sell-variant:(\d+):(\d+)$/.exec(upgradeId);
+        const matchSellType = /^sell-type:(\d+)$/.exec(upgradeId);
+
+        if (matchSellVariant) {
+            const buildingType = Number(matchSellVariant[1]);
+            const targetVariant = Number(matchSellVariant[2]);
+            if (!Number.isFinite(buildingType) || !Number.isFinite(targetVariant)) {
+                return true;
+            }
+            this.core?.buildingManager?.sellAllOwnedBuildings?.(buildingType, {
+                variant: targetVariant,
+                triggerLabel: this.getUpgradeHotkeyLabel(upgradeId)
+            });
+            return true;
+        }
+        if (matchSellType) {
+            const buildingType = Number(matchSellType[1]);
+            if (!Number.isFinite(buildingType)) {
+                return true;
+            }
+            this.core?.buildingManager?.sellAllOwnedBuildings?.(buildingType, {
+                triggerLabel: this.getUpgradeHotkeyLabel(upgradeId)
+            });
+            return true;
+        }
 
         let buildingType = null;
         let targetVariant = null;
@@ -962,6 +1100,11 @@ export default class UIManager {
             { key: "selectCommanderArmy", label: "Commander + Army", group: this.t("key.group.selection") },
             { key: "toggleMap", label: this.t("key.action.toggleMap"), group: this.t("key.group.hud") },
             { key: "toggleGroupTroops", label: this.t("key.action.toggleGroupTroops"), group: this.t("key.group.hud") },
+            { key: "toggleHudMiniMap", label: "Toggle Minimap", group: this.t("key.group.hud") },
+            { key: "toggleHudChat", label: "Minimize Chat", group: this.t("key.group.hud") },
+            { key: "toggleHudLeaderboard", label: "Minimize Rank", group: this.t("key.group.hud") },
+            { key: "toggleHudToolbar", label: "Toggle Toolbar", group: this.t("key.group.hud") },
+            { key: "toggleHudGroupTroopsPanel", label: "Toggle Group Troops", group: this.t("key.group.hud") },
             { key: "upgrade1", label: this.t("key.action.upgrade1"), group: this.t("key.group.upgrades") },
             { key: "upgrade2", label: this.t("key.action.upgrade2"), group: this.t("key.group.upgrades") },
             { key: "upgrade3", label: this.t("key.action.upgrade3"), group: this.t("key.group.upgrades") },
@@ -1231,6 +1374,7 @@ export default class UIManager {
         this._cameraZoomInitialized = true;
         this.ensureHudCollapseControls();
         this.applyHudCollapsedStates();
+        this.applyHudVisibilityStates();
     }
 
     ensureHudCollapseControls () {
@@ -1285,6 +1429,43 @@ export default class UIManager {
         this.scheduleHudConfigSync();
     }
 
+    toggleHudPanelCollapsed (key) {
+        const current = Boolean(this.hudConfig?.collapsedPanels?.[key]);
+        this.setHudPanelCollapsed(key, !current);
+        return !current;
+    }
+
+    getHudPanelVisible (key, fallback = true) {
+        if (!key) return Boolean(fallback);
+        const value = this.hudConfig?.hudVisibility?.[key];
+        if (value === null || value === undefined) return Boolean(fallback);
+        return value !== false;
+    }
+
+    setHudPanelVisible (key, visible, options = {}) {
+        if (!key) return;
+        if (!this.hudConfig.hudVisibility || typeof this.hudConfig.hudVisibility !== "object") {
+            this.hudConfig.hudVisibility = { ...this.getDefaultHudConfig().hudVisibility };
+        }
+        this.hudConfig.hudVisibility[key] = Boolean(visible);
+        this.applyHudVisibilityStates();
+        if (options?.persist !== false) {
+            this.scheduleHudConfigSync();
+        }
+    }
+
+    toggleHudPanelVisibility (key, options = {}) {
+        const next = !this.getHudPanelVisible(key, true);
+        this.setHudPanelVisible(key, next, options);
+        return next;
+    }
+
+    toggleHudMiniMapVisibility (options = {}) {
+        const next = !this.getHudPanelVisible("miniMap", true);
+        this.setHudPanelVisible("miniMap", next, options);
+        return next;
+    }
+
     applyHudCollapsedStates () {
         const states = this.hudConfig?.collapsedPanels || {};
         const bind = (selector, key) => {
@@ -1304,6 +1485,18 @@ export default class UIManager {
         bind("#leaderboard-container .leaderboard", "leaderboard");
         bind("#toolbar-container", "toolbar");
         bind("#unit-controls-container", "groupTroops");
+    }
+
+    applyHudVisibilityStates () {
+        if (this.menuOpen) {
+            this.showMiniMap(false);
+            this.showToolbar(false);
+            this.showUnitControls(false);
+            return;
+        }
+        this.showMiniMap(this.getHudPanelVisible("miniMap", true));
+        this.showToolbar(this.getHudPanelVisible("toolbar", true));
+        this.showUnitControls(this.getHudPanelVisible("groupTroops", true));
     }
 
     saveHudLayoutFromPanels ({ onlyIfDirty = false } = {}) {
@@ -1665,7 +1858,7 @@ export default class UIManager {
             const row = document.createElement("label");
             row.className = "hud-upgrade-hotkey-row";
 
-            this.appendUpgradeHotkeyPreview(row, def, { size: 42 });
+            this.appendUpgradeHotkeyPreview(row, def, { size: 30 });
 
             const title = document.createElement("span");
             title.className = "hud-upgrade-hotkey-label";
@@ -1874,7 +2067,7 @@ export default class UIManager {
 
             if (options?.previewDef) {
                 row.classList.add("has-preview");
-                this.appendUpgradeHotkeyPreview(row, options.previewDef, { size: 34 });
+                this.appendUpgradeHotkeyPreview(row, options.previewDef, { size: 24 });
             }
 
             const label = document.createElement("div");
@@ -4374,22 +4567,22 @@ export default class UIManager {
         }
     }
 
-    animatePreview (previewCanvas, renderable) {
+    animatePreview (previewCanvas, renderable, options = {}) {
         const context = previewCanvas.getContext("2d");
         let animationFrameId; // Store the animation frame ID
-        const scale = 0.8;
-        const rotationSpeed = 0.001; // Adjust this value to control the rotation speed
+        const parsedScale = Number(options?.scale);
+        const scale = Number.isFinite(parsedScale) ? Math.max(0.1, Math.min(2, parsedScale)) : 0.8;
+        const parsedRotationSpeed = Number(options?.rotationSpeed);
+        const rotationSpeed = Number.isFinite(parsedRotationSpeed) ? parsedRotationSpeed : 0.001;
         let lastTime = 0; // Initialize lastTime to 0
 
         renderable.rotationAngle = this.upgradePreviewRotation; // Initialize rotation angle for the building
 
-        const animate = (currentTime) => {
-            // Calculate deltaTime (time difference between frames)
-            const deltaTime = currentTime - lastTime;
-            lastTime = currentTime;
-
+        const renderFrame = (deltaTime) => {
             // Update rotation angle using deltaTime
-            this.upgradePreviewRotation += rotationSpeed;
+            if (rotationSpeed !== 0) {
+                this.upgradePreviewRotation += rotationSpeed;
+            }
             renderable.rotationAngle = this.upgradePreviewRotation;
 
             // Clear the previous frame
@@ -4443,14 +4636,25 @@ export default class UIManager {
                 context.closePath();
                 context.restore();
             }
+        };
 
-
-
+        const animate = (currentTime) => {
+            // Calculate deltaTime (time difference between frames)
+            const deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+            renderFrame(deltaTime);
             // Request the next frame
             animationFrameId = requestAnimationFrame(animate);
         };
 
-        // Start the animation
+        // Static preview mode (no spinning) for better readability in compact keybind lists.
+        if (rotationSpeed === 0) {
+            renderFrame(16);
+            previewCanvas.stopAnimation = () => {};
+            return;
+        }
+
+        // Start animated mode
         animate(0); // Start with currentTime as 0
 
         // Method to stop the animation
@@ -6408,24 +6612,19 @@ export default class UIManager {
     }
 
     normalizePlayerName (rawName) {
-        const input = String(rawName || "").trim();
+        const input = String(rawName || "")
+            .replace(/[\u0000-\u001F\u007F]/g, "")
+            .trim();
         if (!input) return "";
 
-        // Keep guest names clean and compatible with server-side 12-byte limit.
-        let playerName = input.replace(/[^a-zA-Z0-9_]/g, "");
-        if (!playerName) return "";
-
+        // Keep compatibility with the 12-byte join protocol limit without stripping
+        // spaces/special characters.
         const encoder = new TextEncoder();
-        let encodedName = encoder.encode(playerName);
-        if (encodedName.length <= 12) return playerName;
-
-        playerName = playerName.slice(0, 12);
-        encodedName = encoder.encode(playerName);
-        while (encodedName.length > 12 && playerName.length > 0) {
-            playerName = playerName.slice(0, -1);
-            encodedName = encoder.encode(playerName);
+        const chars = Array.from(input);
+        while (chars.length > 0 && encoder.encode(chars.join("")).length > 12) {
+            chars.pop();
         }
-        return playerName;
+        return chars.join("");
     }
 
     generateGuestNickname () {
@@ -6553,12 +6752,12 @@ export default class UIManager {
             this.hideDiscordJoinPrompt();
         }
         this.showLeaderboard(show);
-        this.showToolbar(show);
-        this.showUnitControls(show);
+        this.showToolbar(show && this.getHudPanelVisible("toolbar", true));
+        this.showUnitControls(show && this.getHudPanelVisible("groupTroops", true));
         this.showResource(show);
         this.showChat(show);
         this.showMetrics(show);
-        this.showMiniMap(show);
+        this.showMiniMap(show && this.getHudPanelVisible("miniMap", true));
         const autoBuildMenu = document.getElementById("autobuild-menu-container");
         if (autoBuildMenu) {
             autoBuildMenu.style.display = show ? "flex" : "none";
@@ -7522,7 +7721,9 @@ export default class UIManager {
         const upgradeHotkeys = (this.hudConfig?.upgradeHotkeys && typeof this.hudConfig.upgradeHotkeys === "object")
             ? this.hudConfig.upgradeHotkeys
             : {};
+        const validUpgradeIds = new Set(this.getUpgradeHotkeyDefinitions().map((entry) => String(entry?.id || "")));
         Object.keys(upgradeHotkeys).forEach((upgradeId) => {
+            if (!validUpgradeIds.has(String(upgradeId || ""))) return;
             push("upgrade-item", upgradeId, upgradeHotkeys[upgradeId], this.getUpgradeHotkeyLabel(upgradeId));
         });
 

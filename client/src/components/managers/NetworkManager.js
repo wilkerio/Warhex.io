@@ -59,8 +59,9 @@ function hasKnownEditingExtensionToken(text) {
 }
 
 function resolveStrictClientSecurityGuards() {
-    // Strict mode always enabled.
-    return true;
+    // Disabled by default to avoid false-positive session blocks
+    // when browser/devtools shortcuts are triggered.
+    return false;
 }
 
 export default class NetworkManager {
@@ -447,20 +448,17 @@ export default class NetworkManager {
     }
 
     trimNameToProtocolLimit (name = "") {
-        let value = String(name || "").replace(/[^a-zA-Z0-9_]/g, "");
+        let value = String(name || "")
+            .replace(/[\u0000-\u001F\u007F]/g, "")
+            .trim();
         if (!value) return "";
 
         const encoder = new TextEncoder();
-        let encoded = encoder.encode(value);
-        if (encoded.length <= 12) return value;
-
-        value = value.slice(0, 12);
-        encoded = encoder.encode(value);
-        while (encoded.length > 12 && value.length > 0) {
-            value = value.slice(0, -1);
-            encoded = encoder.encode(value);
+        const chars = Array.from(value);
+        while (chars.length > 0 && encoder.encode(chars.join("")).length > 12) {
+            chars.pop();
         }
-        return value;
+        return chars.join("");
     }
 
     applyOwnerTagToName (name = "") {
@@ -1363,6 +1361,7 @@ export default class NetworkManager {
                 player.addUnit(newUnit);
                 if (player.isClient && newUnit.type === UnitTypes.COMMANDER) {
                     this.core.gameManager.setCommander(true);
+                    this.core.unitManager?.onClientCommanderSpawned?.(newUnit);
                 }
             });
         };
@@ -1578,6 +1577,7 @@ export default class NetworkManager {
 
         if (player.isClient && unit.type === UnitTypes.COMMANDER) {
             this.core.gameManager.setCommander(true);
+            this.core.unitManager?.onClientCommanderSpawned?.(unit);
         }
     }
 

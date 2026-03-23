@@ -118,8 +118,8 @@ const (
 	// Player health regeneration settings
 	PLAYER_HEALTH_REGENERATION           = 30
 	PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
-	// Commander regeneration is intentionally slow and periodic.
-	COMMANDER_HEALTH_REGENERATION           = 120 // HP per tick
+	// Commander regeneration disabled by request.
+	COMMANDER_HEALTH_REGENERATION           = 0 // HP per tick
 	COMMANDER_HEALTH_REGENERATION_FREQUENCY = 120 // Seconds (2 minutes)
 	COMMANDER_HEALTH_REGENERATION_DELAY     = 120 // Seconds without taking damage
 
@@ -157,9 +157,8 @@ const (
 	COMMANDER_CORE_DAMAGE_MULTIPLIER = 3
 	// Soldiers are swarms; boost only when colliding with enemy core.
 	SOLDIER_CORE_DAMAGE_MULTIPLIER = 3
-	// Restore legacy matchup feeling: soldier waves should punish commanders hard.
-	// Base soldier damage is 6, so x2 => 12 damage per soldier collision on commander.
-	SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER = 2
+	// No extra modifier: commander survivability is balanced through commander health.
+	SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER = 1
 
 	// Spawn settings
 	MIN_PLAYER_SPAWN_DISTANCE = 1500 // Minimum distance between player spawns

@@ -54,7 +54,6 @@ func init() {
 	go startTargetingLoop()
 	go startEntityUpdateLoop()
 	go startProtectionCheckLoop()
-	go startCommanderRegenerationLoop()
 }
 
 type WildPortal struct {
@@ -220,23 +219,8 @@ func startProtectionCheckLoop() {
 }
 
 func startCommanderRegenerationLoop() {
-	ticker := time.NewTicker(COMMANDER_HEALTH_REGENERATION_FREQUENCY * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		State.RLock()
-		for _, player := range State.Players {
-			for _, unit := range player.Units {
-				if unit.Type == COMMANDER {
-					if time.Since(unit.LastDamageTime) > COMMANDER_HEALTH_REGENERATION_DELAY*time.Second && unit.Health.Current < unit.Health.Max {
-						unit.Health.Increment(COMMANDER_HEALTH_REGENERATION)
-						TriggerUnitHealthUpdateEvent(player, unit)
-					}
-				}
-			}
-		}
-		State.RUnlock()
-	}
+	// Commander regeneration is disabled.
+	return
 }
 
 func snapshotWildPortalsLocked() []WildPortalSnapshot {

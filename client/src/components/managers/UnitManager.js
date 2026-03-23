@@ -22,6 +22,7 @@ export default class UnitManager {
         this.core = core;
         this.selectedUnits = [];
         this.lastCommanderHotkeyBuyAt = 0;
+        this.pendingCommanderAutoSelectUntil = 0;
         this.lastSelectionControlsHintAt = 0;
         this.selectionControlsHintCooldownMs = 10000;
 
@@ -316,7 +317,8 @@ export default class UnitManager {
         this.selectUnitsByTypes([UnitTypes.SIEGE_TANK]);
     }
 
-    selectCommanderUnit () {
+    selectCommanderUnit (options = {}) {
+        const { suppressHint = false } = options;
         const player = this.core?.gameManager?.player;
         if (!player?.units) return false;
 
@@ -334,12 +336,15 @@ export default class UnitManager {
         }
         commander.isSelected = true;
         this.refreshSelectionHud();
-        this.showSelectionControlsHint();
+        if (!suppressHint) {
+            this.showSelectionControlsHint();
+        }
         return true;
     }
 
     selectCommanderOrBuy () {
         if (this.selectCommanderUnit()) {
+            this.pendingCommanderAutoSelectUntil = 0;
             return;
         }
 
@@ -349,8 +354,25 @@ export default class UnitManager {
         const now = Date.now();
         if (now - this.lastCommanderHotkeyBuyAt < 350) return;
         this.lastCommanderHotkeyBuyAt = now;
+        this.pendingCommanderAutoSelectUntil = now + 6000;
 
+        // Commander hotkey buy should not leave core/building upgrade panel open,
+        // otherwise users can accidentally trigger conflicting upgrade hotkeys.
+        this.core?.buildingManager?.deselectBuildings?.();
+        this.core?.uiManager?.hideUpgrades?.();
         this.core?.networkManager?.sendBuyCommander?.();
+    }
+
+    onClientCommanderSpawned (commanderUnit) {
+        const now = Date.now();
+        if (now > this.pendingCommanderAutoSelectUntil) {
+            this.pendingCommanderAutoSelectUntil = 0;
+            return;
+        }
+        if (!commanderUnit) return;
+        if (commanderUnit.type !== UnitTypes.COMMANDER && commanderUnit.type !== UnitTypes.TRI_COMMANDER) return;
+        this.pendingCommanderAutoSelectUntil = 0;
+        this.selectCommanderUnit({ suppressHint: true });
     }
 
     selectCommanderWithTypes (types = []) {

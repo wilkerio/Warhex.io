@@ -101,26 +101,23 @@ func (b *Bullet) UpdatePosition(deltaTime time.Duration) bool {
 	distanceToMove := b.Speed * float64(deltaTime) / float64(time.Second)
 
 	// Apply ease-out only when within a threshold distance to the target.
-	// Commander bullets keep full speed for better hit consistency on moving soldiers.
-	if !b.FiredByCommander {
-		easeThreshold := 100.0
-		minMovementThreshold := 0.05 // Minimum movement threshold to consider easing
+	easeThreshold := 100.0
+	minMovementThreshold := 0.05 // Minimum movement threshold to consider easing
 
-		// If the distance is within easeThreshold, apply easing
-		if distance < easeThreshold {
-			// Calculate easing progress based on distance to target
-			progress := distance / easeThreshold
-			easedProgress := easeOut(progress)
+	// If the distance is within easeThreshold, apply easing
+	if distance < easeThreshold {
+		// Calculate easing progress based on distance to target
+		progress := distance / easeThreshold
+		easedProgress := easeOut(progress)
 
-			// Scale the distanceToMove by eased progress, while ensuring a minimum movement threshold
-			if easedProgress*distanceToMove < minMovementThreshold {
-				easedProgress = 1.0 // Disable easing if the progress is too small
-			}
-
-			// We want the speed to drop to 30% of the normal speed as it approaches the target
-			easedProgress = 0.3 + (0.7 * easedProgress) // Scale to 30% speed when close to the target
-			distanceToMove *= easedProgress
+		// Scale the distanceToMove by eased progress, while ensuring a minimum movement threshold
+		if easedProgress*distanceToMove < minMovementThreshold {
+			easedProgress = 1.0 // Disable easing if the progress is too small
 		}
+
+		// We want the speed to drop to 30% of the normal speed as it approaches the target
+		easedProgress = 0.3 + (0.7 * easedProgress) // Scale to 30% speed when close to the target
+		distanceToMove *= easedProgress
 	}
 
 	// Limit distanceToMove to the remaining distance to avoid overshoot
@@ -362,7 +359,7 @@ var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 	COMMANDER: {
 		BASIC_UNIT: {
 			Health:           Health{Current: 30, Max: 30},
-			Speed:            980,
+			Speed:            700,
 			Size:             12,
 			Polygon:          unitBulletPolygon,
 			DamageMultiplier: 1.0,
