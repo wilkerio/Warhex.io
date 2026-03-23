@@ -50,15 +50,15 @@ func sendToClient(conn *websocket.Conn, message []byte, toRemove *[]*websocket.C
 	return nil
 }
 
-func broadcastUnitHealthUpdate(playerID game.ID, unit *game.Unit) {
+func broadcastUnitHealthUpdate(playerID game.ID, unitID game.ID, health uint16) {
 	message := Message{
 		Type: MessageTypeUnitHealthUpdate,
 	}
 
 	buffer := new(bytes.Buffer)
 	buffer.WriteByte(byte(playerID))
-	buffer.WriteByte(byte(unit.ID))
-	binary.Write(buffer, binary.BigEndian, unit.Health.Current)
+	buffer.WriteByte(byte(unitID))
+	binary.Write(buffer, binary.BigEndian, health)
 
 	message.Payload = buffer.Bytes()
 	broadcastToAll(EncodeMessage(message))

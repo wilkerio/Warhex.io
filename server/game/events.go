@@ -121,8 +121,9 @@ type UnitsTargetPointUpdateEvent struct {
 }
 
 type UnitHealthUpdateEvent struct {
-	Player *Player
-	Unit   *Unit
+	PlayerID ID
+	UnitID   ID
+	Health   uint16
 }
 
 type UnitRemoveEvent struct {
@@ -224,9 +225,24 @@ func TriggerUnitsRotationUpdateEvent(player *Player, units []*Unit) {
 }
 
 func TriggerUnitHealthUpdateEvent(player *Player, unit *Unit) {
+	if unit == nil {
+		return
+	}
+	if unit.Player == nil && player == nil {
+		return
+	}
+
+	ownerID := ID(0)
+	if unit.Player != nil {
+		ownerID = unit.Player.ID
+	} else {
+		ownerID = player.ID
+	}
+
 	event := &UnitHealthUpdateEvent{
-		Player: player,
-		Unit:   unit,
+		PlayerID: ownerID,
+		UnitID:   unit.ID,
+		Health:   unit.Health.Get(),
 	}
 	eventChan <- Event{Type: UnitHealthUpdate, Payload: event}
 }
