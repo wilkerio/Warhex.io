@@ -1460,12 +1460,67 @@ func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
 		return false
 	}
 
-	dx := float64(target.Base.Position.X - challenger.Base.Position.X)
-	dy := math.Abs(float64(target.Base.Position.Y - challenger.Base.Position.Y))
-
-	// Must be aligned on the same horizontal lane (left/right), not diagonal.
 	const axisTolerance = 250.0
-	return dy <= axisTolerance && math.Abs(dx) > axisTolerance
+	challengerX := float64(challenger.Base.Position.X)
+	challengerY := float64(challenger.Base.Position.Y)
+	targetX := float64(target.Base.Position.X)
+	targetY := float64(target.Base.Position.Y)
+
+	dx := targetX - challengerX
+	if math.Abs(targetY-challengerY) > axisTolerance || math.Abs(dx) <= axisTolerance {
+		return false
+	}
+
+	var (
+		leftNeighborID  game.ID
+		rightNeighborID game.ID
+		hasLeftNeighbor bool
+		hasRightNeighbor bool
+		leftDist        = math.MaxFloat64
+		rightDist       = math.MaxFloat64
+	)
+
+	game.State.RLock()
+	defer game.State.RUnlock()
+
+	for _, other := range game.State.Players {
+		if other == nil || other.IsMarkedForRemoval() || other.Base == nil {
+			continue
+		}
+		if other.ID == challenger.ID {
+			continue
+		}
+
+		otherX := float64(other.Base.Position.X)
+		otherY := float64(other.Base.Position.Y)
+		if math.Abs(otherY-challengerY) > axisTolerance {
+			continue
+		}
+
+		if otherX < challengerX {
+			dist := challengerX - otherX
+			if dist < leftDist {
+				leftDist = dist
+				leftNeighborID = other.ID
+				hasLeftNeighbor = true
+			}
+			continue
+		}
+
+		if otherX > challengerX {
+			dist := otherX - challengerX
+			if dist < rightDist {
+				rightDist = dist
+				rightNeighborID = other.ID
+				hasRightNeighbor = true
+			}
+		}
+	}
+
+	if dx < 0 {
+		return hasLeftNeighbor && leftNeighborID == target.ID
+	}
+	return hasRightNeighbor && rightNeighborID == target.ID
 }
 
 func hasPendingX1ForPlayerUnsafe(playerID game.ID) bool {
@@ -1738,6 +1793,11 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 	if targetPlayer.WasBaseDamagedWithin(x1TargetUnderAttackWindow) {
 		sendX1ChallengeResult(targetPlayer, x1ResultUnderAttack, challenger)
 		sendX1ChallengeResult(challenger, x1ResultUnderAttack, targetPlayer)
+		return
+	}
+	if !isLeftOrRightNeighbor(challenger, targetPlayer) {
+		sendX1ChallengeResult(targetPlayer, x1ResultInvalidSide, challenger)
+		sendX1ChallengeResult(challenger, x1ResultInvalidSide, targetPlayer)
 		return
 	}
 

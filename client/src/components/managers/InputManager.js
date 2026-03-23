@@ -72,6 +72,7 @@ export default class InputManager {
             const keySelectCommander = bindKey("selectCommander", "c");
             const keySelectAll = bindKey("selectAllUnits", "e");
             const keyToggleMap = bindKey("toggleMap", "m");
+            const keyReturnToBase = bindKey("returnToBase", "r");
             const keyToggleGroupTroops = bindKey("toggleGroupTroops", "z");
             const keyToggleHudMiniMap = bindKey("toggleHudMiniMap", "");
             const keyToggleHudChat = bindKey("toggleHudChat", "");
@@ -114,10 +115,6 @@ export default class InputManager {
                 && !isFormFocused
                 && ui?.triggerBaseLayoutHotkeyLoad?.(key)
             );
-            if (consumedByBaseLayoutHotkey) {
-                event.preventDefault();
-                return;
-            }
             const consumedByGlobalUpgradeHotkey = Boolean(
                 !event.repeat
                 && !this.core.uiManager?.isChatInputFocused
@@ -125,10 +122,8 @@ export default class InputManager {
                 && !isFormFocused
                 && ui?.triggerGlobalUpgradeHotkey?.(key)
             );
-            if (consumedByGlobalUpgradeHotkey) {
-                event.preventDefault();
-                return;
-            }
+            let handledAnyAction = consumedByBaseLayoutHotkey || consumedByGlobalUpgradeHotkey;
+            const canUseGameplayHotkeys = !this.core.uiManager.isChatInputFocused && !gameplayInputBlocked;
 
             const isDeleteSellHotkey = (
                 key === "delete"
@@ -162,12 +157,15 @@ export default class InputManager {
                         event.preventDefault();
                         return;
                     }
+                }
+            }
+            if (keyReturnToBase && key === keyReturnToBase) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
                     if (this.core.gameManager.player) {
                         const playerPosition = this.core.gameManager.player.position;
                         this.core.camera.setPosition(playerPosition);
                         this.core.buildingManager.updateBuildingPosition();
-                        event.preventDefault();
-                        return;
+                        handledAnyAction = true;
                     }
                 }
             }
@@ -180,180 +178,157 @@ export default class InputManager {
                     event.preventDefault();
                 }
                 // Toggle actions should only fire once per key press.
-                if (event.repeat) {
-                    return;
-                }
-                // Toggle map overview (zoomed out) for better visualization
-                if (typeof this.core.toggleMapView === "function") {
-                    this.core.toggleMapView();
-                } else {
-                    this.core.miniMap.toggleFullScreen();
+                if (!event.repeat) {
+                    // Toggle map overview (zoomed out) for better visualization
+                    if (typeof this.core.toggleMapView === "function") {
+                        this.core.toggleMapView();
+                    } else {
+                        this.core.miniMap.toggleFullScreen();
+                    }
+                    handledAnyAction = true;
                 }
             }
             if (key === "g") {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
-                    return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectAllUnits();
+                    handledAnyAction = true;
                 }
-                this.core.unitManager.selectAllUnits();
-                event.preventDefault();
-                return;
             }
             if (key === keyToggleGroupTroops) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
-                    return;
+                if (canUseGameplayHotkeys) {
+                    this.core.uiManager?.DOM?.game?.unitControls?.groupUnitsButton?.click?.();
+                    handledAnyAction = true;
                 }
-                this.core.uiManager?.DOM?.game?.unitControls?.groupUnitsButton?.click?.();
-                event.preventDefault();
-                return;
             }
             if (keyToggleHudMiniMap && key === keyToggleHudMiniMap) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) return;
-                if (!event.repeat) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
                     const visible = this.core.uiManager?.toggleHudMiniMapVisibility?.();
                     this.core.uiManager?.notifySystemInfo?.(visible ? "Minimap shown." : "Minimap hidden.");
+                    handledAnyAction = true;
                 }
-                event.preventDefault();
-                return;
             }
             if (keyToggleHudChat && key === keyToggleHudChat) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) return;
-                if (!event.repeat) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
                     const collapsed = this.core.uiManager?.toggleHudPanelCollapsed?.("chat");
                     this.core.uiManager?.notifySystemInfo?.(collapsed ? "Chat minimized." : "Chat expanded.");
+                    handledAnyAction = true;
                 }
-                event.preventDefault();
-                return;
             }
             if (keyToggleHudLeaderboard && key === keyToggleHudLeaderboard) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) return;
-                if (!event.repeat) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
                     const collapsed = this.core.uiManager?.toggleHudPanelCollapsed?.("leaderboard");
                     this.core.uiManager?.notifySystemInfo?.(collapsed ? "Rank minimized." : "Rank expanded.");
+                    handledAnyAction = true;
                 }
-                event.preventDefault();
-                return;
             }
             if (keyToggleHudToolbar && key === keyToggleHudToolbar) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) return;
-                if (!event.repeat) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
                     const visible = this.core.uiManager?.toggleHudPanelVisibility?.("toolbar");
                     this.core.uiManager?.notifySystemInfo?.(visible ? "Toolbar shown." : "Toolbar hidden.");
+                    handledAnyAction = true;
                 }
-                event.preventDefault();
-                return;
             }
             if (keyToggleHudGroupTroopsPanel && key === keyToggleHudGroupTroopsPanel) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) return;
-                if (!event.repeat) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
                     const visible = this.core.uiManager?.toggleHudPanelVisibility?.("groupTroops");
                     this.core.uiManager?.notifySystemInfo?.(visible ? "Group Troops shown." : "Group Troops hidden.");
+                    handledAnyAction = true;
                 }
-                event.preventDefault();
-                return;
             }
             if (key === keySelectArmy) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
-                    return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectArmyCombatUnits();
+                    handledAnyAction = true;
                 }
-                this.core.unitManager.selectArmyCombatUnits();
-                event.preventDefault();
-                return;
             }
             if (key === keySelectSoldiersOnly) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectOnlySoldiers();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectOnlySoldiers();
+                    handledAnyAction = true;
+                }
             }
             if (key === keySelectTanksOnly) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectOnlyTanks();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectOnlyTanks();
+                    handledAnyAction = true;
+                }
             }
             if (key === keySelectSiegeOnly) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectOnlySiege();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectOnlySiege();
+                    handledAnyAction = true;
+                }
             }
             if (key === keySelectAll) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
-                    return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectAllUnits();
+                    handledAnyAction = true;
                 }
-                this.core.unitManager.selectAllUnits();
-                event.preventDefault();
-                return;
             }
             if (key === keySelectCommander) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) {
-                    return;
+                if (canUseGameplayHotkeys && !event.repeat) {
+                    this.core.unitManager.selectCommanderOrBuy();
+                    handledAnyAction = true;
                 }
-                if (event.repeat) return;
-                this.core.unitManager.selectCommanderOrBuy();
-                event.preventDefault();
-                return;
             }
             if (keySelectCommanderSoldiers && key === keySelectCommanderSoldiers) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectCommanderAndSoldiers();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectCommanderAndSoldiers();
+                    handledAnyAction = true;
+                }
             }
             if (keySelectCommanderTanks && key === keySelectCommanderTanks) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectCommanderAndTanks();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectCommanderAndTanks();
+                    handledAnyAction = true;
+                }
             }
             if (keySelectCommanderSiege && key === keySelectCommanderSiege) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectCommanderAndSiege();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectCommanderAndSiege();
+                    handledAnyAction = true;
+                }
             }
             if (keySelectCommanderSoldiersTanks && key === keySelectCommanderSoldiersTanks) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectCommanderAndSoldiersTanks();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectCommanderAndSoldiersTanks();
+                    handledAnyAction = true;
+                }
             }
             if (keySelectCommanderSoldiersSiege && key === keySelectCommanderSoldiersSiege) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectCommanderAndSoldiersSiege();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectCommanderAndSoldiersSiege();
+                    handledAnyAction = true;
+                }
             }
             if (keySelectCommanderTanksSiege && key === keySelectCommanderTanksSiege) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectCommanderAndTanksSiege();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectCommanderAndTanksSiege();
+                    handledAnyAction = true;
+                }
             }
             if (keySelectCommanderArmy && key === keySelectCommanderArmy) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked) return;
-                this.core.unitManager.selectCommanderAndArmy();
-                event.preventDefault();
-                return;
+                if (canUseGameplayHotkeys) {
+                    this.core.unitManager.selectCommanderAndArmy();
+                    handledAnyAction = true;
+                }
             }
             if (key === keyUpgradeDestroyAll) {
-                if (this.core.uiManager.isChatInputFocused || gameplayInputBlocked || isFormFocused) {
-                    return;
-                }
-                if (!event.repeat) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
                     this.core.buildingManager?.sellAllOwnedBuildingsAcrossBase?.({
                         triggerLabel: "Sell All"
                     });
+                    handledAnyAction = true;
                 }
-                event.preventDefault();
-                return;
             }
             if (!isFormFocused && !gameplayInputBlocked && upgradePanelOpenBeforeAction && this.handleUpgradeKeyPress(key)) {
-                event.preventDefault();
-                return;
+                handledAnyAction = true;
             }
             if (this.core.buildingManager?.handleDefenseHotkeyDown) {
                 this.core.buildingManager.handleDefenseHotkeyDown(key);
+            }
+            if (handledAnyAction) {
+                event.preventDefault();
             }
         });
 

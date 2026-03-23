@@ -1392,6 +1392,7 @@ export default class NetworkManager {
             // Set as client player if matched
             if (clientPlayer && clientPlayer.id === id) {
                 this.core.gameManager.setClientPlayer(newPlayer);
+                this.core.toolbar.changeColor(newPlayer.color);
             }
 
             // Add buildings and units to the player
@@ -1480,16 +1481,11 @@ export default class NetworkManager {
             : selectedSkin;
         console.log('Creating player with skin:', resolvedSkin);
         
-        const accentFromSkin = localStorage.getItem("toolbarAccentColor");
-        const toolbarColor = (typeof accentFromSkin === "string" && /^#[0-9a-fA-F]{6}$/.test(accentFromSkin))
-            ? accentFromSkin
-            : color;
         // Use server skin when present; local selection is fallback only for the local player.
-        const player = new Player(playerID, name, toolbarColor, resolvedSkin, position);
+        const player = new Player(playerID, name, color, resolvedSkin, position);
         player.hasSpawnProtection = true;
         this.core.gameManager.setClientPlayer(player);
-        player.color = toolbarColor;
-        this.core.toolbar.changeColor(toolbarColor);
+        this.core.toolbar.changeColor(player.color);
         this.core.leaderboard.clear();
         this.core.camera.enableControls(true);
         this.core.camera.setPosition(position);
@@ -2781,7 +2777,7 @@ export default class NetworkManager {
                 this.core.uiManager.addChatMessage("System", `X1 challenge with ${opponent} was declined.`, "#ff7b7b");
                 break;
             case 3:
-                this.core.uiManager.addChatMessage("System", "X1 challenge only works for players on your left or right.", "#ffcc66");
+                this.core.uiManager.addChatMessage("System", "X1 works only with your immediate left/right neighbor.", "#ffcc66");
                 break;
             case 4:
                 this.core.uiManager.addChatMessage("System", "This player is unavailable for X1 right now.", "#ffcc66");

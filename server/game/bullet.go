@@ -359,7 +359,7 @@ var unitBulletStats = map[UnitType]map[UnitVariant]BulletStats{
 		COMMANDER: {
 			BASIC_UNIT: {
 				Health:           Health{Current: 30, Max: 30},
-				Speed:            450,
+				Speed:            500,
 				Size:             12,
 				Polygon:          unitBulletPolygon,
 				DamageMultiplier: 1.0,
@@ -465,14 +465,14 @@ var unitBulletSpawningConfig = map[UnitType]map[UnitVariant]BulletSpawning{
 			Range:     400,
 		},
 	},
-	COMMANDER: {
-		BASIC_UNIT: BulletSpawning{
-			Shooter:   nil,
-			Frequency: SpawnFrequency{Current: 0, Original: 500},
-			Range:     220,
+		COMMANDER: {
+			BASIC_UNIT: BulletSpawning{
+				Shooter:   nil,
+				Frequency: SpawnFrequency{Current: 0, Original: 1000},
+				Range:     220,
+			},
 		},
-	},
-}
+	}
 
 func GetBulletStats(entityType interface{}, variant interface{}) (BulletStats, bool) {
 	switch t := entityType.(type) {

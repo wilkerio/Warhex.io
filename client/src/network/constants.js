@@ -806,7 +806,7 @@ export const UnitBulletDetails = {
         BASIC: {
             variant: UnitVariantTypes.COMMANDER.BASIC,
             type: BulletTypes.BASIC,
-            speed: 450,
+            speed: 500,
             size: 12,
             range: 160
         },
@@ -816,7 +816,7 @@ export const UnitBulletDetails = {
         BASIC: {
             variant: UnitVariantTypes.TRI_COMMANDER.BASIC,
             type: BulletTypes.BASIC,
-            speed: 450,
+            speed: 500,
             size: 12,
             range: 160
         },

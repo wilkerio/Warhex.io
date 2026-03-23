@@ -1529,6 +1529,55 @@ img {
   box-shadow: 0 0 0 2px rgba(72, 176, 255, 0.2);
 }
 
+.hud-unit-shape-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hud-unit-shape-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #d7ebff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hud-unit-shape-controls select {
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid rgba(138, 204, 255, 0.36);
+  background: rgba(10, 18, 42, 0.88);
+  color: #ebf6ff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 10px;
+  outline: none;
+}
+
+.hud-unit-shape-controls select:focus {
+  border-color: rgba(120, 220, 255, 0.95);
+  box-shadow: 0 0 0 2px rgba(72, 176, 255, 0.2);
+}
+
+.hud-open-model-btn {
+  min-height: 32px;
+  align-self: end;
+  border-radius: 9px;
+  border: 1px solid rgba(140, 210, 255, 0.24);
+  background: linear-gradient(150deg, rgba(78, 132, 224, 0.24), rgba(66, 122, 205, 0.16));
+  color: #e8f5ff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 10px;
+}
+
+.hud-open-model-btn:hover {
+  background: linear-gradient(150deg, rgba(98, 154, 245, 0.3), rgba(74, 131, 218, 0.2));
+  border-color: rgba(140, 210, 255, 0.5);
+}
+
 @media (max-width: 920px) {
   #game-settings .settings {
     top: 72px;
@@ -1542,6 +1591,10 @@ img {
   }
 
   .hud-camera-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .hud-unit-shape-controls {
     grid-template-columns: 1fr;
   }
 

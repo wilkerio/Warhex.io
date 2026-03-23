@@ -426,6 +426,7 @@ export default class UIManager {
                 selectCommander: "c",
                 selectAllUnits: "e",
                 toggleMap: "m",
+                returnToBase: "r",
                 toggleGroupTroops: "z",
                 toggleHudMiniMap: "",
                 toggleHudChat: "",
@@ -554,8 +555,17 @@ export default class UIManager {
         this.hudSyncTimeout = setTimeout(() => this.saveHudConfigRemote(), 500);
     }
 
+    isAccountHudSyncReady () {
+        const networkManager = this.core?.networkManager;
+        const loggedIn = Boolean(networkManager?.loggedIn);
+        const userId = String(networkManager?.userId || "").trim();
+        const looksLikeAuthUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId);
+        return loggedIn && looksLikeAuthUuid;
+    }
+
     async loadHudConfigFromAccount () {
         try {
+            if (!this.isAccountHudSyncReady()) return;
             const userId = this.core?.networkManager?.userId;
             if (!userId) return;
             const result = await fetchUserHudSettings(userId);
@@ -573,6 +583,7 @@ export default class UIManager {
 
     async saveHudConfigRemote () {
         try {
+            if (!this.isAccountHudSyncReady()) return;
             const userId = this.core?.networkManager?.userId;
             if (!userId) return;
             await upsertUserHudSettings(userId, this.hudConfig);
@@ -831,20 +842,15 @@ export default class UIManager {
             excludeScope: "upgrade-item",
             excludeId: id
         });
-        if (conflict) {
-            if (options?.warnOnConflict !== false) {
-                this.showKeyConflictNotice(normalized, conflict);
-            }
-            this.refreshCustomizationSettingsUI();
-            this.refreshKeybindEditorUI();
-            return { ok: false, conflict };
+        if (conflict && options?.warnOnConflict !== false) {
+            this.showKeyConflictNotice(normalized, conflict, { assigned: true });
         }
 
         this.hudConfig.upgradeHotkeys[id] = normalized;
         this.scheduleHudConfigSync();
         this.refreshCustomizationSettingsUI();
         this.refreshKeybindEditorUI();
-        return { ok: true };
+        return { ok: true, conflict: conflict || null };
     }
 
     getUpgradeHotkeyIdForItem (buildingType, upgradeInfo, options = {}) {
@@ -1099,6 +1105,7 @@ export default class UIManager {
             { key: "selectCommanderTanksSiege", label: "Commander + Tanks + Siege", group: this.t("key.group.selection") },
             { key: "selectCommanderArmy", label: "Commander + Army", group: this.t("key.group.selection") },
             { key: "toggleMap", label: this.t("key.action.toggleMap"), group: this.t("key.group.hud") },
+            { key: "returnToBase", label: this.t("key.action.returnToBase"), group: this.t("key.group.hud") },
             { key: "toggleGroupTroops", label: this.t("key.action.toggleGroupTroops"), group: this.t("key.group.hud") },
             { key: "toggleHudMiniMap", label: "Toggle Minimap", group: this.t("key.group.hud") },
             { key: "toggleHudChat", label: "Minimize Chat", group: this.t("key.group.hud") },
@@ -1170,20 +1177,15 @@ export default class UIManager {
             excludeScope: "hud",
             excludeId: actionKey
         }) || this.findHudKeybindConflict(actionKey, normalized);
-        if (conflict) {
-            if (warnOnConflict) {
-                this.showKeyConflictNotice(normalized, conflict);
-            }
-            this.refreshCustomizationSettingsUI();
-            this.refreshKeybindEditorUI();
-            return { ok: false, conflict };
+        if (conflict && warnOnConflict) {
+            this.showKeyConflictNotice(normalized, conflict, { assigned: true });
         }
 
         this.hudConfig.keybinds[actionKey] = normalized;
         this.scheduleHudConfigSync();
         this.refreshCustomizationSettingsUI();
         this.refreshKeybindEditorUI();
-        return { ok: true };
+        return { ok: true, conflict: conflict || null };
     }
 
     getUnitStyleOption (key, fallback) {
@@ -1681,6 +1683,27 @@ export default class UIManager {
                 <label>Camera Speed <input id="hud-camera-speed" type="number" min="0.5" max="20" step="0.1" value="3"></label>
                 <label>Camera Zoom <input id="hud-camera-zoom" type="number" min="0.05" max="8" step="0.05" value="1.5"></label>
             </div>
+            <div class="hud-unit-shape-controls">
+                <label>Soldier Shape
+                    <select id="hud-shape-soldier">
+                        <option value="triangle">Triangle</option>
+                        <option value="round">Round</option>
+                    </select>
+                </label>
+                <label>Tank Shape
+                    <select id="hud-shape-tank">
+                        <option value="triangle">Triangle</option>
+                        <option value="round">Round</option>
+                    </select>
+                </label>
+                <label>Siege Shape
+                    <select id="hud-shape-siege">
+                        <option value="triangle">Triangle</option>
+                        <option value="round">Round</option>
+                    </select>
+                </label>
+                <button type="button" id="hud-open-model-screen" class="hud-open-model-btn">Unit Models</button>
+            </div>
             <div class="hud-customization-shortcuts">
                 <span>Tip: Key changes are saved automatically while you edit in Keybind Manager.</span>
             </div>
@@ -1688,6 +1711,7 @@ export default class UIManager {
         settingsPanel.appendChild(wrap);
 
         const openKeyScreenBtn = wrap.querySelector("#hud-open-keybind-screen");
+        const openModelScreenBtn = wrap.querySelector("#hud-open-model-screen");
         const toggleBtn = wrap.querySelector("#hud-customize-toggle");
         const saveBtn = wrap.querySelector("#hud-customize-save");
         const resetBtn = wrap.querySelector("#hud-customize-reset");
@@ -1756,6 +1780,7 @@ export default class UIManager {
         };
 
         openKeyScreenBtn?.addEventListener("click", () => this.showKeybindEditor(true));
+        openModelScreenBtn?.addEventListener("click", () => this.showUnitStyleEditor(true));
         toggleBtn?.addEventListener("click", () => this.setHudCustomizeMode(!this.hudCustomizeMode));
         saveBtn?.addEventListener("click", () => {
             this.saveHudLayoutFromPanels({ onlyIfDirty: true });
@@ -7777,9 +7802,13 @@ export default class UIManager {
         return null;
     }
 
-    showKeyConflictNotice (keyValue, conflictEntry = null) {
+    showKeyConflictNotice (keyValue, conflictEntry = null, options = {}) {
         const keyLabel = this.formatKeybindLabel(keyValue || "");
         const targetLabel = String(conflictEntry?.label || "another action").trim();
+        if (options?.assigned) {
+            this.notifySystemWarning(`Key ${keyLabel} is already used by "${targetLabel}". Assigned anyway.`);
+            return;
+        }
         this.notifySystemWarning(`Key ${keyLabel} is already used by "${targetLabel}". Choose another key.`);
     }
 
@@ -8583,11 +8612,10 @@ export default class UIManager {
 
             const conflict = findLayoutHotkeyConflict(layout, source, normalizedHotkey);
             if (conflict) {
-                this.showKeyConflictNotice(normalizedHotkey, conflict);
-                return { ok: false, conflict: true };
+                this.showKeyConflictNotice(normalizedHotkey, conflict, { assigned: true });
             }
 
-            return { ok: setLayoutHotkey(layout, source, normalizedHotkey) };
+            return { ok: setLayoutHotkey(layout, source, normalizedHotkey), conflict: Boolean(conflict) };
         };
 
         const beginLayoutHotkeyCapture = (layout, source, keyBtn) => {
