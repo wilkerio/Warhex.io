@@ -5165,24 +5165,32 @@ body.menu-active #global-settings-button p.settings-text {
 }
 
 #rrn-logo-small {
-    position: fixed;
-    bottom: 180px;
-    left: 30px;
-    z-index: 8;
-    pointer-events: all;
+    position: fixed !important;
+    bottom: 180px !important;
+    left: 30px !important;
+    z-index: 11 !important;
+    pointer-events: all !important;
+    width: 90px !important;
+    height: 90px !important;
+    overflow: hidden !important;
 }
 
 #rrn-logo-small a {
-    display: block;
+    display: block !important;
     text-decoration: none;
+    width: 100% !important;
+    height: 100% !important;
 }
 
 #rrn-logo-small img {
-    max-width: 90px;
-    height: auto;
+    max-width: 90px !important;
+    width: 90px !important;
+    height: auto !important;
+    max-height: 90px !important;
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: filter 0.2s ease;
+    display: block !important;
 }
 
 #rrn-logo-small:hover img {
