@@ -5164,6 +5164,31 @@ body.menu-active #global-settings-button p.settings-text {
     border-radius: 12px;
 }
 
+#rrn-logo-small {
+    position: fixed;
+    bottom: 180px;
+    left: 30px;
+    z-index: 8;
+    pointer-events: all;
+}
+
+#rrn-logo-small a {
+    display: block;
+    text-decoration: none;
+}
+
+#rrn-logo-small img {
+    max-width: 90px;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: filter 0.2s ease;
+}
+
+#rrn-logo-small:hover img {
+    filter: brightness(1.08);
+}
+
 #shield {
     display: none !important;
 }
