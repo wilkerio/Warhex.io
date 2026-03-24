@@ -4504,10 +4504,13 @@ button:hover {
   #rrn-logo {
     bottom: 280px;
     left: 6px;
+    width: 88px;
+    height: 88px;
   }
 
   #rrn-logo img {
-    width: 110px;
+    max-width: 88px !important;
+    max-height: 88px !important;
   }
 
   #featured {
@@ -5182,8 +5185,12 @@ body.menu-active #global-settings-button p.settings-text {
     position: fixed;
     bottom: 200px;
     left: 30px;
+  width: 120px;
+  height: 120px;
     z-index: 10;
+  overflow: hidden;
     pointer-events: all;
+  line-height: 0;
     transition: transform 0.3s ease, filter 0.3s ease;
 }
 
@@ -5193,8 +5200,11 @@ body.menu-active #global-settings-button p.settings-text {
 }
 
 #rrn-logo img {
-    width: 150px;
-    height: auto;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 120px !important;
+  max-height: 120px !important;
+  object-fit: contain;
     border-radius: 12px;
     display: block;
     transition: filter 0.3s ease, transform 0.3s ease;
