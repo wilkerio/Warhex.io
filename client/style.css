@@ -4400,20 +4400,6 @@ button:hover {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
-#menu-banner-ad-wrap {
-  position: fixed;
-  left: 50%;
-  bottom: 56px;
-  transform: translateX(-50%);
-  width: min(90vw, 728px);
-  z-index: 9;
-  display: none;
-}
-
-#menu-banner-ad {
-  min-height: 90px;
-}
-
 #language-control {
   display: flex;
   align-items: center;
@@ -4494,23 +4480,6 @@ button:hover {
     flex: 1 1 30%;
     min-width: 0;
     font-size: 12px;
-  }
-
-  #menu-banner-ad-wrap {
-    bottom: 116px;
-    width: calc(100vw - 20px);
-  }
-
-  #rrn-logo {
-    bottom: 280px;
-    left: 6px;
-    width: 88px;
-    height: 88px;
-  }
-
-  #rrn-logo img {
-    max-width: 88px !important;
-    max-height: 88px !important;
   }
 
   #featured {
@@ -5179,40 +5148,6 @@ body.menu-active #global-settings-button .settings-icon {
 body.menu-active #global-settings-button p.settings-text {
     display: block; /* Show text for menu state */
     font-size: 1.2em; /* Larger text for menu state */
-}
-
-#rrn-logo {
-    position: fixed;
-    bottom: 200px;
-    left: 30px;
-  width: 120px;
-  height: 120px;
-    z-index: 10;
-  overflow: hidden;
-    pointer-events: all;
-  line-height: 0;
-    transition: transform 0.3s ease, filter 0.3s ease;
-}
-
-#rrn-logo a {
-    display: block;
-    text-decoration: none;
-}
-
-#rrn-logo img {
-  width: 100% !important;
-  height: 100% !important;
-  max-width: 120px !important;
-  max-height: 120px !important;
-  object-fit: contain;
-    border-radius: 12px;
-    display: block;
-    transition: filter 0.3s ease, transform 0.3s ease;
-}
-
-#rrn-logo:hover img {
-    filter: brightness(1.1);
-    transform: scale(1.05);
 }
 
 #featured {
