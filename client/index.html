@@ -448,6 +448,12 @@
             </div>
         </div>
 
+        <div id="rrn-logo">
+            <a href="https://www.realityradio.net/" target="_blank" title="Reality Radio Network">
+                <img src="/assets/RRN_logo.webp" alt="Reality Radio Network" />
+            </a>
+        </div>
+
         <div id="featured">
             <a href="https://oceanbound.io" target="_blank">
                 <img src="/assets/oceanbound.png" alt="oceanbound.io" />
@@ -534,6 +540,16 @@
             <button id="privacy-open-button" class="legal-link-button">Privacy Policy</button>
             <button id="terms-open-button" class="legal-link-button">Terms of Use</button>
             <button id="about-open-button" class="legal-link-button">About</button>
+        </div>
+
+        <div id="menu-banner-ad-wrap" aria-label="Advertisement">
+            <ins class="adsbygoogle"
+                id="menu-banner-ad"
+                style="display:block"
+                data-ad-client="ca-pub-6027531833118718"
+                data-ad-slot="6748037135"
+                data-ad-format="auto"
+                data-full-width-responsive="true"></ins>
         </div>
     </div>
 
@@ -680,6 +696,8 @@
         document.addEventListener("DOMContentLoaded", () => {
             const playButton = document.getElementById("play-button");
             const featured = document.getElementById("featured");
+            const bannerWrap = document.getElementById("menu-banner-ad-wrap");
+            const bannerAd = document.getElementById("menu-banner-ad");
 
             if (playButton && featured) {
                 playButton.addEventListener("click", () => {
@@ -689,6 +707,23 @@
                         featured.style.display = "none";
                     }, 500);
                 });
+            }
+
+            if (!bannerWrap || !bannerAd) return;
+
+            if (window.__WARHEX_DISABLE_EXTERNAL_ADS__) {
+                bannerWrap.style.display = "none";
+                return;
+            }
+
+            bannerWrap.style.display = "block";
+            if (!bannerAd.dataset.adsInitialized) {
+                try {
+                    (adsbygoogle = window.adsbygoogle || []).push({});
+                    bannerAd.dataset.adsInitialized = "true";
+                } catch (err) {
+                    console.warn("AdSense banner init failed:", err);
+                }
             }
         });
     </script>
