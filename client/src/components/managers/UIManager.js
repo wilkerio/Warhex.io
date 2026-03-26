@@ -83,6 +83,21 @@ export default class UIManager {
         this.screenNoticeHideTimeout = null;
         this._baseLayoutHotkeyLoadInFlight = false;
         this._cameraZoomInitialized = false;
+        this.tutorialPendingStart = false;
+        this.tutorialModeActive = false;
+        this.tutorialPollTimer = null;
+        this.tutorialStartedAt = 0;
+        this.tutorialInitialCameraState = null;
+        this.tutorialBaselineCounts = null;
+        this.tutorialOverlay = null;
+        this.tutorialSteps = [];
+        this.tutorialIndex = 0;
+        this.tutorialFocusRing = null;
+        this.tutorialStepPointer = null;
+        this.tutorialCurrentTarget = null;
+        this.tutorialLastStepKey = "";
+        this.tutorialStepCompletion = {};
+        this.tutorialActionMarks = {};
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -100,6 +115,7 @@ export default class UIManager {
         this.addPlayButtonListener();
         this.addContinueButtonListener();
         this.addMenuDialogButtonListener();
+        this.addTutorialButtonListener();
         this.addSkinNavigationListeners(); // New: skin navigation
         this.addSkinUseButtonListener(); // New: Use button
         this.addSkinCircleClickListener(); // New: click on circle to open library
@@ -136,6 +152,13 @@ export default class UIManager {
 
     t (key, vars = {}) {
         return this.languageManager.t(key, vars);
+    }
+
+    tutorialText (pt, en, es) {
+        const lang = this.languageManager?.getLanguage?.() || "en";
+        if (lang === "pt") return pt;
+        if (lang === "es") return es;
+        return en;
     }
 
     isLogoutLikeLabel (value = "") {
@@ -289,6 +312,9 @@ export default class UIManager {
         }
 
         setText("#play-button", "menu.play");
+        const tutorialLabel = this.languageManager.getLanguage() === "pt" ? "Tutorial" : (this.languageManager.getLanguage() === "es" ? "Tutorial" : "Tutorial");
+        const tutorialButton = document.getElementById("tutorial-button");
+        if (tutorialButton) tutorialButton.textContent = tutorialLabel;
         setPlaceholder("#player-name", "menu.playerName");
         setText("#account-button", this.core?.networkManager?.loggedIn ? "menu.logout" : "menu.login");
         setText("#signup-button", "menu.signUp");
@@ -2518,6 +2544,7 @@ export default class UIManager {
             menu: {
                 screen: "menu-container",
                 playButton: "play-button",
+                tutorialButton: "tutorial-button",
                 menuButton: "menu-button",
                 menuSettingsButton: "menu-settings-button",
                 playerNameInput: "player-name",
@@ -4908,6 +4935,10 @@ export default class UIManager {
             upgradeItem.appendChild(description);
 
             upgradeItem.addEventListener("click", () => {
+                this.tutorialActionMarks.coreUpgradeAt = Date.now();
+                if (String(upgradeInfo?.name || "").toLowerCase() === "commander") {
+                    this.tutorialActionMarks.commanderBuyAt = Date.now();
+                }
                 onUpgradeSelect(upgradeInfo);
             });
 
@@ -4962,7 +4993,10 @@ export default class UIManager {
 
         // Set up destroy button
         this.DOM.game.upgrades.destroyButton.removeEventListener("click", this.destroyClickHandler);
-        this.destroyClickHandler = () => onDestroyClicked?.();
+        this.destroyClickHandler = () => {
+            this.tutorialActionMarks.sellAt = Date.now();
+            onDestroyClicked?.();
+        };
         this.DOM.game.upgrades.destroyButton.addEventListener("click", this.destroyClickHandler);
 
         if (onUpgradeSelect === null) {
@@ -5152,6 +5186,7 @@ export default class UIManager {
                 attachNextEvolutionTooltip(upgradeItem, upgradeInfo);
 
                 const triggerUpgradeFromItem = () => {
+                    this.tutorialActionMarks.buildingUpgradeAt = Date.now();
                     const baseCost = Number.isFinite(Number(upgradeInfo.baseCost))
                         ? Number(upgradeInfo.baseCost)
                         : (Number(upgradeInfo.cost) / Math.max(1, Number(building.count) || 1));
@@ -5259,7 +5294,10 @@ export default class UIManager {
                         <p>Sell All</p>
                         <p class="refund-amount">+${refundAmountAll} Power</p>
                     `;
-                    destroyAllButton.addEventListener("click", () => onDestroyClicked?.({ applyAll: true }));
+                    destroyAllButton.addEventListener("click", () => {
+                        this.tutorialActionMarks.sellAt = Date.now();
+                        onDestroyClicked?.({ applyAll: true });
+                    });
                     this.DOM.game.upgrades.container.appendChild(destroyAllButton);
                 }
             }
@@ -5545,6 +5583,7 @@ export default class UIManager {
     }
 
     handleUsernameClick (player) {
+        this.tutorialActionMarks.leaderboardNickAt = Date.now();
         this.core.camera.setPosition(player.position, true);
     }
 
@@ -5654,6 +5693,7 @@ export default class UIManager {
         });
 
         const actionsPanel = document.createElement("div");
+        actionsPanel.id = "top-menu-actions-panel";
         actionsPanel.style.position = "absolute";
         actionsPanel.style.left = "50%";
         actionsPanel.style.transform = "translateX(-50%)";
@@ -5729,25 +5769,36 @@ export default class UIManager {
         };
 
         const autogensBtn = createActionButton("Autogens", () => {
+            this.tutorialActionMarks.autogensAt = Date.now();
             this.core.buildingManager.autoPlaceGenerators();
         });
+        autogensBtn.id = "top-autogens-btn";
         const externatkBtn = createActionButton("ExternaTK", () => {
+            this.tutorialActionMarks.externatkAt = Date.now();
             this.core.buildingManager.placeExternalAtkArmory();
         });
+        externatkBtn.id = "top-externatk-btn";
         const defendBtn = createActionButton("Defend", () => {
+            this.tutorialActionMarks.defendAt = Date.now();
             this.core.buildingManager.activateDefendMode();
         });
+        defendBtn.id = "top-defend-btn";
         const saveBaseBtn = createActionButton("Save Base", () => {
+            this.tutorialActionMarks.saveBaseAt = Date.now();
             this.showSaveBaseLayoutDialog();
         });
+        saveBaseBtn.id = "top-save-base-btn";
         const loadBaseBtn = createActionButton("Load Base", () => {
+            this.tutorialActionMarks.loadBaseAt = Date.now();
             this.showLoadBaseLayoutDialog();
         });
+        loadBaseBtn.id = "top-load-base-btn";
         const topDiscordBtn = createActionButton(this.t("menu.discord"), () => {
             window.open("https://discord.gg/YAEG9qJGMh", "_blank", "noopener,noreferrer");
         });
         topDiscordBtn.id = "top-discord-btn";
         const themeBtn = createActionButton(this.t("game.theme").replace(":", ""), () => {
+            this.tutorialActionMarks.themeAt = Date.now();
             this.positionSettingsPanelForTopMenu(themeBtn);
             this._pinAutoBuildMenuOpen = true;
             if (typeof this._autoBuildShowActions === "function") {
@@ -5765,6 +5816,7 @@ export default class UIManager {
         themeBtn.style.fontSize = "9px";
 
         const showActions = () => {
+            this.tutorialActionMarks.topMenuAt = Date.now();
             pullTab.style.display = "none";
             actionsPanel.style.display = "grid";
         };
@@ -6099,6 +6151,7 @@ export default class UIManager {
 
             this.DOM.chat.input.value = ""; // Clear input
             this.core.networkManager.sendChatMessage(message);
+            this.tutorialActionMarks.chatAt = now;
             this.lastSendMessage = normalized;
             this.lastSendMessageAt = now;
             this.chatSendHistory.push({ text: normalized, time: now });
@@ -6336,6 +6389,1091 @@ export default class UIManager {
             dialogButton.addEventListener("click", () => {
                 this.hideMenuDialog();
             });
+        }
+    }
+
+    addTutorialButtonListener () {
+        const tutorialButton = document.getElementById("tutorial-button");
+        if (!tutorialButton) return;
+
+        tutorialButton.addEventListener("click", async () => {
+            this.core?.musicManager?.handleUserGestureStart?.();
+            this.tutorialPendingStart = true;
+            this.notifySystemInfo(this.tutorialText(
+                "Iniciando tutorial. Aguarde a entrada na partida...",
+                "Starting tutorial. Waiting to enter the match...",
+                "Iniciando tutorial. Espera para entrar en la partida..."
+            ));
+            await this.startGameWithSelectedSkin();
+        });
+    }
+
+    openTutorial () {
+        if (this.tutorialModeActive && this.tutorialOverlay) {
+            this.tutorialOverlay.style.display = "flex";
+            this.showTutorialStep();
+            return;
+        }
+
+        const player = this.core?.gameManager?.player;
+        const camera = this.core?.camera;
+        if (!player || !camera) return;
+
+        const countByTypes = (types) => {
+            const list = Array.isArray(types) ? types : [types];
+            const wanted = new Set(list.map((type) => Number(type)));
+            return (player.buildings || []).reduce((count, building) => {
+                if (!building || building.removeFlag) return count;
+                return wanted.has(Number(building.type)) ? count + 1 : count;
+            }, 0);
+        };
+
+        this.tutorialModeActive = true;
+        this.tutorialStartedAt = Date.now();
+        this.tutorialInitialCameraState = {
+            x: Number(camera.targetPosition?.x) || Number(camera.x) || 0,
+            y: Number(camera.targetPosition?.y) || Number(camera.y) || 0,
+            zoom: Number(camera.targetZoom) || Number(camera.zoom) || 1
+        };
+        this.tutorialBaselineCounts = {
+            generator: countByTypes(BuildingTypes.GENERATOR),
+            wall: countByTypes(BuildingTypes.WALL),
+            turret: countByTypes([BuildingTypes.SIMPLE_TURRET, BuildingTypes.SNIPER_TURRET]),
+            barracks: countByTypes(BuildingTypes.BARRACKS),
+            house: countByTypes(BuildingTypes.HOUSE),
+            armory: countByTypes(BuildingTypes.ARMORY),
+            sniperTurret: countByTypes(BuildingTypes.SNIPER_TURRET)
+        };
+
+        const tt = (pt, en, es) => this.tutorialText(pt, en, es);
+        this.tutorialSteps = [
+            {
+                key: "intro",
+                title: tt("Bem-vindo ao Tutorial Completo", "Welcome to the Full Tutorial", "Bienvenido al Tutorial Completo"),
+                content: tt(
+                    "Voce vai aprender base, economia, defesa, tropas e comandos principais em uma partida real.",
+                    "You will learn base building, economy, defense, troops, and core commands in a real match.",
+                    "Vas a aprender base, economia, defensa, tropas y comandos clave en una partida real."
+                ),
+                action: tt("Objetivo: leia e clique em Proxima para iniciar.", "Goal: read and click Next to start.", "Objetivo: lee y haz clic en Siguiente para empezar."),
+                pointerText: tt("Tutorial passo a passo", "Step-by-step tutorial", "Tutorial paso a paso")
+            },
+            {
+                key: "enemy",
+                title: tt("Treino Contra Oponente", "Practice Against an Opponent", "Practica Contra un Oponente"),
+                content: tt(
+                    "O tutorial foi montado para praticar contra adversario ativo (normalmente bots no servidor).",
+                    "This tutorial is designed to practice against an active opponent (usually server bots).",
+                    "Este tutorial esta hecho para practicar contra un oponente activo (normalmente bots del servidor)."
+                ),
+                action: tt(
+                    "Objetivo: aguarde aparecer pelo menos 1 oponente no leaderboard.",
+                    "Goal: wait until at least 1 opponent appears on the leaderboard.",
+                    "Objetivo: espera hasta que aparezca al menos 1 oponente en el leaderboard."
+                ),
+                targetSelector: "#leaderboard-container",
+                pointerText: tt("Aqui aparecem os oponentes", "Opponents appear here", "Aqui aparecen los oponentes")
+            },
+            {
+                key: "nick_focus",
+                title: tt("Focar Base Pelo Nick", "Focus Base by Nickname", "Enfocar Base por Nick"),
+                content: tt(
+                    "Clique no nick de um jogador no leaderboard para centralizar camera na base dele.",
+                    "Click a player's nickname in the leaderboard to center the camera on their base.",
+                    "Haz clic en el nick de un jugador en el leaderboard para centrar la camara en su base."
+                ),
+                action: tt("Objetivo: clique em um nome no leaderboard.", "Goal: click a name in the leaderboard.", "Objetivo: haz clic en un nombre del leaderboard."),
+                targetSelector: "#leaderboard-container",
+                pointerText: tt("Clique no nick aqui", "Click a nickname here", "Haz clic en un nick aqui")
+            },
+            {
+                key: "camera",
+                title: tt("Movimento da Camera", "Camera Movement", "Movimiento de Camara"),
+                content: tt(
+                    "Use WASD ou setas para mover camera. Tambem pode arrastar com o mouse.",
+                    "Use WASD or arrow keys to move the camera. You can also drag with the mouse.",
+                    "Usa WASD o flechas para mover la camara. Tambien puedes arrastrar con el mouse."
+                ),
+                action: tt("Objetivo: mova a camera um pouco para continuar.", "Goal: move the camera a bit to continue.", "Objetivo: mueve un poco la camara para continuar."),
+                pointerText: tt("Mova com WASD", "Move with WASD", "Mueve con WASD")
+            },
+            {
+                key: "power_info",
+                title: tt("Power (Recurso Principal)", "Power (Main Resource)", "Power (Recurso Principal)"),
+                content: tt(
+                    "Tudo no jogo consome Power: construir, expandir e fortalecer a base.",
+                    "Everything in the game consumes Power: building, expanding, and strengthening your base.",
+                    "Todo en el juego consume Power: construir, expandir y fortalecer tu base."
+                ),
+                action: tt("Objetivo: observe seu Power e clique em Proxima.", "Goal: check your Power and click Next.", "Objetivo: mira tu Power y haz clic en Siguiente."),
+                targetSelector: "#power",
+                pointerText: tt("Seu Power fica aqui", "Your Power is here", "Tu Power esta aqui")
+            },
+            {
+                key: "select_generator",
+                title: tt("Selecionar Generator", "Select Generator", "Seleccionar Generator"),
+                content: tt(
+                    "Generator acelera sua economia para o mid/late game.",
+                    "Generator boosts your economy for mid/late game.",
+                    "Generator acelera tu economia para mid/late game."
+                ),
+                action: tt("Objetivo: clique no icone de Generator na barra inferior.", "Goal: click the Generator icon in the bottom bar.", "Objetivo: haz clic en el icono de Generator en la barra inferior."),
+                targetBuildingType: BuildingTypes.GENERATOR,
+                pointerText: tt("Clique no Generator", "Click Generator", "Haz clic en Generator")
+            },
+            {
+                key: "generator",
+                title: tt("Construir Generator", "Build Generator", "Construir Generator"),
+                content: tt(
+                    "Com o Generator selecionado, posicione no mapa para aumentar geracao de Power.",
+                    "With Generator selected, place it on the map to increase Power generation.",
+                    "Con Generator seleccionado, colocarlo en el mapa para aumentar la generacion de Power."
+                ),
+                action: tt("Objetivo: coloque 1 Generator.", "Goal: place 1 Generator.", "Objetivo: coloca 1 Generator."),
+                targetBuildingType: BuildingTypes.GENERATOR,
+                pointerText: tt("Posicione um Generator", "Place a Generator", "Coloca un Generator")
+            },
+            {
+                key: "select_house",
+                title: tt("Selecionar House", "Select House", "Seleccionar House"),
+                content: tt(
+                    "House aumenta populacao maxima para voce produzir mais unidades.",
+                    "House increases max population so you can produce more units.",
+                    "House aumenta la poblacion maxima para producir mas unidades."
+                ),
+                action: tt("Objetivo: clique no icone de House.", "Goal: click the House icon.", "Objetivo: haz clic en el icono de House."),
+                targetBuildingType: BuildingTypes.HOUSE,
+                pointerText: tt("Clique na House", "Click House", "Haz clic en House")
+            },
+            {
+                key: "house",
+                title: tt("Construir House", "Build House", "Construir House"),
+                content: tt(
+                    "Sem populacao livre suas barracks param de gerar tropas.",
+                    "Without free population, your barracks stop producing troops.",
+                    "Sin poblacion libre, tus barracks dejan de generar tropas."
+                ),
+                action: tt("Objetivo: coloque 1 House.", "Goal: place 1 House.", "Objetivo: coloca 1 House."),
+                targetBuildingType: BuildingTypes.HOUSE,
+                pointerText: tt("Posicione uma House", "Place a House", "Coloca una House")
+            },
+            {
+                key: "select_wall",
+                title: tt("Selecionar Wall", "Select Wall", "Seleccionar Wall"),
+                content: tt(
+                    "Wall segura investidas e da tempo para suas torres reagirem.",
+                    "Wall holds enemy pushes and buys time for your turrets to react.",
+                    "Wall frena ataques y da tiempo para que tus torres reaccionen."
+                ),
+                action: tt("Objetivo: clique no icone de Wall.", "Goal: click the Wall icon.", "Objetivo: haz clic en el icono de Wall."),
+                targetBuildingType: BuildingTypes.WALL,
+                pointerText: tt("Clique na Wall", "Click Wall", "Haz clic en Wall")
+            },
+            {
+                key: "wall",
+                title: tt("Construir Wall", "Build Wall", "Construir Wall"),
+                content: tt("Feche pontos de entrada proximos da sua base.", "Close entry points near your base.", "Cierra puntos de entrada cerca de tu base."),
+                action: tt("Objetivo: coloque 1 Wall.", "Goal: place 1 Wall.", "Objetivo: coloca 1 Wall."),
+                targetBuildingType: BuildingTypes.WALL,
+                pointerText: tt("Coloque uma Wall", "Place a Wall", "Coloca una Wall")
+            },
+            {
+                key: "select_turret",
+                title: tt("Selecionar Turret", "Select Turret", "Seleccionar Turret"),
+                content: tt(
+                    "Turret dispara automaticamente e ajuda no controle defensivo.",
+                    "Turret fires automatically and helps defensive control.",
+                    "Turret dispara automaticamente y ayuda en el control defensivo."
+                ),
+                action: tt(
+                    "Objetivo: clique no icone de Turret (Simple ou Sniper).",
+                    "Goal: click a Turret icon (Simple or Sniper).",
+                    "Objetivo: haz clic en un icono de Turret (Simple o Sniper)."
+                ),
+                targetBuildingType: BuildingTypes.SIMPLE_TURRET,
+                pointerText: tt("Selecione uma Turret", "Select a Turret", "Selecciona una Turret")
+            },
+            {
+                key: "turret",
+                title: tt("Construir Turret", "Build Turret", "Construir Turret"),
+                content: tt(
+                    "Posicione Turret para cobrir suas paredes e proteger area vulneravel.",
+                    "Place a Turret to cover your walls and protect weak areas.",
+                    "Coloca Turret para cubrir tus walls y proteger zonas vulnerables."
+                ),
+                action: tt("Objetivo: coloque 1 Turret.", "Goal: place 1 Turret.", "Objetivo: coloca 1 Turret."),
+                targetBuildingType: BuildingTypes.SIMPLE_TURRET,
+                pointerText: tt("Coloque uma Turret", "Place a Turret", "Coloca una Turret")
+            },
+            {
+                key: "select_sniper",
+                title: tt("Selecionar Sniper Turret", "Select Sniper Turret", "Seleccionar Sniper Turret"),
+                content: tt(
+                    "Sniper Turret tem alcance alto e ajuda a segurar pressao de longe.",
+                    "Sniper Turret has long range and helps hold pressure from far away.",
+                    "Sniper Turret tiene largo alcance y ayuda a aguantar presion desde lejos."
+                ),
+                action: tt("Objetivo: clique no icone de Sniper Turret.", "Goal: click the Sniper Turret icon.", "Objetivo: haz clic en el icono de Sniper Turret."),
+                targetBuildingType: BuildingTypes.SNIPER_TURRET,
+                pointerText: tt("Clique na Sniper", "Click Sniper Turret", "Haz clic en Sniper Turret")
+            },
+            {
+                key: "sniper",
+                title: tt("Construir Sniper Turret", "Build Sniper Turret", "Construir Sniper Turret"),
+                content: tt(
+                    "Use sniper para cobertura de longo alcance e controle de aproximacoes.",
+                    "Use sniper for long-range coverage and approach control.",
+                    "Usa sniper para cobertura de largo alcance y control de aproximaciones."
+                ),
+                action: tt("Objetivo: coloque 1 Sniper Turret.", "Goal: place 1 Sniper Turret.", "Objetivo: coloca 1 Sniper Turret."),
+                targetBuildingType: BuildingTypes.SNIPER_TURRET,
+                pointerText: tt("Posicione a Sniper", "Place Sniper Turret", "Coloca Sniper Turret")
+            },
+            {
+                key: "top_menu",
+                title: tt("Menu Superior", "Top Menu", "Menu Superior"),
+                content: tt(
+                    "No topo voce acessa atalhos rapidos de macro como Defend, Save/Load e mais.",
+                    "At the top you can access macro shortcuts like Defend, Save/Load and more.",
+                    "En la parte superior accedes a atajos macro como Defend, Save/Load y mas."
+                ),
+                action: tt("Objetivo: abra o menu superior clicando em MENU.", "Goal: open the top menu by clicking MENU.", "Objetivo: abre el menu superior haciendo clic en MENU."),
+                targetSelector: "#top-menu-pulltab",
+                pointerText: tt("Abra o menu aqui", "Open menu here", "Abre el menu aqui"),
+                closeTopMenu: true
+            },
+            {
+                key: "defend",
+                title: "Defend",
+                content: tt(
+                    "Defend salva seu layout e permite teclas de defesa/remount para reconstruir mais rapido.",
+                    "Defend saves your layout and enables defense/remount hotkeys for faster rebuilding.",
+                    "Defend guarda tu layout y habilita teclas de defensa/remount para reconstruir mas rapido."
+                ),
+                action: tt("Objetivo: clique em Defend e conclua o salvamento.", "Goal: click Defend and complete the save flow.", "Objetivo: haz clic en Defend y completa el guardado."),
+                targetSelector: "#top-defend-btn",
+                pointerText: tt("Clique em Defend", "Click Defend", "Haz clic en Defend"),
+                openTopMenu: true
+            },
+            {
+                key: "save_base",
+                title: "Save Base",
+                content: tt(
+                    "Save Base salva seu layout atual para carregar depois com um clique/atalho.",
+                    "Save Base stores your current layout so you can load it later with one click/hotkey.",
+                    "Save Base guarda tu layout actual para cargarlo despues con un clic/atajo."
+                ),
+                action: tt("Objetivo: clique em Save Base e abra a tela de salvar.", "Goal: click Save Base and open the save screen.", "Objetivo: haz clic en Save Base y abre la pantalla de guardado."),
+                targetSelector: "#top-save-base-btn",
+                pointerText: tt("Clique em Save Base", "Click Save Base", "Haz clic en Save Base"),
+                openTopMenu: true
+            },
+            {
+                key: "load_base",
+                title: "Load Base",
+                content: tt("Load Base permite carregar layouts salvos (locais/publicos).", "Load Base lets you load saved layouts (local/public).", "Load Base permite cargar layouts guardados (local/publico)."),
+                action: tt("Objetivo: clique em Load Base para abrir o menu.", "Goal: click Load Base to open the menu.", "Objetivo: haz clic en Load Base para abrir el menu."),
+                targetSelector: "#top-load-base-btn",
+                pointerText: tt("Clique em Load Base", "Click Load Base", "Haz clic en Load Base"),
+                openTopMenu: true
+            },
+            {
+                key: "theme_menu",
+                title: "Theme",
+                content: tt("No Theme voce ajusta aparencia e configuracoes visuais da partida.", "In Theme you adjust appearance and visual settings for the match.", "En Theme ajustas apariencia y configuraciones visuales de la partida."),
+                action: tt("Objetivo: clique em Theme para abrir configuracoes.", "Goal: click Theme to open settings.", "Objetivo: haz clic en Theme para abrir configuraciones."),
+                targetSelector: "#top-theme-btn",
+                pointerText: tt("Clique em Theme", "Click Theme", "Haz clic en Theme"),
+                openTopMenu: true
+            },
+            {
+                key: "autogens",
+                title: "Autogens",
+                content: tt("Autogens tenta colocar geradores automaticamente para acelerar economia.", "Autogens tries to place generators automatically to speed up your economy.", "Autogens intenta colocar generators automaticamente para acelerar la economia."),
+                action: tt("Objetivo: clique em Autogens.", "Goal: click Autogens.", "Objetivo: haz clic en Autogens."),
+                targetSelector: "#top-autogens-btn",
+                pointerText: tt("Clique em Autogens", "Click Autogens", "Haz clic en Autogens"),
+                openTopMenu: true
+            },
+            {
+                key: "externatk",
+                title: "ExternaTK",
+                content: tt("ExternaTK monta um padrao externo focado em pressao e controle de mapa.", "ExternaTK builds an outer pattern focused on pressure and map control.", "ExternaTK arma un patron externo enfocado en presion y control de mapa."),
+                action: tt("Objetivo: clique em ExternaTK.", "Goal: click ExternaTK.", "Objetivo: haz clic en ExternaTK."),
+                targetSelector: "#top-externatk-btn",
+                pointerText: tt("Clique em ExternaTK", "Click ExternaTK", "Haz clic en ExternaTK"),
+                openTopMenu: true
+            },
+            {
+                key: "select_barracks",
+                title: tt("Selecionar Barracks", "Select Barracks", "Seleccionar Barracks"),
+                content: tt(
+                    "Barracks produz tropas. Sem ela, voce nao consegue pressionar o inimigo.",
+                    "Barracks produces troops. Without it, you cannot pressure the enemy.",
+                    "Barracks produce tropas. Sin ella no puedes presionar al enemigo."
+                ),
+                action: tt("Objetivo: clique no icone de Barracks.", "Goal: click the Barracks icon.", "Objetivo: haz clic en el icono de Barracks."),
+                targetBuildingType: BuildingTypes.BARRACKS,
+                pointerText: tt("Clique na Barracks", "Click Barracks", "Haz clic en Barracks")
+            },
+            {
+                key: "barracks",
+                title: tt("Construir Barracks", "Build Barracks", "Construir Barracks"),
+                content: tt("Posicione a Barracks para iniciar producao de unidades.", "Place Barracks to start unit production.", "Coloca Barracks para iniciar la produccion de unidades."),
+                action: tt("Objetivo: coloque 1 Barracks.", "Goal: place 1 Barracks.", "Objetivo: coloca 1 Barracks."),
+                targetBuildingType: BuildingTypes.BARRACKS,
+                pointerText: tt("Coloque a Barracks", "Place Barracks", "Coloca Barracks")
+            },
+            {
+                key: "select_armory",
+                title: tt("Selecionar Armory", "Select Armory", "Seleccionar Armory"),
+                content: tt("Armory libera upgrades de unidades para melhorar seu exercito.", "Armory unlocks unit upgrades to improve your army.", "Armory desbloquea upgrades de unidades para mejorar tu ejercito."),
+                action: tt("Objetivo: clique no icone de Armory.", "Goal: click the Armory icon.", "Objetivo: haz clic en el icono de Armory."),
+                targetBuildingType: BuildingTypes.ARMORY,
+                pointerText: tt("Clique na Armory", "Click Armory", "Haz clic en Armory")
+            },
+            {
+                key: "armory",
+                title: tt("Construir Armory", "Build Armory", "Construir Armory"),
+                content: tt("Com Armory voce evolui tropas (dano, mobilidade, resistencia etc.).", "With Armory, you upgrade troops (damage, mobility, durability, etc.).", "Con Armory mejoras tropas (dano, movilidad, resistencia, etc.)."),
+                action: tt("Objetivo: coloque 1 Armory.", "Goal: place 1 Armory.", "Objetivo: coloca 1 Armory."),
+                targetBuildingType: BuildingTypes.ARMORY,
+                pointerText: tt("Posicione a Armory", "Place Armory", "Coloca Armory")
+            },
+            {
+                key: "open_core_upgrades",
+                title: tt("Painel do Core", "Core Panel", "Panel del Core"),
+                content: tt("Clique no nucleo da sua base para abrir upgrades globais.", "Click your base core to open global upgrades.", "Haz clic en el nucleo de tu base para abrir mejoras globales."),
+                action: tt("Objetivo: abra o painel do Core clicando no centro da sua base.", "Goal: open the Core panel by clicking your base center.", "Objetivo: abre el panel del Core haciendo clic en el centro de tu base."),
+                targetSelector: "#upgrade-container",
+                pointerText: tt("Abra upgrades do Core", "Open Core upgrades", "Abre mejoras del Core")
+            },
+            {
+                key: "commander_buy",
+                title: tt("Comprar Commander", "Buy Commander", "Comprar Commander"),
+                content: tt("Commander e unidade forte para liderar ataques e suporte de linha de frente.", "Commander is a strong unit for leading attacks and frontline support.", "Commander es una unidad fuerte para liderar ataques y soporte de primera linea."),
+                action: tt("Objetivo: compre Commander no painel do Core.", "Goal: buy Commander in the Core panel.", "Objetivo: compra Commander en el panel del Core."),
+                targetSelector: "#upgrade-container",
+                pointerText: tt("Compre o Commander", "Buy Commander", "Compra Commander")
+            },
+            {
+                key: "upgrade_any",
+                title: tt("Como Fazer Upgrade", "How to Upgrade", "Como Mejorar"),
+                content: tt("Selecione uma construcao e clique em um upgrade no painel lateral.", "Select a building and click an upgrade in the side panel.", "Selecciona una construccion y haz clic en una mejora del panel lateral."),
+                action: tt("Objetivo: aplique 1 upgrade em qualquer construcao.", "Goal: apply 1 upgrade to any building.", "Objetivo: aplica 1 mejora en cualquier construccion."),
+                targetSelector: "#upgrade-container",
+                pointerText: tt("Clique em um upgrade", "Click an upgrade", "Haz clic en una mejora")
+            },
+            {
+                key: "sell_any",
+                title: tt("Como Vender", "How to Sell", "Como Vender"),
+                content: tt("Selecione construcoes e use Destroy/Sell All para recuperar parte do Power.", "Select buildings and use Destroy/Sell All to recover part of your Power.", "Selecciona construcciones y usa Destroy/Sell All para recuperar parte del Power."),
+                action: tt("Objetivo: venda 1 construcao com Destroy ou Sell All.", "Goal: sell 1 building with Destroy or Sell All.", "Objetivo: vende 1 construccion con Destroy o Sell All."),
+                targetSelector: "#destroy-button",
+                pointerText: tt("Use Destroy/Sell All", "Use Destroy/Sell All", "Usa Destroy/Sell All")
+            },
+            {
+                key: "unit_select",
+                title: tt("Selecionar Tropas", "Select Troops", "Seleccionar Tropas"),
+                content: tt("Quando tropas nascerem, selecione com Q ou caixa de selecao com o mouse.", "When troops spawn, select them with Q or with mouse drag selection.", "Cuando aparezcan tropas, seleccionalas con Q o con caja de seleccion del mouse."),
+                action: tt("Objetivo: selecione pelo menos 1 unidade.", "Goal: select at least 1 unit.", "Objetivo: selecciona al menos 1 unidad."),
+                targetSelector: "#group-units-button",
+                pointerText: tt("Selecione suas tropas", "Select your troops", "Selecciona tus tropas")
+            },
+            {
+                key: "unit_move",
+                title: tt("Mover Tropas da Base", "Move Troops from Base", "Mover Tropas de la Base"),
+                content: tt("Com tropas selecionadas, use botao direito no mapa para enviar soldados.", "With troops selected, right-click the map to send soldiers.", "Con tropas seleccionadas, usa clic derecho en el mapa para enviar soldados."),
+                action: tt("Objetivo: envie suas tropas com clique direito.", "Goal: move your troops with right-click.", "Objetivo: mueve tus tropas con clic derecho."),
+                targetSelector: "#group-units-button",
+                pointerText: tt("Clique direito para mover", "Right-click to move", "Clic derecho para mover")
+            },
+            {
+                key: "group",
+                title: "Group Troops",
+                content: tt("Group Troops organiza melhor o movimento em bloco.", "Group Troops improves grouped movement control.", "Group Troops mejora el control de movimiento en bloque."),
+                action: tt("Objetivo: ative o botao Group Troops.", "Goal: enable the Group Troops button.", "Objetivo: activa el boton Group Troops."),
+                targetSelector: "#group-units-button",
+                pointerText: tt("Ative Group Troops", "Enable Group Troops", "Activa Group Troops")
+            },
+            {
+                key: "minimap_info",
+                title: tt("Leitura de Mapa", "Map Awareness", "Lectura del Mapa"),
+                content: tt("Use minimap, chat e leaderboard para tomar decisoes de defesa/ataque.", "Use minimap, chat and leaderboard for defense/attack decisions.", "Usa minimapa, chat y leaderboard para tomar decisiones de defensa/ataque."),
+                action: tt("Objetivo: observe os paineis e clique em Proxima.", "Goal: check the panels and click Next.", "Objetivo: observa los paneles y haz clic en Siguiente."),
+                targetSelector: "#minimap-container",
+                pointerText: tt("Minimap para visao geral", "Minimap for overview", "Minimapa para vision general")
+            },
+            {
+                key: "chat_send",
+                title: "Chat",
+                content: tt("Use chat para comunicar foco de ataque, defesa e pedidos de ajuda.", "Use chat to coordinate attack focus, defense and help requests.", "Usa el chat para coordinar foco de ataque, defensa y pedidos de ayuda."),
+                action: tt("Objetivo: envie 1 mensagem no chat (ex.: 'oi').", "Goal: send 1 chat message (e.g. 'hi').", "Objetivo: envia 1 mensaje en el chat (ej.: 'hola')."),
+                targetSelector: "#chat",
+                pointerText: tt("Envie uma mensagem", "Send a message", "Envia un mensaje")
+            },
+            {
+                key: "finish",
+                title: tt("Tutorial Concluido", "Tutorial Completed", "Tutorial Completado"),
+                content: tt("Boa. Voce concluiu os fundamentos: economia, defesa, menu, tropas e controle.", "Nice. You completed the fundamentals: economy, defense, menus, troops and control.", "Bien. Completaste los fundamentos: economia, defensa, menus, tropas y control."),
+                action: tt("Objetivo: clique em Encerrar para fechar o painel.", "Goal: click Close to close the panel.", "Objetivo: haz clic en Cerrar para cerrar el panel."),
+                pointerText: tt("Pronto para jogar", "Ready to play", "Listo para jugar")
+            }
+        ];
+        this.tutorialIndex = 0;
+        this.tutorialLastStepKey = "";
+        this.tutorialStepCompletion = {};
+        this.tutorialActionMarks = {};
+        this.syncGroupTroopsState(false, true);
+        this.createTutorialOverlay();
+        this.ensureTutorialGuideElements();
+        this.showTutorialStep();
+        if (this.tutorialPollTimer) clearInterval(this.tutorialPollTimer);
+        this.tutorialPollTimer = setInterval(() => this.showTutorialStep(), 250);
+        this.notifySystemInfo(this.tutorialText(
+            "Tutorial iniciado. Siga os objetivos no painel.",
+            "Tutorial started. Follow the objectives on the panel.",
+            "Tutorial iniciado. Sigue los objetivos del panel."
+        ));
+    }
+
+    createTutorialOverlay () {
+        if (this.tutorialOverlay && this.tutorialOverlay.isConnected) {
+            this.tutorialOverlay.style.display = "flex";
+            return;
+        }
+
+        const overlay = document.createElement("div");
+        overlay.id = "tutorial-overlay";
+        overlay.className = "tutorial-overlay";
+
+        const card = document.createElement("div");
+        card.className = "tutorial-card";
+
+        const title = document.createElement("h2");
+        title.id = "tutorial-title";
+
+        const progress = document.createElement("div");
+        progress.id = "tutorial-progress";
+
+        const content = document.createElement("p");
+        content.id = "tutorial-content";
+
+        const action = document.createElement("p");
+        action.id = "tutorial-action";
+
+        const status = document.createElement("p");
+        status.id = "tutorial-status";
+
+        const buttonsRow = document.createElement("div");
+        buttonsRow.className = "tutorial-buttons-row";
+
+        const skipBtn = document.createElement("button");
+        skipBtn.textContent = this.tutorialText("Pular", "Skip", "Saltar");
+        skipBtn.id = "tutorial-skip";
+        skipBtn.className = "tutorial-button secondary";
+
+        const nextBtn = document.createElement("button");
+        nextBtn.textContent = this.tutorialText("Proxima", "Next", "Siguiente");
+        nextBtn.id = "tutorial-next";
+        nextBtn.className = "tutorial-button primary";
+
+        const closeBtn = document.createElement("button");
+        closeBtn.textContent = this.tutorialText("Encerrar", "Close", "Cerrar");
+        closeBtn.id = "tutorial-close";
+        closeBtn.className = "tutorial-button ghost";
+
+        buttonsRow.appendChild(skipBtn);
+        buttonsRow.appendChild(nextBtn);
+        buttonsRow.appendChild(closeBtn);
+
+        card.appendChild(title);
+        card.appendChild(progress);
+        card.appendChild(content);
+        card.appendChild(action);
+        card.appendChild(status);
+        card.appendChild(buttonsRow);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+
+        this.tutorialOverlay = overlay;
+
+        skipBtn.addEventListener("click", () => {
+            if (!this.tutorialModeActive) return;
+            if (this.tutorialIndex < this.tutorialSteps.length - 1) {
+                this.tutorialIndex += 1;
+                this.showTutorialStep();
+            }
+        });
+
+        nextBtn.addEventListener("click", () => {
+            if (!this.tutorialModeActive) return;
+            const progressData = this.getTutorialStepProgress(this.tutorialSteps[this.tutorialIndex]);
+            if (!progressData.complete) return;
+            if (this.tutorialIndex < this.tutorialSteps.length - 1) {
+                this.tutorialIndex += 1;
+                this.showTutorialStep();
+            } else {
+                this.closeTutorial();
+            }
+        });
+
+        closeBtn.addEventListener("click", () => this.closeTutorial());
+    }
+
+    ensureTutorialGuideElements () {
+        if (!this.tutorialFocusRing || !this.tutorialFocusRing.isConnected) {
+            const focusRing = document.createElement("div");
+            focusRing.id = "tutorial-focus-ring";
+            focusRing.style.display = "none";
+            document.body.appendChild(focusRing);
+            this.tutorialFocusRing = focusRing;
+        }
+
+        if (!this.tutorialStepPointer || !this.tutorialStepPointer.isConnected) {
+            const pointer = document.createElement("div");
+            pointer.id = "tutorial-step-pointer";
+            pointer.style.display = "none";
+
+            const label = document.createElement("span");
+            label.className = "tutorial-step-pointer-label";
+            pointer.appendChild(label);
+
+            document.body.appendChild(pointer);
+            this.tutorialStepPointer = pointer;
+        }
+    }
+
+    resolveTutorialStepTarget (step) {
+        if (!step) return null;
+
+        const candidates = [];
+        if (Number.isFinite(Number(step.targetBuildingType))) {
+            candidates.push(`#toolbar-container [data-building-type="${Number(step.targetBuildingType)}"]`);
+        }
+        if (typeof step.targetSelector === "string" && step.targetSelector.trim()) {
+            candidates.push(step.targetSelector.trim());
+        }
+
+        for (const selector of candidates) {
+            try {
+                const found = document.querySelector(selector);
+                if (found) return found;
+            } catch (error) {}
+        }
+
+        return null;
+    }
+
+    clearTutorialGuides () {
+        if (this.tutorialCurrentTarget?.classList) {
+            this.tutorialCurrentTarget.classList.remove("tutorial-target-highlight");
+        }
+        this.tutorialCurrentTarget = null;
+
+        if (this.tutorialFocusRing) {
+            this.tutorialFocusRing.style.display = "none";
+        }
+        if (this.tutorialStepPointer) {
+            this.tutorialStepPointer.style.display = "none";
+        }
+    }
+
+    positionTutorialGuides (step, target) {
+        this.ensureTutorialGuideElements();
+        if (!this.tutorialFocusRing || !this.tutorialStepPointer || !target) {
+            this.clearTutorialGuides();
+            return;
+        }
+
+        if (this.tutorialCurrentTarget && this.tutorialCurrentTarget !== target) {
+            this.tutorialCurrentTarget.classList.remove("tutorial-target-highlight");
+        }
+
+        this.tutorialCurrentTarget = target;
+        target.classList.add("tutorial-target-highlight");
+
+        const rect = target.getBoundingClientRect();
+        if (!rect || rect.width < 2 || rect.height < 2) {
+            this.clearTutorialGuides();
+            return;
+        }
+
+        const padding = 8;
+        const ringLeft = Math.max(4, rect.left - padding);
+        const ringTop = Math.max(4, rect.top - padding);
+        const ringWidth = Math.min(window.innerWidth - ringLeft - 4, rect.width + padding * 2);
+        const ringHeight = Math.min(window.innerHeight - ringTop - 4, rect.height + padding * 2);
+
+        this.tutorialFocusRing.style.display = "block";
+        this.tutorialFocusRing.style.left = `${ringLeft}px`;
+        this.tutorialFocusRing.style.top = `${ringTop}px`;
+        this.tutorialFocusRing.style.width = `${Math.max(12, ringWidth)}px`;
+        this.tutorialFocusRing.style.height = `${Math.max(12, ringHeight)}px`;
+
+        const pointerLabel = this.tutorialStepPointer.querySelector(".tutorial-step-pointer-label");
+        if (pointerLabel) {
+            pointerLabel.textContent = step?.pointerText || step?.action || "Siga esta etapa";
+        }
+
+        this.tutorialStepPointer.style.display = "flex";
+        this.tutorialStepPointer.style.left = "-9999px";
+        this.tutorialStepPointer.style.top = "-9999px";
+        this.tutorialStepPointer.style.maxWidth = `${Math.max(170, Math.min(300, window.innerWidth - 20))}px`;
+        this.tutorialStepPointer.dataset.placement = "top";
+
+        const pointerRect = this.tutorialStepPointer.getBoundingClientRect();
+        const pointerWidth = Math.max(170, pointerRect.width);
+        const pointerHeight = Math.max(36, pointerRect.height);
+
+        let placement = String(step?.pointerPlacement || "top").toLowerCase();
+        if (!["top", "bottom"].includes(placement)) placement = "top";
+
+        let pointerLeft = rect.left + (rect.width / 2) - (pointerWidth / 2);
+        pointerLeft = Math.min(
+            Math.max(8, pointerLeft),
+            Math.max(8, window.innerWidth - pointerWidth - 8)
+        );
+
+        let pointerTop = placement === "bottom"
+            ? rect.bottom + 14
+            : rect.top - pointerHeight - 14;
+
+        if (placement === "top" && pointerTop < 8) {
+            placement = "bottom";
+            pointerTop = rect.bottom + 14;
+        } else if (placement === "bottom" && (pointerTop + pointerHeight) > (window.innerHeight - 8)) {
+            placement = "top";
+            pointerTop = rect.top - pointerHeight - 14;
+        }
+
+        pointerTop = Math.min(
+            Math.max(8, pointerTop),
+            Math.max(8, window.innerHeight - pointerHeight - 8)
+        );
+
+        this.tutorialStepPointer.dataset.placement = placement;
+        this.tutorialStepPointer.style.left = `${pointerLeft}px`;
+        this.tutorialStepPointer.style.top = `${pointerTop}px`;
+    }
+
+    showTutorialStep () {
+        if (!this.tutorialOverlay || !this.tutorialModeActive) return;
+
+        const step = this.tutorialSteps && this.tutorialSteps[this.tutorialIndex];
+        if (!step) return;
+
+        const title = document.getElementById("tutorial-title");
+        const progress = document.getElementById("tutorial-progress");
+        const content = document.getElementById("tutorial-content");
+        const action = document.getElementById("tutorial-action");
+        const status = document.getElementById("tutorial-status");
+        const skipBtn = document.getElementById("tutorial-skip");
+        const nextBtn = document.getElementById("tutorial-next");
+        const closeBtn = document.getElementById("tutorial-close");
+        let progressData = this.getTutorialStepProgress(step);
+        const stepChanged = this.tutorialLastStepKey !== step.key;
+
+        if (progressData.complete && step?.key && step.key !== "finish") {
+            this.tutorialStepCompletion[step.key] = true;
+        } else if (!progressData.complete && this.tutorialStepCompletion?.[step?.key]) {
+            progressData = {
+                complete: true,
+                status: this.tutorialText(
+                    "Concluido: etapa ja registrada.",
+                    "Completed: step already recorded.",
+                    "Completado: etapa ya registrada."
+                )
+            };
+        }
+
+        if (stepChanged) {
+            if (step.closeTopMenu && typeof this._autoBuildShowMenu === "function") {
+                this._autoBuildShowMenu();
+            }
+            if (step.openTopMenu && typeof this._autoBuildShowActions === "function") {
+                this._autoBuildShowActions();
+            }
+            this.tutorialLastStepKey = step.key || "";
+        }
+
+        if (title) title.textContent = `${this.tutorialText("Tutorial", "Tutorial", "Tutorial")}: ${step.title}`;
+        if (progress) {
+            progress.textContent = this.tutorialText(
+                `Etapa ${this.tutorialIndex + 1} de ${this.tutorialSteps.length}`,
+                `Step ${this.tutorialIndex + 1} of ${this.tutorialSteps.length}`,
+                `Paso ${this.tutorialIndex + 1} de ${this.tutorialSteps.length}`
+            );
+        }
+        if (content) content.textContent = step.content;
+        if (action) action.textContent = step.action;
+        if (status) status.textContent = progressData.status;
+
+        const target = this.resolveTutorialStepTarget(step);
+        if (target) {
+            this.positionTutorialGuides(step, target);
+        } else {
+            this.clearTutorialGuides();
+        }
+
+        if (skipBtn) {
+            skipBtn.textContent = this.tutorialText("Pular", "Skip", "Saltar");
+            skipBtn.style.display = this.tutorialIndex < this.tutorialSteps.length - 1 ? "inline-flex" : "none";
+        }
+        if (nextBtn) {
+            if (this.tutorialIndex < this.tutorialSteps.length - 1) {
+                nextBtn.textContent = this.tutorialText("Proxima", "Next", "Siguiente");
+                nextBtn.disabled = !progressData.complete;
+                nextBtn.style.opacity = progressData.complete ? "1" : "0.6";
+            } else {
+                nextBtn.textContent = this.tutorialText("Concluido", "Completed", "Completado");
+                nextBtn.disabled = true;
+                nextBtn.style.opacity = "0.7";
+            }
+        }
+        if (closeBtn) {
+            closeBtn.textContent = this.tutorialText("Encerrar", "Close", "Cerrar");
+        }
+    }
+
+    getTutorialStepProgress (step) {
+        if (!step) {
+            return { complete: false, status: "" };
+        }
+
+        const player = this.core?.gameManager?.player;
+        const opponents = Array.isArray(this.core?.gameManager?.players)
+            ? this.core.gameManager.players.filter((enemy) => enemy && !enemy.removeFlag)
+            : [];
+        const camera = this.core?.camera;
+        const baseline = this.tutorialBaselineCounts || {
+            generator: 0,
+            wall: 0,
+            turret: 0,
+            barracks: 0,
+            house: 0,
+            armory: 0,
+            sniperTurret: 0
+        };
+        const selectedPlacementType = Number(this.core?.buildingManager?.selectedPlacementType);
+        const selectedUnits = this.core?.unitManager?.selectedUnits || [];
+        const totalUnits = Array.isArray(player?.units) ? player.units.length : 0;
+        const movedUnitsAfterTutorialStart = Number(this.core?.unitManager?.lastMoveCommandAt || 0) > this.tutorialStartedAt;
+        const actionsPanel = document.getElementById("top-menu-actions-panel");
+        const actionsDisplay = actionsPanel
+            ? (actionsPanel.style.display || window.getComputedStyle(actionsPanel).display)
+            : "none";
+        const settingsPanel = this.DOM?.settings?.panel;
+        const settingsDisplay = settingsPanel
+            ? (settingsPanel.style.display || window.getComputedStyle(settingsPanel).display)
+            : "none";
+        const actionMarks = this.tutorialActionMarks || {};
+
+        const countByTypes = (types) => {
+            if (!player) return 0;
+            const list = Array.isArray(types) ? types : [types];
+            const wanted = new Set(list.map((type) => Number(type)));
+            return (player.buildings || []).reduce((count, building) => {
+                if (!building || building.removeFlag) return count;
+                return wanted.has(Number(building.type)) ? count + 1 : count;
+            }, 0);
+        };
+
+        switch (step.key) {
+        case "intro":
+            return { complete: true, status: "Leia o resumo e avance quando quiser." };
+        case "enemy": {
+            const count = opponents.length;
+            const complete = count > 0;
+            const status = complete
+                ? `Concluido: ${count} oponente(s) detectado(s) na partida.`
+                : "Aguardando oponente aparecer (normalmente bot do servidor).";
+            return { complete, status };
+        }
+        case "nick_focus": {
+            const complete = Number(actionMarks.leaderboardNickAt || 0) > this.tutorialStartedAt;
+            const status = complete
+                ? "Concluido: camera focada pelo nick."
+                : "Clique no nick de algum jogador no leaderboard.";
+            return { complete, status };
+        }
+        case "camera": {
+            const start = this.tutorialInitialCameraState || { x: 0, y: 0, zoom: 1 };
+            const currentX = Number(camera?.targetPosition?.x) || Number(camera?.x) || 0;
+            const currentY = Number(camera?.targetPosition?.y) || Number(camera?.y) || 0;
+            const distance = Math.hypot(currentX - start.x, currentY - start.y);
+            const complete = distance >= 70;
+            const status = complete
+                ? "Concluido: camera movimentada."
+                : "Use WASD/setas ou arraste com mouse para mover camera.";
+            return { complete, status };
+        }
+        case "power_info":
+            return { complete: true, status: "Power observado. Avance para construir." };
+        case "select_generator": {
+            const complete = selectedPlacementType === Number(BuildingTypes.GENERATOR);
+            const status = complete
+                ? "Concluido: Generator selecionado."
+                : "Clique no icone de Generator no toolbar.";
+            return { complete, status };
+        }
+        case "generator": {
+            const current = countByTypes(BuildingTypes.GENERATOR);
+            const complete = current > baseline.generator;
+            const status = complete
+                ? "Concluido: Generator construido."
+                : `Faltando: construa 1 Generator (${Math.max(0, baseline.generator + 1 - current)} restante).`;
+            return { complete, status };
+        }
+        case "select_house": {
+            const complete = selectedPlacementType === Number(BuildingTypes.HOUSE);
+            const status = complete
+                ? "Concluido: House selecionada."
+                : "Clique no icone de House no toolbar.";
+            return { complete, status };
+        }
+        case "house": {
+            const current = countByTypes(BuildingTypes.HOUSE);
+            const complete = current > baseline.house;
+            const status = complete
+                ? "Concluido: House construida."
+                : `Faltando: construa 1 House (${Math.max(0, baseline.house + 1 - current)} restante).`;
+            return { complete, status };
+        }
+        case "select_wall": {
+            const complete = selectedPlacementType === Number(BuildingTypes.WALL);
+            const status = complete
+                ? "Concluido: Wall selecionada."
+                : "Clique no icone de Wall no toolbar.";
+            return { complete, status };
+        }
+        case "wall": {
+            const current = countByTypes(BuildingTypes.WALL);
+            const complete = current > baseline.wall;
+            const status = complete
+                ? "Concluido: Wall construida."
+                : `Faltando: construa 1 Wall (${Math.max(0, baseline.wall + 1 - current)} restante).`;
+            return { complete, status };
+        }
+        case "select_turret": {
+            const complete = selectedPlacementType === Number(BuildingTypes.SIMPLE_TURRET)
+                || selectedPlacementType === Number(BuildingTypes.SNIPER_TURRET);
+            const status = complete
+                ? "Concluido: Turret selecionada."
+                : "Clique no icone de Turret (Simple ou Sniper).";
+            return { complete, status };
+        }
+        case "turret": {
+            const current = countByTypes([BuildingTypes.SIMPLE_TURRET, BuildingTypes.SNIPER_TURRET]);
+            const complete = current > baseline.turret;
+            const status = complete
+                ? "Concluido: Turret construida."
+                : `Faltando: construa 1 Turret (${Math.max(0, baseline.turret + 1 - current)} restante).`;
+            return { complete, status };
+        }
+        case "select_sniper": {
+            const complete = selectedPlacementType === Number(BuildingTypes.SNIPER_TURRET);
+            const status = complete
+                ? "Concluido: Sniper Turret selecionada."
+                : "Clique no icone de Sniper Turret no toolbar.";
+            return { complete, status };
+        }
+        case "sniper": {
+            const current = countByTypes(BuildingTypes.SNIPER_TURRET);
+            const complete = current > baseline.sniperTurret;
+            const status = complete
+                ? "Concluido: Sniper Turret construida."
+                : `Faltando: construa 1 Sniper Turret (${Math.max(0, baseline.sniperTurret + 1 - current)} restante).`;
+            return { complete, status };
+        }
+        case "top_menu": {
+            const complete = actionsDisplay === "grid"
+                || actionsDisplay === "flex"
+                || Number(actionMarks.topMenuAt || 0) > this.tutorialStartedAt;
+            const status = complete
+                ? "Concluido: menu superior aberto."
+                : "Clique no botao MENU no topo para abrir as acoes.";
+            return { complete, status };
+        }
+        case "defend": {
+            const profileCreatedAt = Number(this.core?.buildingManager?.defenseProfile?.createdAt || 0);
+            const complete = profileCreatedAt > this.tutorialStartedAt;
+            const status = complete
+                ? "Concluido: Defend salvo com sucesso."
+                : "Clique em Defend e finalize os prompts de configuracao.";
+            return { complete, status };
+        }
+        case "save_base": {
+            const dialogOpen = Boolean(this.baseLayoutDialogElement && this.baseLayoutDialogElement.parentNode);
+            const clicked = Number(actionMarks.saveBaseAt || 0) > this.tutorialStartedAt;
+            const complete = dialogOpen || clicked;
+            const status = complete
+                ? "Concluido: Save Base aberto."
+                : "Clique em Save Base para abrir a tela.";
+            return { complete, status };
+        }
+        case "load_base": {
+            const dialogOpen = Boolean(this.baseLayoutDialogElement && this.baseLayoutDialogElement.parentNode);
+            const clicked = Number(actionMarks.loadBaseAt || 0) > this.tutorialStartedAt;
+            const complete = dialogOpen || clicked;
+            const status = complete
+                ? "Concluido: Load Base aberto."
+                : "Clique em Load Base para abrir a tela.";
+            return { complete, status };
+        }
+        case "theme_menu": {
+            const clicked = Number(actionMarks.themeAt || 0) > this.tutorialStartedAt;
+            const panelOpen = settingsDisplay === "flex" || settingsDisplay === "block" || settingsDisplay === "grid";
+            const complete = clicked || panelOpen;
+            const status = complete
+                ? "Concluido: Theme aberto."
+                : "Clique em Theme para abrir configuracoes.";
+            return { complete, status };
+        }
+        case "autogens": {
+            const clicked = Number(actionMarks.autogensAt || 0) > this.tutorialStartedAt;
+            const running = String(this.core?.buildingManager?.autoBuildMode || "") === "autogens";
+            const complete = clicked || running;
+            const status = complete
+                ? "Concluido: Autogens acionado."
+                : "Clique em Autogens no menu superior.";
+            return { complete, status };
+        }
+        case "externatk": {
+            const clicked = Number(actionMarks.externatkAt || 0) > this.tutorialStartedAt;
+            const running = String(this.core?.buildingManager?.autoBuildMode || "") === "externatk";
+            const complete = clicked || running;
+            const status = complete
+                ? "Concluido: ExternaTK acionado."
+                : "Clique em ExternaTK no menu superior.";
+            return { complete, status };
+        }
+        case "select_barracks": {
+            const complete = selectedPlacementType === Number(BuildingTypes.BARRACKS);
+            const status = complete
+                ? "Concluido: Barracks selecionada."
+                : "Clique no icone de Barracks no toolbar.";
+            return { complete, status };
+        }
+        case "barracks": {
+            const current = countByTypes(BuildingTypes.BARRACKS);
+            const complete = current > baseline.barracks;
+            const status = complete
+                ? "Concluido: Barracks construida."
+                : `Faltando: construa 1 Barracks (${Math.max(0, baseline.barracks + 1 - current)} restante).`;
+            return { complete, status };
+        }
+        case "select_armory": {
+            const complete = selectedPlacementType === Number(BuildingTypes.ARMORY);
+            const status = complete
+                ? "Concluido: Armory selecionada."
+                : "Clique no icone de Armory no toolbar.";
+            return { complete, status };
+        }
+        case "armory": {
+            const current = countByTypes(BuildingTypes.ARMORY);
+            const complete = current > baseline.armory;
+            const status = complete
+                ? "Concluido: Armory construida."
+                : `Faltando: construa 1 Armory (${Math.max(0, baseline.armory + 1 - current)} restante).`;
+            return { complete, status };
+        }
+        case "open_core_upgrades": {
+            const panel = this.DOM?.game?.upgrades?.container;
+            const visible = panel && panel.style.display !== "none";
+            const mode = String(panel?.dataset?.mode || "");
+            const complete = Boolean(visible && mode === "core");
+            const status = complete
+                ? "Concluido: painel do Core aberto."
+                : "Clique no nucleo da sua base para abrir os upgrades do Core.";
+            return { complete, status };
+        }
+        case "commander_buy": {
+            const complete = Boolean(this.core?.gameManager?.hasCommander)
+                || Number(actionMarks.commanderBuyAt || 0) > this.tutorialStartedAt;
+            const status = complete
+                ? "Concluido: compra do Commander registrada."
+                : "Compre Commander no painel do Core.";
+            return { complete, status };
+        }
+        case "upgrade_any": {
+            const complete = Number(actionMarks.buildingUpgradeAt || 0) > this.tutorialStartedAt
+                || Number(actionMarks.coreUpgradeAt || 0) > this.tutorialStartedAt;
+            const status = complete
+                ? "Concluido: upgrade aplicado."
+                : "Selecione algo e aplique 1 upgrade no painel lateral.";
+            return { complete, status };
+        }
+        case "sell_any": {
+            const complete = Number(actionMarks.sellAt || 0) > this.tutorialStartedAt;
+            const status = complete
+                ? "Concluido: venda registrada."
+                : "Use Destroy ou Sell All para vender.";
+            return { complete, status };
+        }
+        case "unit_select": {
+            const selectedCount = Array.isArray(selectedUnits) ? selectedUnits.length : 0;
+            const complete = selectedCount > 0;
+            let status = "";
+            if (complete) {
+                status = `Concluido: ${selectedCount} unidade(s) selecionada(s).`;
+            } else if (totalUnits <= 0) {
+                status = "Aguardando tropas nascerem na Barracks...";
+            } else {
+                status = "Selecione tropas (Q ou caixa de selecao).";
+            }
+            return { complete, status };
+        }
+        case "unit_move": {
+            const complete = movedUnitsAfterTutorialStart;
+            const status = complete
+                ? "Concluido: comando de movimento enviado."
+                : "Com tropas selecionadas, use clique direito no mapa para mover.";
+            return { complete, status };
+        }
+        case "group": {
+            const complete = Boolean(this.groupUnitsActive);
+            const status = complete
+                ? "Concluido: Group Troops ativado."
+                : "Ative o botao Group Troops para continuar.";
+            return { complete, status };
+        }
+        case "minimap_info":
+            return { complete: true, status: "Minimap e paineis observados. Avance para concluir." };
+        case "chat_send": {
+            const complete = Number(actionMarks.chatAt || 0) > this.tutorialStartedAt;
+            const status = complete
+                ? "Concluido: mensagem enviada no chat."
+                : "Envie 1 mensagem no chat para concluir.";
+            return { complete, status };
+        }
+        case "finish":
+            return { complete: false, status: "Tutorial finalizado. Continue treinando em partidas reais." };
+        default:
+            return { complete: false, status: "" };
+        }
+    }
+
+    closeTutorial (options = {}) {
+        const { silent = false } = options || {};
+        this.tutorialModeActive = false;
+        if (this.tutorialPollTimer) {
+            clearInterval(this.tutorialPollTimer);
+            this.tutorialPollTimer = null;
+        }
+        this.tutorialLastStepKey = "";
+        this.tutorialStepCompletion = {};
+        this.tutorialActionMarks = {};
+        this.clearTutorialGuides();
+        if (this.tutorialOverlay) {
+            this.tutorialOverlay.style.display = "none";
+        }
+        if (!silent) {
+            this.notifySystemInfo(this.tutorialText(
+                "Tutorial encerrado. Voce pode continuar jogando normalmente.",
+                "Tutorial closed. You can keep playing normally.",
+                "Tutorial cerrado. Puedes seguir jugando normalmente."
+            ));
         }
     }
 
@@ -6799,6 +7937,15 @@ export default class UIManager {
         }
         if (typeof this.core?.setGameplayActive === "function") {
             this.core.setGameplayActive(show);
+        }
+        if (show) {
+            if (this.tutorialPendingStart) {
+                this.tutorialPendingStart = false;
+                this.openTutorial();
+            }
+        } else {
+            this.closeTutorial({ silent: true });
+            this.tutorialPendingStart = false;
         }
     }
 
@@ -8105,6 +9252,7 @@ export default class UIManager {
     }
 
     showSaveBaseLayoutDialog () {
+        this.tutorialActionMarks.saveBaseAt = Date.now();
         this.hideBaseLayoutDialog();
 
         const overlay = document.createElement("div");
@@ -8292,6 +9440,7 @@ export default class UIManager {
     }
 
     showLoadBaseLayoutDialog () {
+        this.tutorialActionMarks.loadBaseAt = Date.now();
         this.hideBaseLayoutDialog();
 
         let localLayouts = this.getSavedBaseLayouts();
@@ -9394,6 +10543,7 @@ export default class UIManager {
         }
     }
 }
+
 
 
 

@@ -180,6 +180,9 @@ export default class Leaderboard {
             }
 
             const onNameClick = () => {
+                if (this.core?.uiManager?.tutorialActionMarks) {
+                    this.core.uiManager.tutorialActionMarks.leaderboardNickAt = Date.now();
+                }
                 this.core.camera.setPosition(this.core.gameManager.getPlayerById(player.id).position, true);
             };
 

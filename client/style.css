@@ -3467,8 +3467,11 @@ button:hover {
   color: white;
 }
 
-
-
+.tutorial-button {
+  background-color: #5fa8ff;
+  color: white;
+  margin-top: 8px;
+}
 
 .settings-container>select {
   width: 100%;
@@ -5162,6 +5165,180 @@ body.menu-active #global-settings-button p.settings-text {
     width: 150px;
     height: 150px;
     border-radius: 12px;
+}
+
+.tutorial-overlay {
+    position: fixed;
+    top: 94px;
+    right: 18px;
+    width: min(430px, calc(100vw - 30px));
+    max-height: calc(100vh - 120px);
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    z-index: 25000;
+    pointer-events: none;
+}
+
+.tutorial-card {
+    width: 100%;
+    max-height: calc(100vh - 140px);
+    overflow: auto;
+    padding: 18px;
+    border-radius: 14px;
+    border: 1px solid rgba(104, 184, 255, 0.72);
+    background: #0f162d;
+    color: #e8efff;
+    pointer-events: auto;
+    box-shadow: 0 12px 30px rgba(4, 10, 20, 0.5);
+}
+
+#tutorial-title {
+    margin: 0 0 10px;
+    font-size: 20px;
+}
+
+#tutorial-progress {
+    margin: 0 0 10px;
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+#tutorial-content {
+    margin: 0 0 14px;
+    line-height: 1.45;
+}
+
+#tutorial-action {
+    margin: 0 0 8px;
+    font-weight: 700;
+    opacity: 0.92;
+}
+
+#tutorial-status {
+    margin: 0 0 16px;
+    font-style: italic;
+    opacity: 0.95;
+}
+
+.tutorial-buttons-row {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.tutorial-card .tutorial-button {
+    margin-top: 0;
+    padding: 7px 12px;
+    font-size: 13px;
+    border-radius: 8px;
+    border: 1px solid rgba(190, 220, 255, 0.32);
+    color: #f5fbff;
+}
+
+.tutorial-card .tutorial-button.primary {
+    background: linear-gradient(135deg, #2f96ff, #53c5ff);
+}
+
+.tutorial-card .tutorial-button.secondary {
+    background: #596174;
+}
+
+.tutorial-card .tutorial-button.ghost {
+    background: #717988;
+}
+
+#tutorial-focus-ring {
+    position: fixed;
+    z-index: 24996;
+    pointer-events: none;
+    border: 2px solid rgba(117, 224, 255, 0.95);
+    border-radius: 10px;
+    box-shadow:
+        0 0 0 2px rgba(117, 224, 255, 0.25),
+        0 0 22px rgba(117, 224, 255, 0.42),
+        inset 0 0 14px rgba(117, 224, 255, 0.18);
+    animation: tutorialFocusPulse 1s ease-in-out infinite;
+}
+
+#tutorial-step-pointer {
+    position: fixed;
+    z-index: 24997;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(117, 224, 255, 0.72);
+    background: rgba(8, 17, 32, 0.95);
+    color: #dff7ff;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+#tutorial-step-pointer::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+}
+
+#tutorial-step-pointer[data-placement="top"]::after {
+    top: 100%;
+    border-top: 8px solid rgba(8, 17, 32, 0.95);
+}
+
+#tutorial-step-pointer[data-placement="bottom"]::after {
+    bottom: 100%;
+    border-bottom: 8px solid rgba(8, 17, 32, 0.95);
+}
+
+.tutorial-target-highlight {
+    outline: 2px solid rgba(117, 224, 255, 0.94) !important;
+    outline-offset: 2px;
+    animation: tutorialTargetBlink 0.9s ease-in-out infinite;
+}
+
+@keyframes tutorialFocusPulse {
+    0% {
+        transform: scale(1);
+        opacity: 0.92;
+    }
+    50% {
+        transform: scale(1.01);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 0.92;
+    }
+}
+
+@keyframes tutorialTargetBlink {
+    0% {
+        box-shadow: 0 0 0 rgba(117, 224, 255, 0);
+    }
+    50% {
+        box-shadow: 0 0 16px rgba(117, 224, 255, 0.5);
+    }
+    100% {
+        box-shadow: 0 0 0 rgba(117, 224, 255, 0);
+    }
+}
+
+@media (max-width: 900px) {
+    .tutorial-overlay {
+        top: 70px;
+        right: 10px;
+        width: min(420px, calc(100vw - 20px));
+    }
 }
 
 #shield {
