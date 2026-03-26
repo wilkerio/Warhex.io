@@ -5048,7 +5048,7 @@ export default class UIManager {
             const allCount = Number.isFinite(Number(building?.allCount))
                 ? Number(building.allCount)
                 : Number(building.count || 0);
-            const canBulkAcrossBase = !isArmory && allCount > 1;
+            const canBulkAcrossBase = !isArmory;
 
             const getAvailableUpgrades = () => {
                 const purchasedVariants = building.purchasedUpgrades ? Array.from(building.purchasedUpgrades) : [];
@@ -5263,8 +5263,8 @@ export default class UIManager {
                 const refreshBulkModeButton = () => {
                     bulkToggleButton.classList.toggle("active", this.upgradeBulkMode);
                     bulkToggleButton.textContent = this.upgradeBulkMode
-                        ? `Auto Upgrade: ON [${keyUpgradeAllMode}]`
-                        : `Auto Upgrade: OFF [${keyUpgradeAllMode}]`;
+                        ? `AutoUpgrade: ON [${keyUpgradeAllMode}]`
+                        : `AutoUpgrade: OFF [${keyUpgradeAllMode}]`;
                 };
                 refreshBulkModeButton();
 
@@ -5273,7 +5273,7 @@ export default class UIManager {
                     refreshBulkModeButton();
                     this.addChatMessage(
                         "System",
-                        this.upgradeBulkMode ? "Auto Upgrade enabled." : "Auto Upgrade disabled.",
+                        this.upgradeBulkMode ? "AutoUpgrade enabled." : "AutoUpgrade disabled.",
                         "#60c1ff"
                     );
                 });

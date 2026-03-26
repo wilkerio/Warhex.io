@@ -566,14 +566,14 @@ export class BuildingManager {
                         if (upgradeAll && targetBuildings.length > 1) {
                             const affordableCount = Math.floor(this.core.gameManager.resources.power.current / perBuildingCost);
                             if (affordableCount <= 0) {
-                                this.core.uiManager.addChatMessage("System", "Not enough power for Auto Upgrade.", "#ffcc66");
+                                this.core.uiManager.addChatMessage("System", "Not enough power for AutoUpgrade.", "#ffcc66");
                                 return;
                             }
                             if (affordableCount < targetBuildings.length) {
                                 targetBuildings = targetBuildings.slice(0, affordableCount);
                                 this.core.uiManager.addChatMessage(
                                     "System",
-                                    `Auto Upgrade: upgraded ${targetBuildings.length}/${(upgradeAll && allSameTypeAndVariant) ? getAllSameTypeTargetsInClosestBase().length : targetBuildings.length}.`,
+                                    `AutoUpgrade: upgraded ${targetBuildings.length}/${(upgradeAll && allSameTypeAndVariant) ? getAllSameTypeTargetsInClosestBase().length : targetBuildings.length}.`,
                                     "#60c1ff"
                                 );
                             }
