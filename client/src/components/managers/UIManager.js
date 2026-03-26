@@ -7013,7 +7013,9 @@ export default class UIManager {
 
         const pointerLabel = this.tutorialStepPointer.querySelector(".tutorial-step-pointer-label");
         if (pointerLabel) {
-            pointerLabel.textContent = step?.pointerText || step?.action || "Siga esta etapa";
+            pointerLabel.textContent = step?.pointerText
+                || step?.action
+                || this.tutorialText("Siga esta etapa", "Follow this step", "Sigue este paso");
         }
 
         this.tutorialStepPointer.style.display = "flex";
@@ -7168,6 +7170,7 @@ export default class UIManager {
             ? (settingsPanel.style.display || window.getComputedStyle(settingsPanel).display)
             : "none";
         const actionMarks = this.tutorialActionMarks || {};
+        const tt = (pt, en, es) => this.tutorialText(pt, en, es);
 
         const countByTypes = (types) => {
             if (!player) return 0;
@@ -7181,20 +7184,28 @@ export default class UIManager {
 
         switch (step.key) {
         case "intro":
-            return { complete: true, status: "Leia o resumo e avance quando quiser." };
+            return { complete: true, status: tt("Leia o resumo e avance quando quiser.", "Read the summary and continue when ready.", "Lee el resumen y avanza cuando quieras.") };
         case "enemy": {
             const count = opponents.length;
             const complete = count > 0;
             const status = complete
-                ? `Concluido: ${count} oponente(s) detectado(s) na partida.`
-                : "Aguardando oponente aparecer (normalmente bot do servidor).";
+                ? tt(
+                    `Concluido: ${count} oponente(s) detectado(s) na partida.`,
+                    `Completed: ${count} opponent(s) detected in the match.`,
+                    `Completado: ${count} oponente(s) detectado(s) en la partida.`
+                )
+                : tt(
+                    "Aguardando oponente aparecer (normalmente bot do servidor).",
+                    "Waiting for an opponent to appear (usually a server bot).",
+                    "Esperando que aparezca un oponente (normalmente un bot del servidor)."
+                );
             return { complete, status };
         }
         case "nick_focus": {
             const complete = Number(actionMarks.leaderboardNickAt || 0) > this.tutorialStartedAt;
             const status = complete
-                ? "Concluido: camera focada pelo nick."
-                : "Clique no nick de algum jogador no leaderboard.";
+                ? tt("Concluido: camera focada pelo nick.", "Completed: camera focused by nickname.", "Completado: camara enfocada por nick.")
+                : tt("Clique no nick de algum jogador no leaderboard.", "Click a player's nickname in the leaderboard.", "Haz clic en el nick de algun jugador en el leaderboard.");
             return { complete, status };
         }
         case "camera": {
@@ -7204,86 +7215,106 @@ export default class UIManager {
             const distance = Math.hypot(currentX - start.x, currentY - start.y);
             const complete = distance >= 70;
             const status = complete
-                ? "Concluido: camera movimentada."
-                : "Use WASD/setas ou arraste com mouse para mover camera.";
+                ? tt("Concluido: camera movimentada.", "Completed: camera moved.", "Completado: camara movida.")
+                : tt("Use WASD/setas ou arraste com mouse para mover camera.", "Use WASD/arrows or drag with mouse to move the camera.", "Usa WASD/flechas o arrastra con el mouse para mover la camara.");
             return { complete, status };
         }
         case "power_info":
-            return { complete: true, status: "Power observado. Avance para construir." };
+            return { complete: true, status: tt("Power observado. Avance para construir.", "Power checked. Continue to building.", "Power revisado. Continua para construir.") };
         case "select_generator": {
             const complete = selectedPlacementType === Number(BuildingTypes.GENERATOR);
             const status = complete
-                ? "Concluido: Generator selecionado."
-                : "Clique no icone de Generator no toolbar.";
+                ? tt("Concluido: Generator selecionado.", "Completed: Generator selected.", "Completado: Generator seleccionado.")
+                : tt("Clique no icone de Generator no toolbar.", "Click the Generator icon on the toolbar.", "Haz clic en el icono de Generator en la barra.");
             return { complete, status };
         }
         case "generator": {
             const current = countByTypes(BuildingTypes.GENERATOR);
             const complete = current > baseline.generator;
             const status = complete
-                ? "Concluido: Generator construido."
-                : `Faltando: construa 1 Generator (${Math.max(0, baseline.generator + 1 - current)} restante).`;
+                ? tt("Concluido: Generator construido.", "Completed: Generator built.", "Completado: Generator construido.")
+                : tt(
+                    `Faltando: construa 1 Generator (${Math.max(0, baseline.generator + 1 - current)} restante).`,
+                    `Remaining: build 1 Generator (${Math.max(0, baseline.generator + 1 - current)} left).`,
+                    `Falta: construye 1 Generator (${Math.max(0, baseline.generator + 1 - current)} restante).`
+                );
             return { complete, status };
         }
         case "select_house": {
             const complete = selectedPlacementType === Number(BuildingTypes.HOUSE);
             const status = complete
-                ? "Concluido: House selecionada."
-                : "Clique no icone de House no toolbar.";
+                ? tt("Concluido: House selecionada.", "Completed: House selected.", "Completado: House seleccionada.")
+                : tt("Clique no icone de House no toolbar.", "Click the House icon on the toolbar.", "Haz clic en el icono de House en la barra.");
             return { complete, status };
         }
         case "house": {
             const current = countByTypes(BuildingTypes.HOUSE);
             const complete = current > baseline.house;
             const status = complete
-                ? "Concluido: House construida."
-                : `Faltando: construa 1 House (${Math.max(0, baseline.house + 1 - current)} restante).`;
+                ? tt("Concluido: House construida.", "Completed: House built.", "Completado: House construida.")
+                : tt(
+                    `Faltando: construa 1 House (${Math.max(0, baseline.house + 1 - current)} restante).`,
+                    `Remaining: build 1 House (${Math.max(0, baseline.house + 1 - current)} left).`,
+                    `Falta: construye 1 House (${Math.max(0, baseline.house + 1 - current)} restante).`
+                );
             return { complete, status };
         }
         case "select_wall": {
             const complete = selectedPlacementType === Number(BuildingTypes.WALL);
             const status = complete
-                ? "Concluido: Wall selecionada."
-                : "Clique no icone de Wall no toolbar.";
+                ? tt("Concluido: Wall selecionada.", "Completed: Wall selected.", "Completado: Wall seleccionada.")
+                : tt("Clique no icone de Wall no toolbar.", "Click the Wall icon on the toolbar.", "Haz clic en el icono de Wall en la barra.");
             return { complete, status };
         }
         case "wall": {
             const current = countByTypes(BuildingTypes.WALL);
             const complete = current > baseline.wall;
             const status = complete
-                ? "Concluido: Wall construida."
-                : `Faltando: construa 1 Wall (${Math.max(0, baseline.wall + 1 - current)} restante).`;
+                ? tt("Concluido: Wall construida.", "Completed: Wall built.", "Completado: Wall construida.")
+                : tt(
+                    `Faltando: construa 1 Wall (${Math.max(0, baseline.wall + 1 - current)} restante).`,
+                    `Remaining: build 1 Wall (${Math.max(0, baseline.wall + 1 - current)} left).`,
+                    `Falta: construye 1 Wall (${Math.max(0, baseline.wall + 1 - current)} restante).`
+                );
             return { complete, status };
         }
         case "select_turret": {
             const complete = selectedPlacementType === Number(BuildingTypes.SIMPLE_TURRET)
                 || selectedPlacementType === Number(BuildingTypes.SNIPER_TURRET);
             const status = complete
-                ? "Concluido: Turret selecionada."
-                : "Clique no icone de Turret (Simple ou Sniper).";
+                ? tt("Concluido: Turret selecionada.", "Completed: Turret selected.", "Completado: Turret seleccionada.")
+                : tt("Clique no icone de Turret (Simple ou Sniper).", "Click a Turret icon (Simple or Sniper).", "Haz clic en un icono de Turret (Simple o Sniper).");
             return { complete, status };
         }
         case "turret": {
             const current = countByTypes([BuildingTypes.SIMPLE_TURRET, BuildingTypes.SNIPER_TURRET]);
             const complete = current > baseline.turret;
             const status = complete
-                ? "Concluido: Turret construida."
-                : `Faltando: construa 1 Turret (${Math.max(0, baseline.turret + 1 - current)} restante).`;
+                ? tt("Concluido: Turret construida.", "Completed: Turret built.", "Completado: Turret construida.")
+                : tt(
+                    `Faltando: construa 1 Turret (${Math.max(0, baseline.turret + 1 - current)} restante).`,
+                    `Remaining: build 1 Turret (${Math.max(0, baseline.turret + 1 - current)} left).`,
+                    `Falta: construye 1 Turret (${Math.max(0, baseline.turret + 1 - current)} restante).`
+                );
             return { complete, status };
         }
         case "select_sniper": {
             const complete = selectedPlacementType === Number(BuildingTypes.SNIPER_TURRET);
             const status = complete
-                ? "Concluido: Sniper Turret selecionada."
-                : "Clique no icone de Sniper Turret no toolbar.";
+                ? tt("Concluido: Sniper Turret selecionada.", "Completed: Sniper Turret selected.", "Completado: Sniper Turret seleccionada.")
+                : tt("Clique no icone de Sniper Turret no toolbar.", "Click the Sniper Turret icon on the toolbar.", "Haz clic en el icono de Sniper Turret en la barra.");
             return { complete, status };
         }
         case "sniper": {
             const current = countByTypes(BuildingTypes.SNIPER_TURRET);
             const complete = current > baseline.sniperTurret;
             const status = complete
-                ? "Concluido: Sniper Turret construida."
-                : `Faltando: construa 1 Sniper Turret (${Math.max(0, baseline.sniperTurret + 1 - current)} restante).`;
+                ? tt("Concluido: Sniper Turret construida.", "Completed: Sniper Turret built.", "Completado: Sniper Turret construida.")
+                : tt(
+                    `Faltando: construa 1 Sniper Turret (${Math.max(0, baseline.sniperTurret + 1 - current)} restante).`,
+                    `Remaining: build 1 Sniper Turret (${Math.max(0, baseline.sniperTurret + 1 - current)} left).`,
+                    `Falta: construye 1 Sniper Turret (${Math.max(0, baseline.sniperTurret + 1 - current)} restante).`
+                );
             return { complete, status };
         }
         case "top_menu": {
@@ -7291,16 +7322,16 @@ export default class UIManager {
                 || actionsDisplay === "flex"
                 || Number(actionMarks.topMenuAt || 0) > this.tutorialStartedAt;
             const status = complete
-                ? "Concluido: menu superior aberto."
-                : "Clique no botao MENU no topo para abrir as acoes.";
+                ? tt("Concluido: menu superior aberto.", "Completed: top menu opened.", "Completado: menu superior abierto.")
+                : tt("Clique no botao MENU no topo para abrir as acoes.", "Click the top MENU button to open actions.", "Haz clic en el boton MENU arriba para abrir acciones.");
             return { complete, status };
         }
         case "defend": {
             const profileCreatedAt = Number(this.core?.buildingManager?.defenseProfile?.createdAt || 0);
             const complete = profileCreatedAt > this.tutorialStartedAt;
             const status = complete
-                ? "Concluido: Defend salvo com sucesso."
-                : "Clique em Defend e finalize os prompts de configuracao.";
+                ? tt("Concluido: Defend salvo com sucesso.", "Completed: Defend saved successfully.", "Completado: Defend guardado correctamente.")
+                : tt("Clique em Defend e finalize os prompts de configuracao.", "Click Defend and finish the setup prompts.", "Haz clic en Defend y completa los prompts de configuracion.");
             return { complete, status };
         }
         case "save_base": {
@@ -7308,8 +7339,8 @@ export default class UIManager {
             const clicked = Number(actionMarks.saveBaseAt || 0) > this.tutorialStartedAt;
             const complete = dialogOpen || clicked;
             const status = complete
-                ? "Concluido: Save Base aberto."
-                : "Clique em Save Base para abrir a tela.";
+                ? tt("Concluido: Save Base aberto.", "Completed: Save Base opened.", "Completado: Save Base abierto.")
+                : tt("Clique em Save Base para abrir a tela.", "Click Save Base to open the screen.", "Haz clic en Save Base para abrir la pantalla.");
             return { complete, status };
         }
         case "load_base": {
@@ -7317,8 +7348,8 @@ export default class UIManager {
             const clicked = Number(actionMarks.loadBaseAt || 0) > this.tutorialStartedAt;
             const complete = dialogOpen || clicked;
             const status = complete
-                ? "Concluido: Load Base aberto."
-                : "Clique em Load Base para abrir a tela.";
+                ? tt("Concluido: Load Base aberto.", "Completed: Load Base opened.", "Completado: Load Base abierto.")
+                : tt("Clique em Load Base para abrir a tela.", "Click Load Base to open the screen.", "Haz clic en Load Base para abrir la pantalla.");
             return { complete, status };
         }
         case "theme_menu": {
@@ -7326,8 +7357,8 @@ export default class UIManager {
             const panelOpen = settingsDisplay === "flex" || settingsDisplay === "block" || settingsDisplay === "grid";
             const complete = clicked || panelOpen;
             const status = complete
-                ? "Concluido: Theme aberto."
-                : "Clique em Theme para abrir configuracoes.";
+                ? tt("Concluido: Theme aberto.", "Completed: Theme opened.", "Completado: Theme abierto.")
+                : tt("Clique em Theme para abrir configuracoes.", "Click Theme to open settings.", "Haz clic en Theme para abrir configuraciones.");
             return { complete, status };
         }
         case "autogens": {
@@ -7335,8 +7366,8 @@ export default class UIManager {
             const running = String(this.core?.buildingManager?.autoBuildMode || "") === "autogens";
             const complete = clicked || running;
             const status = complete
-                ? "Concluido: Autogens acionado."
-                : "Clique em Autogens no menu superior.";
+                ? tt("Concluido: Autogens acionado.", "Completed: Autogens activated.", "Completado: Autogens activado.")
+                : tt("Clique em Autogens no menu superior.", "Click Autogens in the top menu.", "Haz clic en Autogens en el menu superior.");
             return { complete, status };
         }
         case "externatk": {
@@ -7344,38 +7375,46 @@ export default class UIManager {
             const running = String(this.core?.buildingManager?.autoBuildMode || "") === "externatk";
             const complete = clicked || running;
             const status = complete
-                ? "Concluido: ExternaTK acionado."
-                : "Clique em ExternaTK no menu superior.";
+                ? tt("Concluido: ExternaTK acionado.", "Completed: ExternaTK activated.", "Completado: ExternaTK activado.")
+                : tt("Clique em ExternaTK no menu superior.", "Click ExternaTK in the top menu.", "Haz clic en ExternaTK en el menu superior.");
             return { complete, status };
         }
         case "select_barracks": {
             const complete = selectedPlacementType === Number(BuildingTypes.BARRACKS);
             const status = complete
-                ? "Concluido: Barracks selecionada."
-                : "Clique no icone de Barracks no toolbar.";
+                ? tt("Concluido: Barracks selecionada.", "Completed: Barracks selected.", "Completado: Barracks seleccionada.")
+                : tt("Clique no icone de Barracks no toolbar.", "Click the Barracks icon on the toolbar.", "Haz clic en el icono de Barracks en la barra.");
             return { complete, status };
         }
         case "barracks": {
             const current = countByTypes(BuildingTypes.BARRACKS);
             const complete = current > baseline.barracks;
             const status = complete
-                ? "Concluido: Barracks construida."
-                : `Faltando: construa 1 Barracks (${Math.max(0, baseline.barracks + 1 - current)} restante).`;
+                ? tt("Concluido: Barracks construida.", "Completed: Barracks built.", "Completado: Barracks construida.")
+                : tt(
+                    `Faltando: construa 1 Barracks (${Math.max(0, baseline.barracks + 1 - current)} restante).`,
+                    `Remaining: build 1 Barracks (${Math.max(0, baseline.barracks + 1 - current)} left).`,
+                    `Falta: construye 1 Barracks (${Math.max(0, baseline.barracks + 1 - current)} restante).`
+                );
             return { complete, status };
         }
         case "select_armory": {
             const complete = selectedPlacementType === Number(BuildingTypes.ARMORY);
             const status = complete
-                ? "Concluido: Armory selecionada."
-                : "Clique no icone de Armory no toolbar.";
+                ? tt("Concluido: Armory selecionada.", "Completed: Armory selected.", "Completado: Armory seleccionada.")
+                : tt("Clique no icone de Armory no toolbar.", "Click the Armory icon on the toolbar.", "Haz clic en el icono de Armory en la barra.");
             return { complete, status };
         }
         case "armory": {
             const current = countByTypes(BuildingTypes.ARMORY);
             const complete = current > baseline.armory;
             const status = complete
-                ? "Concluido: Armory construida."
-                : `Faltando: construa 1 Armory (${Math.max(0, baseline.armory + 1 - current)} restante).`;
+                ? tt("Concluido: Armory construida.", "Completed: Armory built.", "Completado: Armory construida.")
+                : tt(
+                    `Faltando: construa 1 Armory (${Math.max(0, baseline.armory + 1 - current)} restante).`,
+                    `Remaining: build 1 Armory (${Math.max(0, baseline.armory + 1 - current)} left).`,
+                    `Falta: construye 1 Armory (${Math.max(0, baseline.armory + 1 - current)} restante).`
+                );
             return { complete, status };
         }
         case "open_core_upgrades": {
@@ -7384,31 +7423,31 @@ export default class UIManager {
             const mode = String(panel?.dataset?.mode || "");
             const complete = Boolean(visible && mode === "core");
             const status = complete
-                ? "Concluido: painel do Core aberto."
-                : "Clique no nucleo da sua base para abrir os upgrades do Core.";
+                ? tt("Concluido: painel do Core aberto.", "Completed: Core panel opened.", "Completado: panel del Core abierto.")
+                : tt("Clique no nucleo da sua base para abrir os upgrades do Core.", "Click your base core to open Core upgrades.", "Haz clic en el nucleo de tu base para abrir mejoras del Core.");
             return { complete, status };
         }
         case "commander_buy": {
             const complete = Boolean(this.core?.gameManager?.hasCommander)
                 || Number(actionMarks.commanderBuyAt || 0) > this.tutorialStartedAt;
             const status = complete
-                ? "Concluido: compra do Commander registrada."
-                : "Compre Commander no painel do Core.";
+                ? tt("Concluido: compra do Commander registrada.", "Completed: Commander purchase registered.", "Completado: compra de Commander registrada.")
+                : tt("Compre Commander no painel do Core.", "Buy Commander in the Core panel.", "Compra Commander en el panel del Core.");
             return { complete, status };
         }
         case "upgrade_any": {
             const complete = Number(actionMarks.buildingUpgradeAt || 0) > this.tutorialStartedAt
                 || Number(actionMarks.coreUpgradeAt || 0) > this.tutorialStartedAt;
             const status = complete
-                ? "Concluido: upgrade aplicado."
-                : "Selecione algo e aplique 1 upgrade no painel lateral.";
+                ? tt("Concluido: upgrade aplicado.", "Completed: upgrade applied.", "Completado: mejora aplicada.")
+                : tt("Selecione algo e aplique 1 upgrade no painel lateral.", "Select something and apply 1 upgrade in the side panel.", "Selecciona algo y aplica 1 mejora en el panel lateral.");
             return { complete, status };
         }
         case "sell_any": {
             const complete = Number(actionMarks.sellAt || 0) > this.tutorialStartedAt;
             const status = complete
-                ? "Concluido: venda registrada."
-                : "Use Destroy ou Sell All para vender.";
+                ? tt("Concluido: venda registrada.", "Completed: sale registered.", "Completado: venta registrada.")
+                : tt("Use Destroy ou Sell All para vender.", "Use Destroy or Sell All to sell.", "Usa Destroy o Sell All para vender.");
             return { complete, status };
         }
         case "unit_select": {
@@ -7416,39 +7455,43 @@ export default class UIManager {
             const complete = selectedCount > 0;
             let status = "";
             if (complete) {
-                status = `Concluido: ${selectedCount} unidade(s) selecionada(s).`;
+                status = tt(
+                    `Concluido: ${selectedCount} unidade(s) selecionada(s).`,
+                    `Completed: ${selectedCount} unit(s) selected.`,
+                    `Completado: ${selectedCount} unidad(es) seleccionada(s).`
+                );
             } else if (totalUnits <= 0) {
-                status = "Aguardando tropas nascerem na Barracks...";
+                status = tt("Aguardando tropas nascerem na Barracks...", "Waiting for troops to spawn in Barracks...", "Esperando que nazcan tropas en Barracks...");
             } else {
-                status = "Selecione tropas (Q ou caixa de selecao).";
+                status = tt("Selecione tropas (Q ou caixa de selecao).", "Select troops (Q or drag-select box).", "Selecciona tropas (Q o caja de seleccion).");
             }
             return { complete, status };
         }
         case "unit_move": {
             const complete = movedUnitsAfterTutorialStart;
             const status = complete
-                ? "Concluido: comando de movimento enviado."
-                : "Com tropas selecionadas, use clique direito no mapa para mover.";
+                ? tt("Concluido: comando de movimento enviado.", "Completed: move command sent.", "Completado: comando de movimiento enviado.")
+                : tt("Com tropas selecionadas, use clique direito no mapa para mover.", "With troops selected, use right-click on the map to move.", "Con tropas seleccionadas, usa clic derecho en el mapa para mover.");
             return { complete, status };
         }
         case "group": {
             const complete = Boolean(this.groupUnitsActive);
             const status = complete
-                ? "Concluido: Group Troops ativado."
-                : "Ative o botao Group Troops para continuar.";
+                ? tt("Concluido: Group Troops ativado.", "Completed: Group Troops enabled.", "Completado: Group Troops activado.")
+                : tt("Ative o botao Group Troops para continuar.", "Enable the Group Troops button to continue.", "Activa el boton Group Troops para continuar.");
             return { complete, status };
         }
         case "minimap_info":
-            return { complete: true, status: "Minimap e paineis observados. Avance para concluir." };
+            return { complete: true, status: tt("Minimap e paineis observados. Avance para concluir.", "Minimap and panels checked. Continue to finish.", "Minimapa y paneles revisados. Continua para finalizar.") };
         case "chat_send": {
             const complete = Number(actionMarks.chatAt || 0) > this.tutorialStartedAt;
             const status = complete
-                ? "Concluido: mensagem enviada no chat."
-                : "Envie 1 mensagem no chat para concluir.";
+                ? tt("Concluido: mensagem enviada no chat.", "Completed: chat message sent.", "Completado: mensaje enviado en el chat.")
+                : tt("Envie 1 mensagem no chat para concluir.", "Send 1 chat message to complete.", "Envia 1 mensaje en el chat para completar.");
             return { complete, status };
         }
         case "finish":
-            return { complete: false, status: "Tutorial finalizado. Continue treinando em partidas reais." };
+            return { complete: false, status: tt("Tutorial finalizado. Continue treinando em partidas reais.", "Tutorial finished. Keep practicing in real matches.", "Tutorial finalizado. Sigue practicando en partidas reales.") };
         default:
             return { complete: false, status: "" };
         }
