@@ -119,7 +119,7 @@ const (
 	PLAYER_HEALTH_REGENERATION           = 30
 	PLAYER_HEALTH_REGENERATION_FREQUENCY = 30 // Seconds
 	// Commander regeneration disabled by request.
-	COMMANDER_HEALTH_REGENERATION           = 0 // HP per tick
+	COMMANDER_HEALTH_REGENERATION           = 0   // HP per tick
 	COMMANDER_HEALTH_REGENERATION_FREQUENCY = 120 // Seconds (2 minutes)
 	COMMANDER_HEALTH_REGENERATION_DELAY     = 120 // Seconds without taking damage
 
@@ -159,6 +159,11 @@ const (
 	SOLDIER_CORE_DAMAGE_MULTIPLIER = 3
 	// Each soldier counts as "2" versus commander in direct unit collisions.
 	SOLDIER_VS_COMMANDER_DAMAGE_MULTIPLIER = 2
+	// Expand wall collision envelope to reduce clip-through under grouped spam movement.
+	WALL_COLLISION_PADDING = 6
+	// Contact damage dealt BY units TO walls is reduced to make layered defense hold longer.
+	SOLDIER_WALL_COLLISION_DAMAGE_MULTIPLIER   = 0.45
+	COMMANDER_WALL_COLLISION_DAMAGE_MULTIPLIER = 0.35
 
 	// Spawn settings
 	MIN_PLAYER_SPAWN_DISTANCE = 1500 // Minimum distance between player spawns

@@ -18,6 +18,7 @@ type Unit struct {
 	Type                      UnitType
 	Variant                   UnitVariant
 	Position                  PositionFloat
+	PreviousPosition          PositionFloat
 	TargetPosition            PositionFloat
 	TargetRotation            UnitTargetRotation
 	Polygon                   Polygon
@@ -180,6 +181,8 @@ func easeOut(t float64) float64 {
 func (u *Unit) UpdatePosition(deltaTime time.Duration, units []*Unit) bool {
 	u.Lock()
 	defer u.Unlock()
+
+	u.PreviousPosition = u.Position
 
 	// Calculate distance to target position
 	dx := float64(u.TargetPosition.X - u.Position.X)
@@ -445,14 +448,14 @@ var unitTypes = map[UnitType]map[UnitVariant]UnitStats{
 			Size:    40,
 		},
 	},
-		COMMANDER: {
-			BASIC_UNIT: {
-				Variant:            BASIC_UNIT,
-				Health:             Health{Current: 1104, Max: 1104},
-				Damage:             130,
-				Speed:              legacySpeedToPerSecond(0.16),
-				Size:               32,
-				RequiredPopulation: 0,
+	COMMANDER: {
+		BASIC_UNIT: {
+			Variant:            BASIC_UNIT,
+			Health:             Health{Current: 1104, Max: 1104},
+			Damage:             130,
+			Speed:              legacySpeedToPerSecond(0.16),
+			Size:               32,
+			RequiredPopulation: 0,
 		},
 	},
 }

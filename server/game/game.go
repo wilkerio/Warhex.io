@@ -2285,8 +2285,49 @@ func isBulletCollidingWithBuilding(bullet *Bullet, building *Building) bool {
 	return DoPolygonsIntersect(bulletPolygon, buildingPolygon)
 }
 
+func isPointWithinRadius(point PositionFloat, center PositionFloat, radius float32) bool {
+	dx := float64(point.X - center.X)
+	dy := float64(point.Y - center.Y)
+	r := float64(radius)
+	return dx*dx+dy*dy <= r*r
+}
+
+func didSegmentIntersectCircle(start PositionFloat, end PositionFloat, center PositionFloat, radius float32) bool {
+	segX := float64(end.X - start.X)
+	segY := float64(end.Y - start.Y)
+
+	if segX == 0 && segY == 0 {
+		return isPointWithinRadius(start, center, radius)
+	}
+
+	toCenterX := float64(center.X - start.X)
+	toCenterY := float64(center.Y - start.Y)
+	t := (toCenterX*segX + toCenterY*segY) / (segX*segX + segY*segY)
+	if t < 0 {
+		t = 0
+	} else if t > 1 {
+		t = 1
+	}
+
+	closest := PositionFloat{
+		X: float32(float64(start.X) + segX*t),
+		Y: float32(float64(start.Y) + segY*t),
+	}
+
+	return isPointWithinRadius(closest, center, radius)
+}
+
 func isUnitCollidingWithBuilding(unit *Unit, building *Building) bool {
-	if !unit.IsWithinRadius(building.Position, float32(GetBuildingSize(building.Type)+unit.Size)) {
+	collisionRadius := float32(GetBuildingSize(building.Type) + unit.Size)
+
+	if building.Type == WALL {
+		collisionRadius += float32(WALL_COLLISION_PADDING)
+		currentInside := isPointWithinRadius(unit.Position, building.Position, collisionRadius)
+		previousInside := isPointWithinRadius(unit.PreviousPosition, building.Position, collisionRadius)
+		if !currentInside && !previousInside && !didSegmentIntersectCircle(unit.PreviousPosition, unit.Position, building.Position, collisionRadius) {
+			return false
+		}
+	} else if !unit.IsWithinRadius(building.Position, collisionRadius) {
 		return false
 	}
 
@@ -2295,8 +2336,12 @@ func isUnitCollidingWithBuilding(unit *Unit, building *Building) bool {
 	unitPolygon := unit.Polygon
 
 	buildingPolygon := building.Polygon
+	if DoPolygonsIntersect(unitPolygon, buildingPolygon) {
+		return true
+	}
 
-	return DoPolygonsIntersect(unitPolygon, buildingPolygon)
+	// Walls act as hard circular blockers to avoid clip-through during grouped spam movement.
+	return building.Type == WALL
 }
 
 func isUnitCollidingWithUnit(unit1, unit2 *Unit) bool {
@@ -2328,6 +2373,14 @@ func handleNeutralBaseCaptured(player *Player, neutral *NeutralBase) {
 
 func handleUnitBuildingCollision(unit *Unit, building *Building) (bool, bool) {
 	unitDamage := unit.Damage
+	if building.Type == WALL {
+		switch unit.Type {
+		case SOLDIER:
+			unitDamage = uint16(math.Max(1, math.Round(float64(unitDamage)*SOLDIER_WALL_COLLISION_DAMAGE_MULTIPLIER)))
+		case COMMANDER:
+			unitDamage = uint16(math.Max(1, math.Round(float64(unitDamage)*COMMANDER_WALL_COLLISION_DAMAGE_MULTIPLIER)))
+		}
+	}
 	buildingDamage, ok := GetBuildingContactDamage(building.Type, building.Variant)
 	if !ok {
 		buildingDamage = building.Health.Current
