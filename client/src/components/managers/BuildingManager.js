@@ -90,6 +90,10 @@ const DEFENSE_REMOUNT_ALLOWED_UPGRADES = {
 const DEFENSE_REMOUNT_MAX_UPGRADE_COST = 700;
 const DEFENSE_REMOUNT_UPGRADE_COOLDOWN_MS = 650;
 const DEFENSE_REMOUNT_UPGRADE_TRACK_TTL_MS = 10000;
+const DEFENSE_ATTACK_SECTOR_CACHE_MS = 220;
+const DEFENSE_ATTACK_SECTOR_MIN_HALF_WIDTH = 0.34;
+const DEFENSE_ATTACK_SECTOR_MAX_HALF_WIDTH = 0.92;
+const DEFENSE_ATTACK_SECTOR_ENTRY_BONUS = 0.2;
 
 export class BuildingManager {
     constructor (core) {
@@ -123,7 +127,14 @@ export class BuildingManager {
         this.defensePlacementPressure = 0;
         this.defensePlacementPressureMax = 12;
         this.lastDefensePlacementPressAt = 0;
-        this.defenseThreatCache = { at: 0, units: [], dominantAngle: null };
+        this.defenseThreatCache = {
+            at: 0,
+            playerID: null,
+            active: false,
+            dominantAngle: null,
+            halfWidth: DEFENSE_ATTACK_SECTOR_MAX_HALF_WIDTH,
+            threats: []
+        };
         // Batch-defense: place/remount many slots per cycle for fast rebuilds.
         this.defensePlacementBurstSize = 12;
         this.defenseRemountBurstSize = 30;
@@ -1366,6 +1377,8 @@ export class BuildingManager {
             this.defensePlacementTimer = null;
         }
         this.defensePlacementActive = false;
+        this.defenseThreatCache.at = 0;
+        this.defenseThreatCache.threats = [];
     }
 
     stopDefenseRemount () {
@@ -1932,7 +1945,9 @@ export class BuildingManager {
         const sharedContext = {
             threatCandidates: null,
             threatCursor: 0,
-            slotCursor: 0
+            slotCursor: 0,
+            slotEntries: null,
+            attackSector: this.buildDefenseAttackSector(player)
         };
         let placed = 0;
         for (let i = 0; i < burst; i++) {
@@ -2031,7 +2046,104 @@ export class BuildingManager {
         return threats.slice(0, Math.max(1, limit | 0));
     }
 
-    buildDefenseThreatWallCandidates (player, wallSize) {
+    normalizeDefenseAngle (angle) {
+        if (!Number.isFinite(angle)) return 0;
+        let out = angle;
+        while (out > Math.PI) out -= Math.PI * 2;
+        while (out < -Math.PI) out += Math.PI * 2;
+        return out;
+    }
+
+    getDefenseAngularDistance (a, b) {
+        return Math.abs(this.normalizeDefenseAngle(a - b));
+    }
+
+    buildDefenseAttackSector (player) {
+        if (!player) {
+            return {
+                active: false,
+                dominantAngle: null,
+                halfWidth: DEFENSE_ATTACK_SECTOR_MAX_HALF_WIDTH,
+                threats: []
+            };
+        }
+
+        const now = Date.now();
+        const cache = this.defenseThreatCache || {};
+        if (
+            cache.playerID === player.id &&
+            Number.isFinite(cache.at) &&
+            (now - cache.at) <= DEFENSE_ATTACK_SECTOR_CACHE_MS
+        ) {
+            return cache;
+        }
+
+        const threats = this.collectDefenseThreatUnits(player, 24);
+        if (!Array.isArray(threats) || threats.length === 0) {
+            const empty = {
+                at: now,
+                playerID: player.id,
+                active: false,
+                dominantAngle: null,
+                halfWidth: DEFENSE_ATTACK_SECTOR_MAX_HALF_WIDTH,
+                threats: []
+            };
+            this.defenseThreatCache = empty;
+            return empty;
+        }
+
+        let weightedX = 0;
+        let weightedY = 0;
+        for (const threat of threats) {
+            const weight = Math.max(0.05, Number(threat.score) || 0.05);
+            weightedX += Math.cos(threat.angle) * weight;
+            weightedY += Math.sin(threat.angle) * weight;
+        }
+        const dominantAngle = Math.atan2(weightedY || 0, weightedX || 1);
+
+        let spreadWeighted = 0;
+        let spreadWeightSum = 0;
+        for (const threat of threats.slice(0, 12)) {
+            const weight = Math.max(0.05, Number(threat.score) || 0.05);
+            spreadWeighted += this.getDefenseAngularDistance(threat.angle, dominantAngle) * weight;
+            spreadWeightSum += weight;
+        }
+        const averageSpread = spreadWeightSum > 0 ? spreadWeighted / spreadWeightSum : 0.45;
+        const halfWidth = Math.max(
+            DEFENSE_ATTACK_SECTOR_MIN_HALF_WIDTH,
+            Math.min(DEFENSE_ATTACK_SECTOR_MAX_HALF_WIDTH, averageSpread * 1.35 + 0.24)
+        );
+
+        const out = {
+            at: now,
+            playerID: player.id,
+            active: true,
+            dominantAngle,
+            halfWidth,
+            threats
+        };
+        this.defenseThreatCache = out;
+        return out;
+    }
+
+    isDefensePositionInsideSector (position, player, sector, extraHalfWidth = 0) {
+        if (!position || !player || !sector?.active || !Number.isFinite(sector.dominantAngle)) {
+            return true;
+        }
+        const dx = position.x - player.position.x;
+        const dy = position.y - player.position.y;
+        if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) {
+            return false;
+        }
+        const angle = Math.atan2(dy, dx);
+        const halfWidth = Math.max(
+            DEFENSE_ATTACK_SECTOR_MIN_HALF_WIDTH,
+            Number(sector.halfWidth || DEFENSE_ATTACK_SECTOR_MAX_HALF_WIDTH) + extraHalfWidth
+        );
+        return this.getDefenseAngularDistance(angle, sector.dominantAngle) <= halfWidth;
+    }
+
+    buildDefenseThreatWallCandidates (player, wallSize, attackSector = null) {
         if (!player) return [];
         const range = this.getPlacementRadiusRangeForType(player, BuildingTypes.WALL, wallSize);
         const minRadius = Number(range?.minRadius) || 0;
@@ -2042,13 +2154,29 @@ export class BuildingManager {
         const preferredRadius = clampRadius(maxRadius);
         const coneOffsetsWide = [0, -0.05, 0.05, -0.1, 0.1, -0.15, 0.15, -0.2, 0.2, -0.25, 0.25, -0.3, 0.3];
         const coneOffsetsTight = [0, -0.03, 0.03, -0.06, 0.06, -0.09, 0.09];
-        const radiusOffsets = [0, -2, 2, -4, 4];
         const layeredRadii = [];
         for (let i = 0; i < 5; i++) {
             layeredRadii.push(clampRadius(preferredRadius - i * 8));
         }
-        const threats = this.collectDefenseThreatUnits(player, 24);
-        if (threats.length === 0) return [];
+        const rawThreats = this.collectDefenseThreatUnits(player, 24);
+        if (rawThreats.length === 0) return [];
+
+        let threats = rawThreats;
+        let dominantAngle = null;
+        let sectorHalfWidth = DEFENSE_ATTACK_SECTOR_MAX_HALF_WIDTH;
+        if (attackSector?.active && Number.isFinite(attackSector.dominantAngle)) {
+            dominantAngle = attackSector.dominantAngle;
+            sectorHalfWidth = Math.max(
+                DEFENSE_ATTACK_SECTOR_MIN_HALF_WIDTH,
+                Number(attackSector.halfWidth || DEFENSE_ATTACK_SECTOR_MAX_HALF_WIDTH)
+            );
+            threats = rawThreats.filter((threat) => {
+                return this.getDefenseAngularDistance(threat.angle, dominantAngle) <= (sectorHalfWidth + 0.18);
+            });
+            if (threats.length === 0) {
+                threats = rawThreats.slice(0, Math.min(6, rawThreats.length));
+            }
+        }
 
         const out = [];
         const seen = new Set();
@@ -2062,14 +2190,16 @@ export class BuildingManager {
             out.push({ x, y });
         };
 
-        let weightedX = 0;
-        let weightedY = 0;
-        for (const threat of threats) {
-            const weight = Math.max(0.05, Number(threat.score) || 0.05);
-            weightedX += Math.cos(threat.angle) * weight;
-            weightedY += Math.sin(threat.angle) * weight;
+        if (!Number.isFinite(dominantAngle)) {
+            let weightedX = 0;
+            let weightedY = 0;
+            for (const threat of threats) {
+                const weight = Math.max(0.05, Number(threat.score) || 0.05);
+                weightedX += Math.cos(threat.angle) * weight;
+                weightedY += Math.sin(threat.angle) * weight;
+            }
+            dominantAngle = Math.atan2(weightedY || 0, weightedX || 1);
         }
-        const dominantAngle = Math.atan2(weightedY || 0, weightedX || 1);
 
         // Priority #1: deep layered cone at the dominant attack direction.
         for (const radius of layeredRadii) {
@@ -2079,24 +2209,13 @@ export class BuildingManager {
         }
 
         // Priority #2: reinforce around top threats with tighter cones across layers.
-        const focusedThreats = threats.slice(0, 12);
+        const focusedThreats = threats.slice(0, 8);
         for (const threat of focusedThreats) {
             for (const radius of layeredRadii) {
                 for (const angleOffset of coneOffsetsTight) {
                     addCandidate(threat.angle + angleOffset, radius);
                 }
             }
-        }
-
-        // Priority #3: keep classic per-threat sockets for broader coverage.
-        for (const threat of threats) {
-            const baseRadius = clampRadius(threat.distance);
-            for (const angleOffset of coneOffsetsTight) {
-                for (const radiusOffset of radiusOffsets) {
-                    addCandidate(threat.angle + angleOffset, baseRadius + radiusOffset);
-                }
-            }
-            addCandidate(threat.angle, preferredRadius);
         }
 
         return out;
@@ -2130,9 +2249,25 @@ export class BuildingManager {
         };
 
         const runtime = context || {};
+        if (!runtime.attackSector) {
+            runtime.attackSector = this.buildDefenseAttackSector(player);
+        }
         if (!Array.isArray(runtime.threatCandidates)) {
-            runtime.threatCandidates = this.buildDefenseThreatWallCandidates(player, wallSize);
+            runtime.threatCandidates = this.buildDefenseThreatWallCandidates(player, wallSize, runtime.attackSector);
             runtime.threatCursor = 0;
+        }
+        if (!Array.isArray(runtime.slotEntries)) {
+            const entries = Array.isArray(this.defenseProfile.entries) ? this.defenseProfile.entries : [];
+            runtime.slotEntries = [];
+            for (const entry of entries) {
+                const entryPosition = this.resolveDefenseEntryPosition(entry, player);
+                if (!entryPosition) continue;
+                if (!this.isDefensePositionInsideSector(entryPosition, player, runtime.attackSector, DEFENSE_ATTACK_SECTOR_ENTRY_BONUS)) {
+                    continue;
+                }
+                runtime.slotEntries.push({ entry, entryPosition });
+            }
+            runtime.slotCursor = 0;
         }
         if (!Number.isInteger(runtime.slotCursor) || runtime.slotCursor < 0) {
             runtime.slotCursor = 0;
@@ -2142,14 +2277,15 @@ export class BuildingManager {
 
         // Priority #1: recover saved defend slots at exact base-relative positions.
         if (!selectedPosition) {
-            const entries = this.defenseProfile.entries;
+            const entries = runtime.slotEntries;
             const total = entries.length;
             if (total > 0) {
                 for (let i = 0; i < total; i++) {
                     const idx = (runtime.slotCursor + i) % total;
-                    const entry = entries[idx];
-                    const entryPosition = this.resolveDefenseEntryPosition(entry, player);
-                    if (!entryPosition) continue;
+                    const slot = entries[idx];
+                    if (!slot) continue;
+                    const entry = slot.entry;
+                    const entryPosition = slot.entryPosition;
                     const hasOriginalBuilding = currentBuildings.some(b => {
                         if (b.type !== entry.type) return false;
                         const dx = b.position.x - entryPosition.x;
@@ -2185,7 +2321,7 @@ export class BuildingManager {
 
         // Priority #3: regenerate threat candidates once if exhausted.
         if (!selectedPosition && context && context.threatCandidates.length > 0) {
-            context.threatCandidates = this.buildDefenseThreatWallCandidates(player, wallSize);
+            context.threatCandidates = this.buildDefenseThreatWallCandidates(player, wallSize, context.attackSector);
             context.threatCursor = 0;
             while (context.threatCursor < context.threatCandidates.length) {
                 const candidate = context.threatCandidates[context.threatCursor++];

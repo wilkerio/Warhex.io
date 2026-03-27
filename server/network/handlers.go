@@ -16,7 +16,7 @@ import (
 )
 
 var PORT = os.Getenv("PORT")
-var DISABLE_MULTIBOX_CHECK = false // Enforce multibox check by default (admins are still exempt).
+var DISABLE_MULTIBOX_CHECK = envBoolDefaultFalse("DISABLE_MULTIBOX_CHECK") // Enabled by default; set DISABLE_MULTIBOX_CHECK=true to disable.
 
 const (
 	joinSecurityFlagUnauthorizedExt byte = 0x80
@@ -147,7 +147,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	if SERVER_REBOOTING && !DISABLE_MULTIBOX_CHECK {
+	if SERVER_REBOOTING {
 		sendError(conn)
 		return
 	}
@@ -182,29 +182,30 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	}
 
 	permission := MapRoleToPermission(userData.Role)
-	isSuperAdmin := permission == game.PERMISSION_ADMIN
-	enforceMultiboxCheck := !DISABLE_MULTIBOX_CHECK && !isSuperAdmin
+	enforceMultiboxCheck := !DISABLE_MULTIBOX_CHECK
 
 	if enforceMultiboxCheck {
+		// Strict anti-multibox: only one active connection per IP.
+		if HasAnotherConnectionForIP(conn, userData.ClientIP) {
+			sendError(conn)
+			return
+		}
+
 		// Check if the fingerprint is already used for the client's IP
 		isUsed := IsFingerprintUsedForIP(userData.ClientIP, fingerprint)
 		if isUsed {
 			sendError(conn)
 			return
 		}
-
-		if err := AddFingerprintForConn(conn, fingerprint); err != nil {
-			log.Printf("failed to add fingerprint for conn: %v", err)
-		}
-
-		if userData.Discord.ID != "" {
-			if isDiscordAccountAlreadyPlaying(userData.Discord.ID) {
-				sendError(conn)
-				return
-			}
-
-			AddPlayingDiscordAccount(userData.Discord.ID)
-		}
+	}
+	progressUserID := strings.TrimSpace(userData.ProgressUserID())
+	if progressUserID != "" && isProgressAccountAlreadyPlaying(progressUserID) {
+		sendError(conn)
+		return
+	}
+	if userData.Discord.ID != "" && isDiscordAccountAlreadyPlaying(userData.Discord.ID) {
+		sendError(conn)
+		return
 	}
 
 	cleanName := filterProfanity(string(name))
@@ -262,11 +263,23 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		color = skinData.BaseColor
 	}
 
-	player, ok := game.AddPlayer(conn, permission, []byte(cleanName), color, game.ID(skinData.ID), userData.ProgressUserID())
+	player, ok := game.AddPlayer(conn, permission, []byte(cleanName), color, game.ID(skinData.ID), progressUserID)
 	if !ok {
 		log.Println("Failed to add player to the game")
 		sendError(conn)
 		return
+	}
+
+	if enforceMultiboxCheck {
+		if err := AddFingerprintForConn(conn, fingerprint); err != nil {
+			log.Printf("failed to add fingerprint for conn: %v", err)
+		}
+	}
+	if progressUserID != "" {
+		AddPlayingProgressAccount(progressUserID)
+	}
+	if userData.Discord.ID != "" {
+		AddPlayingDiscordAccount(userData.Discord.ID)
 	}
 
 	sendGameState(player, &player.ID)
@@ -1472,12 +1485,12 @@ func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
 	}
 
 	var (
-		leftNeighborID  game.ID
-		rightNeighborID game.ID
-		hasLeftNeighbor bool
+		leftNeighborID   game.ID
+		rightNeighborID  game.ID
+		hasLeftNeighbor  bool
 		hasRightNeighbor bool
-		leftDist        = math.MaxFloat64
-		rightDist       = math.MaxFloat64
+		leftDist         = math.MaxFloat64
+		rightDist        = math.MaxFloat64
 	)
 
 	game.State.RLock()

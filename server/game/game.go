@@ -90,7 +90,7 @@ func clearSpawnArea(position PositionInt, radius float32) {
 
 func Start() {
 	rand.Seed(time.Now().UnixNano()) // Initialize random seed
-	availablePlayerIDs = InitAvailableIDs(64)
+	availablePlayerIDs = InitAvailableIDs(MAX_CONCURRENT_PLAYERS)
 	InitializeGameMap()
 	State.Leaderboard = &Leaderboard{}
 

@@ -56,6 +56,7 @@ var (
 	ipIndex            = make(map[string][]UserConnection)        // Index multiple connections by IP
 	ipFingerprintIndex = make(map[string]map[uint32]struct{})     // Map to index fingerprints by IP
 	playingDiscordIds  = make(map[string]struct{})                // Map to index fingerprints by IP
+	playingProgressIds = make(map[string]struct{})                // Map to track active authenticated accounts
 )
 
 func isDiscordAccountAlreadyPlaying(discordId string) bool {
@@ -66,6 +67,14 @@ func isDiscordAccountAlreadyPlaying(discordId string) bool {
 	return exists
 }
 
+func isProgressAccountAlreadyPlaying(progressID string) bool {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
+	_, exists := playingProgressIds[progressID]
+	return exists
+}
+
 func AddPlayingDiscordAccount(discordId string) {
 	connectionMutex.Lock()
 	defer connectionMutex.Unlock()
@@ -73,10 +82,45 @@ func AddPlayingDiscordAccount(discordId string) {
 	playingDiscordIds[discordId] = struct{}{}
 }
 
+func AddPlayingProgressAccount(progressID string) {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
+	playingProgressIds[progressID] = struct{}{}
+}
+
 func RemovePlayingDiscordAccount(discordId string) {
 	connectionMutex.Lock()
 	defer connectionMutex.Unlock()
 	delete(playingDiscordIds, discordId)
+}
+
+func RemovePlayingProgressAccount(progressID string) {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+	delete(playingProgressIds, progressID)
+}
+
+func HasAnotherConnectionForIP(conn *websocket.Conn, clientIP string) bool {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
+	if strings.TrimSpace(clientIP) == "" {
+		return false
+	}
+
+	userConns, exists := ipIndex[clientIP]
+	if !exists {
+		return false
+	}
+
+	for _, userConn := range userConns {
+		if userConn.Conn != nil && userConn.Conn != conn {
+			return true
+		}
+	}
+
+	return false
 }
 
 // StoreUserData stores the connection and associates it with UserData, also indexing by IP.
@@ -144,6 +188,14 @@ func RemoveUserConnection(conn *websocket.Conn) {
 
 		// Remove the connection from the activeConnections map
 		delete(activeConnections, conn)
+
+		// Remove active account markers
+		if progressID := strings.TrimSpace(userConn.UserData.ProgressUserID()); progressID != "" {
+			delete(playingProgressIds, progressID)
+		}
+		if discordID := strings.TrimSpace(userConn.UserData.Discord.ID); discordID != "" {
+			delete(playingDiscordIds, discordID)
+		}
 
 		// Remove the fingerprint from the ipFingerprintIndex if needed
 		if userConn.UserData.Fingerprint != nil {

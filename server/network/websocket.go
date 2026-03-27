@@ -3,8 +3,10 @@ package network
 import (
 	"log"
 	"net/http"
+	"os"
 	"server/game"
-	"time"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/time/rate"
@@ -18,8 +20,32 @@ var (
 		ReadBufferSize:  8192,
 		WriteBufferSize: 16192,
 	}
-	limiter = rate.NewLimiter(rate.Every(time.Second), 5) // Global rate limiter for the server
+	wsConnectionLimiter = initWsConnectionLimiter()
 )
+
+func initWsConnectionLimiter() *rate.Limiter {
+	// Default is unlimited. Set WS_CONNECT_LIMIT_PER_SEC>0 to enforce a cap.
+	rawPerSec := strings.TrimSpace(os.Getenv("WS_CONNECT_LIMIT_PER_SEC"))
+	if rawPerSec == "" {
+		return nil
+	}
+
+	perSec, err := strconv.Atoi(rawPerSec)
+	if err != nil || perSec <= 0 {
+		log.Printf("invalid WS_CONNECT_LIMIT_PER_SEC=%q, keeping unlimited", rawPerSec)
+		return nil
+	}
+
+	burst := perSec
+	rawBurst := strings.TrimSpace(os.Getenv("WS_CONNECT_LIMIT_BURST"))
+	if rawBurst != "" {
+		if parsedBurst, parseErr := strconv.Atoi(rawBurst); parseErr == nil && parsedBurst > 0 {
+			burst = parsedBurst
+		}
+	}
+
+	return rate.NewLimiter(rate.Limit(perSec), burst)
+}
 
 func init() {
 	workerPool = NewWorkerPool(4)
@@ -146,6 +172,7 @@ func handleEvent(event game.Event) {
 						AddUnlockedSkinsLocally(player.Conn, newUnlockedSkins)
 					}
 				}()
+				RemovePlayingProgressAccount(progressUserID)
 			}
 			if userData.Discord.ID != "" {
 				RemovePlayingDiscordAccount(userData.Discord.ID)
@@ -185,6 +212,7 @@ func handleEvent(event game.Event) {
 						AddUnlockedSkinsLocally(player.Conn, newUnlockedSkins)
 					}
 				}()
+				RemovePlayingProgressAccount(progressUserID)
 			}
 			if userData.Discord.ID != "" {
 				RemovePlayingDiscordAccount(userData.Discord.ID)
@@ -252,7 +280,7 @@ func listenForEvents() {
 
 func WsEndpoint(w http.ResponseWriter, r *http.Request, userData UserData) {
 	// Apply rate limiting
-	if !limiter.Allow() {
+	if wsConnectionLimiter != nil && !wsConnectionLimiter.Allow() {
 		log.Println("Rate limit exceeded for", r.RemoteAddr)
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
@@ -306,6 +334,7 @@ func removePlayerByConnection(conn *websocket.Conn) {
 			progressUserID := userData.ProgressUserID()
 			if progressUserID != "" {
 				go UpdateUserStats(progressUserID, playerScore, kills, playtime)
+				RemovePlayingProgressAccount(progressUserID)
 			}
 			if userData.Discord.ID != "" {
 				RemovePlayingDiscordAccount(userData.Discord.ID)

@@ -169,4 +169,7 @@ const (
 	MIN_PLAYER_SPAWN_DISTANCE = 1500 // Minimum distance between player spawns
 	MIN_BORDER_DISTANCE       = 500  // Minimum distance from map borders
 	PLAYER_SPAWN_CLEAR_RADIUS = 600  // Radius to clear objects around spawn
+
+	// Networking protocol currently encodes player IDs/count in 1 byte.
+	MAX_CONCURRENT_PLAYERS = 255
 )
