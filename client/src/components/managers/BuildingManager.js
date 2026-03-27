@@ -140,6 +140,12 @@ export class BuildingManager {
         this.defenseRemountBurstSize = 30;
         this.defensePlacementIntervalMs = 120;
         this.defenseRemountUpgradeRequestAt = new Map();
+        this.commanderAssistAutoDefenseEnabled = false;
+        this.commanderAssistAutoDefenseLastTickAt = 0;
+        this.commanderAssistAutoDefenseLastRemountAt = 0;
+        this.commanderAssistAutoDefenseTickIntervalMs = 150;
+        this.commanderAssistAutoDefenseRemountIntervalMs = 260;
+        this.commanderAssistAutoDefenseIdleRemountIntervalMs = 1250;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -1735,6 +1741,128 @@ export class BuildingManager {
         );
     }
 
+    buildDefenseProfileEntriesFromCurrentBase (player = this.core.gameManager.player) {
+        if (!player) return [];
+        return (player.buildings || [])
+            .filter((building) => building && !building.removeFlag)
+            .map((building) => ({
+                type: building.type,
+                variant: Number.isFinite(Number(building.variant)) ? Number(building.variant) : 0,
+                rotationStep: Number.isFinite(Number(building.placementRotationStep)) ? Number(building.placementRotationStep) : 0,
+                dx: Math.round((building.position.x - player.position.x) * 10) / 10,
+                dy: Math.round((building.position.y - player.position.y) * 10) / 10,
+                position: {
+                    x: Math.round(building.position.x * 10) / 10,
+                    y: Math.round(building.position.y * 10) / 10
+                }
+            }));
+    }
+
+    ensureDefenseProfileForCommanderAssist (options = {}) {
+        const { silent = true, forceRefresh = false } = options;
+        if (!forceRefresh && this.defenseProfile && Array.isArray(this.defenseProfile.entries) && this.defenseProfile.entries.length > 0) {
+            return true;
+        }
+
+        const player = this.core.gameManager.player;
+        if (!player) return false;
+
+        const entries = this.buildDefenseProfileEntriesFromCurrentBase(player);
+        if (!entries.length) {
+            if (!silent) {
+                this.core.uiManager?.addChatMessage?.("System", "No buildings to save for defend.", "#ffcc66");
+            }
+            return false;
+        }
+
+        this.defenseProfile = {
+            createdAt: Date.now(),
+            entries
+        };
+        if (this.defenseRemountUpgradeRequestAt instanceof Map) {
+            this.defenseRemountUpgradeRequestAt.clear();
+        }
+        if (!silent) {
+            this.core.uiManager?.addChatMessage?.("System", "Defend base saved for Commander Assist.", "#60c1ff");
+        }
+        return true;
+    }
+
+    setCommanderAssistAutoDefenseEnabled (enabled, options = {}) {
+        const shouldEnable = Boolean(enabled);
+        this.commanderAssistAutoDefenseEnabled = shouldEnable;
+        this.commanderAssistAutoDefenseLastTickAt = 0;
+        this.commanderAssistAutoDefenseLastRemountAt = 0;
+
+        if (!shouldEnable) {
+            return false;
+        }
+
+        return this.ensureDefenseProfileForCommanderAssist({
+            silent: options?.silent !== false,
+            forceRefresh: Boolean(options?.forceRefresh)
+        });
+    }
+
+    promptCommanderAssistRemountKey () {
+        const suggestedRemount = this.defenseRemountKey || ",";
+        const rawRemount = window.prompt(
+            "Commander Assist (*): escolha a tecla de REMOUNT (segure para reconstruir slots salvos).",
+            suggestedRemount
+        );
+        if (rawRemount === null) {
+            this.core.uiManager?.notifySystemInfo?.(`Remount mantido em [${String(suggestedRemount).toUpperCase()}].`);
+            return false;
+        }
+
+        const remountKey = this.core.uiManager?.normalizeKeybindValue?.(rawRemount) || String(rawRemount).trim().toLowerCase();
+        if (!remountKey) {
+            this.core.uiManager?.notifySystemWarning?.("Invalid remount key.");
+            return false;
+        }
+
+        const remountReservedReason = this.core.uiManager?.getReservedGameplayKeybindNotice?.(remountKey);
+        if (remountReservedReason) {
+            this.core.uiManager?.notifySystemWarning?.(remountReservedReason);
+            return false;
+        }
+        if (remountKey === this.defensePlacementKey) {
+            this.core.uiManager?.notifySystemWarning?.("Defense and remount keys must be different.");
+            return false;
+        }
+
+        const remountConflict = this.core.uiManager?.findConfiguredKeyConflict?.(remountKey, {
+            excludeScope: "defense",
+            excludeId: "remount"
+        });
+        if (remountConflict) {
+            this.core.uiManager?.showKeyConflictNotice?.(remountKey, remountConflict);
+            return false;
+        }
+
+        this.defenseRemountKey = remountKey;
+        this.core.uiManager?.notifySystemInfo?.(`Commander Assist remount key: [${remountKey.toUpperCase()}].`);
+        return true;
+    }
+
+    updateCommanderAssistAutoDefense (now = Date.now()) {
+        if (!this.commanderAssistAutoDefenseEnabled) return 0;
+        if ((now - this.commanderAssistAutoDefenseLastTickAt) < this.commanderAssistAutoDefenseTickIntervalMs) return 0;
+        this.commanderAssistAutoDefenseLastTickAt = now;
+
+        const player = this.core.gameManager.player;
+        if (!player) return 0;
+        if (!this.ensureDefenseProfileForCommanderAssist({ silent: true })) return 0;
+
+        const attackSector = this.buildDefenseAttackSector(player);
+        const hasActiveThreat = Boolean(attackSector?.active);
+        const placed = this.placeDefenseWallBurst({
+            force: hasActiveThreat,
+            attackSector
+        });
+        return placed;
+    }
+
     stopConflictingAutoActions () {
         if (this.autogensRunning) {
             this.stopAutoPlaceGenerators();
@@ -1752,19 +1880,7 @@ export class BuildingManager {
         this.stopDefensePlacement();
         this.stopDefenseRemount();
 
-        const entries = (player.buildings || [])
-            .filter(b => b && !b.removeFlag)
-            .map(b => ({
-                type: b.type,
-                variant: Number.isFinite(Number(b.variant)) ? Number(b.variant) : 0,
-                rotationStep: Number.isFinite(Number(b.placementRotationStep)) ? Number(b.placementRotationStep) : 0,
-                dx: Math.round((b.position.x - player.position.x) * 10) / 10,
-                dy: Math.round((b.position.y - player.position.y) * 10) / 10,
-                position: {
-                    x: Math.round(b.position.x * 10) / 10,
-                    y: Math.round(b.position.y * 10) / 10
-                }
-            }));
+        const entries = this.buildDefenseProfileEntriesFromCurrentBase(player);
 
         if (entries.length === 0) {
             this.core.uiManager.addChatMessage("System", "No buildings to save for defend.", "#ffcc66");
@@ -1934,8 +2050,9 @@ export class BuildingManager {
         }
     }
 
-    placeDefenseWallBurst () {
-        if (!this.defensePlacementActive || !this.defenseProfile) return 0;
+    placeDefenseWallBurst (options = {}) {
+        const forced = Boolean(options?.force);
+        if ((!this.defensePlacementActive && !forced) || !this.defenseProfile) return 0;
         const player = this.core.gameManager.player;
         if (!player) return 0;
 
@@ -1947,7 +2064,7 @@ export class BuildingManager {
             threatCursor: 0,
             slotCursor: 0,
             slotEntries: null,
-            attackSector: this.buildDefenseAttackSector(player)
+            attackSector: options?.attackSector || this.buildDefenseAttackSector(player)
         };
         let placed = 0;
         for (let i = 0; i < burst; i++) {

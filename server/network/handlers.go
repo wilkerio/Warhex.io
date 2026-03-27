@@ -189,6 +189,22 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	enforceMultiboxCheck := !DISABLE_MULTIBOX_CHECK
 
 	if enforceMultiboxCheck {
+		// Reconnect quality-of-life:
+		// If this same device/user is already connected (stale tab/reload),
+		// close the older connection first instead of rejecting the join.
+		if existing := FindConnectionForIPAndFingerprint(conn, userData.ClientIP, fingerprint); existing != nil {
+			log.Printf("closing previous connection on reconnect (same fingerprint): %s", existing.RemoteAddr().String())
+			CloseConnection(existing)
+		}
+		for attempt := 0; attempt < 3; attempt++ {
+			existing := FindOtherConnectionForIdentity(conn, userData)
+			if existing == nil {
+				break
+			}
+			log.Printf("closing previous connection on reconnect (same identity): %s", existing.RemoteAddr().String())
+			CloseConnection(existing)
+		}
+
 		// Strict anti-multibox: only one active connection per IP.
 		if HasAnotherConnectionForIP(conn, userData.ClientIP) {
 			sendError(conn)
@@ -203,6 +219,22 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		}
 	}
 	progressUserID := strings.TrimSpace(userData.ProgressUserID())
+	if progressUserID != "" && isProgressAccountAlreadyPlaying(progressUserID) {
+		if !HasOtherConnectionForProgressID(conn, progressUserID) {
+			RemovePlayingProgressAccount(progressUserID)
+		} else {
+			sendError(conn)
+			return
+		}
+	}
+	if userData.Discord.ID != "" && isDiscordAccountAlreadyPlaying(userData.Discord.ID) {
+		if !HasOtherConnectionForDiscordID(conn, userData.Discord.ID) {
+			RemovePlayingDiscordAccount(userData.Discord.ID)
+		} else {
+			sendError(conn)
+			return
+		}
+	}
 	if progressUserID != "" && isProgressAccountAlreadyPlaying(progressUserID) {
 		sendError(conn)
 		return
@@ -931,17 +963,19 @@ func handleMoveUnitsMessage(conn *websocket.Conn, payload []byte) {
 		UnitIds:        unitIDs,
 	}
 
-	// Check if the movement is suspicious based on the last 5 movements
-	if isSuspiciousMovement(player, newMovement) {
-		player.HandleSuspiciousBehavior()
-		return
+	assistEnabled := player.IsCommanderAssistEnabled()
+	if !assistEnabled {
+		// Check if the movement is suspicious based on recent movements.
+		if isSuspiciousMovement(player, newMovement) {
+			player.HandleSuspiciousBehavior()
+			return
+		}
 
-	}
-
-	isScripting := player.UpdateSuspicion()
-	if isScripting {
-		log.Printf("Kicked Player: %s for unit movement script", player.Name)
-		game.TriggerKickEvent(player, game.KICK_REASON_SCRIPTING)
+		isScripting := player.UpdateSuspicion()
+		if isScripting {
+			log.Printf("Kicked Player: %s for unit movement script", player.Name)
+			game.TriggerKickEvent(player, game.KICK_REASON_SCRIPTING)
+		}
 	}
 
 	// Set the new movement package to the player's history and remove the old
@@ -1471,6 +1505,9 @@ func handleClientToggleCommanderAssist(conn *websocket.Conn, payload []byte) {
 
 	enabled := payload[0] == 1
 	player.SetCommanderAssistEnabled(enabled)
+	if enabled {
+		player.EnforceCommanderAssistPowerFloor()
+	}
 	sendResourceUpdate(player)
 }
 

@@ -99,6 +99,24 @@ func (p *Player) SpendPower(amount uint16) bool {
 		ApplyOwnerGodMode(p)
 		return true
 	}
+
+	floor := p.GetCommanderAssistPowerFloor()
+	if floor > 0 {
+		p.Resources.Power.Lock()
+		defer p.Resources.Power.Unlock()
+		current := p.Resources.Power.Current
+		if current < amount {
+			return false
+		}
+		next := current - amount
+		// Assist floor behavior: spending is allowed, but power cannot stay below floor.
+		if next < floor {
+			next = floor
+		}
+		p.Resources.Power.Current = next
+		return true
+	}
+
 	return p.Resources.Power.Decrement(amount)
 }
 

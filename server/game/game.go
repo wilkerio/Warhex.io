@@ -454,8 +454,9 @@ func startResourceUpdateLoop() {
 				ApplyOwnerGodMode(player)
 			}
 
-			generatingPower := player.GetEffectiveGeneratingPower()
-			player.Resources.Power.Increment(generatingPower)
+				generatingPower := player.GetEffectiveGeneratingPower()
+				player.Resources.Power.Increment(generatingPower)
+				player.EnforceCommanderAssistPowerFloor()
 
 			numNeutralBases := len(player.CapturedNeutralBases)
 

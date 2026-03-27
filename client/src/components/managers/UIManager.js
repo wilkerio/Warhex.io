@@ -8171,11 +8171,45 @@ export default class UIManager {
 
     updateResources () {
         const { power } = this.core.gameManager.resources;
+        const effectiveRate = Number(power.generationRate || 0);
+        const assistEnabled = Boolean(this.core?.unitManager?.commanderAssistEnabled);
+        const hasCommander = Boolean(this.core?.gameManager?.hasCommander);
+        const assistBuffPercent = 30;
 
-        this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max} (+${power.generationRate}/s)</span>`;
+        let gainLabel = `+${effectiveRate}/s`;
+        if (assistEnabled && hasCommander && effectiveRate > 0) {
+            const baseRate = this.estimateBaseGenerationRateFromBuff(effectiveRate, assistBuffPercent);
+            if (baseRate !== null) {
+                const buffRate = Math.max(0, effectiveRate - baseRate);
+                gainLabel = `+${effectiveRate}/s <span style="opacity:.85">| buff +${assistBuffPercent}% (+${buffRate}/s)</span>`;
+            } else {
+                gainLabel = `+${effectiveRate}/s <span style="opacity:.85">| buff +${assistBuffPercent}%</span>`;
+            }
+        }
+
+        this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max} (${gainLabel})</span>`;
 
 
         this._updateCost(); // Update the upgrade panel
+    }
+
+    estimateBaseGenerationRateFromBuff (effectiveRate, buffPercent) {
+        const safeEffective = Number(effectiveRate);
+        const safeBuff = Number(buffPercent);
+        if (!Number.isFinite(safeEffective) || safeEffective < 0) return null;
+        if (!Number.isFinite(safeBuff) || safeBuff <= 0) return safeEffective;
+
+        for (let base = 0; base <= safeEffective; base++) {
+            const bonus = Math.floor((base * safeBuff + 99) / 100);
+            if (base + bonus === safeEffective) {
+                return base;
+            }
+        }
+
+        // Fallback for edge cases where effective rate includes additional modifiers
+        // and doesn't map exactly to base + ceil(base * buff%).
+        const rawBase = Math.floor((safeEffective * 100) / (100 + safeBuff));
+        return Math.max(0, Math.min(safeEffective, rawBase));
     }
 
     showSpawnProtectionTimer () {

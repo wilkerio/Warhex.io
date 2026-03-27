@@ -123,6 +123,97 @@ func HasAnotherConnectionForIP(conn *websocket.Conn, clientIP string) bool {
 	return false
 }
 
+func FindConnectionForIPAndFingerprint(conn *websocket.Conn, clientIP string, fingerprint uint32) *websocket.Conn {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
+	if strings.TrimSpace(clientIP) == "" {
+		return nil
+	}
+
+	for wsConn, userConn := range activeConnections {
+		if wsConn == nil || wsConn == conn {
+			continue
+		}
+		if strings.TrimSpace(userConn.UserData.ClientIP) != clientIP {
+			continue
+		}
+		if userConn.UserData.Fingerprint != nil && *userConn.UserData.Fingerprint == fingerprint {
+			return wsConn
+		}
+	}
+
+	return nil
+}
+
+func FindOtherConnectionForIdentity(conn *websocket.Conn, userData UserData) *websocket.Conn {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
+	progressID := strings.TrimSpace(userData.ProgressUserID())
+	discordID := strings.TrimSpace(userData.Discord.ID)
+	if progressID == "" && discordID == "" {
+		return nil
+	}
+
+	for wsConn, other := range activeConnections {
+		if wsConn == nil || wsConn == conn {
+			continue
+		}
+
+		if progressID != "" && strings.TrimSpace(other.UserData.ProgressUserID()) == progressID {
+			return wsConn
+		}
+		if discordID != "" && strings.TrimSpace(other.UserData.Discord.ID) == discordID {
+			return wsConn
+		}
+	}
+
+	return nil
+}
+
+func HasOtherConnectionForProgressID(conn *websocket.Conn, progressID string) bool {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
+	target := strings.TrimSpace(progressID)
+	if target == "" {
+		return false
+	}
+
+	for wsConn, userConn := range activeConnections {
+		if wsConn == nil || wsConn == conn {
+			continue
+		}
+		if strings.TrimSpace(userConn.UserData.ProgressUserID()) == target {
+			return true
+		}
+	}
+
+	return false
+}
+
+func HasOtherConnectionForDiscordID(conn *websocket.Conn, discordID string) bool {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
+	target := strings.TrimSpace(discordID)
+	if target == "" {
+		return false
+	}
+
+	for wsConn, userConn := range activeConnections {
+		if wsConn == nil || wsConn == conn {
+			continue
+		}
+		if strings.TrimSpace(userConn.UserData.Discord.ID) == target {
+			return true
+		}
+	}
+
+	return false
+}
+
 // StoreUserData stores the connection and associates it with UserData, also indexing by IP.
 func StoreUserData(conn *websocket.Conn, userData UserData) bool {
 	connectionMutex.Lock()

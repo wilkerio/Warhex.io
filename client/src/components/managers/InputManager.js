@@ -130,6 +130,10 @@ export default class InputManager {
                 || event.code === "NumpadMultiply"
                 || (event.code === "Digit8" && event.shiftKey)
             );
+            const isCommanderReturnHotkey = (
+                key === ","
+                || event.code === "Comma"
+            );
 
             if (isCommanderAssistHotkey && canUseGameplayHotkeys && !isFormFocused && !event.repeat) {
                 const duelOpponentID = this.core?.gameManager?.duelOpponentID;
@@ -139,6 +143,13 @@ export default class InputManager {
                     this.core.unitManager?.showX1PowerInfo?.();
                 }
                 handledAnyAction = true;
+            }
+
+            if (isCommanderReturnHotkey && canUseGameplayHotkeys && !isFormFocused && !event.repeat) {
+                const consumed = this.core.unitManager?.handleCommanderReturnToBaseHotkey?.();
+                if (consumed) {
+                    handledAnyAction = true;
+                }
             }
 
             const isDeleteSellHotkey = (

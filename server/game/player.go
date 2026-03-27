@@ -16,6 +16,8 @@ type MovementPackage struct {
 	UnitIds        []byte
 }
 
+const commanderAssistPowerFloor uint16 = 2000
+
 type Player struct {
 	// Identification & Connection
 	ID                      ID
@@ -176,17 +178,59 @@ func (p *Player) GetEffectiveGeneratingPower() uint16 {
 		return baseGenerating
 	}
 
-	// Commander Assist grants +20% generation while active.
-	bonus := baseGenerating / 5
-	if baseGenerating%5 != 0 {
-		bonus++
-	}
+	// Commander Assist grants +30% generation while active.
+	// Use integer math with ceil to preserve small-value gains.
+	bonus := uint16((uint32(baseGenerating)*30 + 99) / 100)
 
 	effective := uint32(baseGenerating) + uint32(bonus)
 	if effective > uint32(^uint16(0)) {
 		return ^uint16(0)
 	}
 	return uint16(effective)
+}
+
+func (p *Player) GetCommanderAssistPowerFloor() uint16 {
+	if p == nil {
+		return 0
+	}
+
+	p.RLock()
+	assistEnabled := p.CommanderAssistEnabled
+	p.RUnlock()
+	if !assistEnabled {
+		return 0
+	}
+
+	p.Resources.Power.RLock()
+	capacity := p.Resources.Power.Capacity
+	p.Resources.Power.RUnlock()
+
+	if capacity == 0 {
+		return 0
+	}
+	if capacity < commanderAssistPowerFloor {
+		return capacity
+	}
+	return commanderAssistPowerFloor
+}
+
+func (p *Player) EnforceCommanderAssistPowerFloor() bool {
+	if p == nil {
+		return false
+	}
+
+	floor := p.GetCommanderAssistPowerFloor()
+	if floor == 0 {
+		return false
+	}
+
+	p.Resources.Power.Lock()
+	defer p.Resources.Power.Unlock()
+	if p.Resources.Power.Current >= floor {
+		return false
+	}
+	p.Resources.Power.Current = floor
+	return true
 }
 
 func (p *Player) SetLastActivity() {
@@ -634,6 +678,12 @@ func (p *Player) SetCommanderAssistEnabled(enabled bool) {
 	p.Lock()
 	defer p.Unlock()
 	p.CommanderAssistEnabled = enabled
+}
+
+func (p *Player) IsCommanderAssistEnabled() bool {
+	p.RLock()
+	defer p.RUnlock()
+	return p.CommanderAssistEnabled
 }
 
 func (p *Player) ApplySoldierArmorUpgrade(enabled bool) {
