@@ -90,19 +90,77 @@ export default class UnitManager {
         ) || null;
     }
 
+    normalizePlayerId (value) {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    getAssistOpponentIds () {
+        const gameManager = this.core?.gameManager;
+        const opponentIds = new Set();
+
+        const duelOpponentId = this.normalizePlayerId(gameManager?.duelOpponentID);
+        if (duelOpponentId !== null) {
+            opponentIds.add(duelOpponentId);
+        }
+
+        const localPlayerId = this.normalizePlayerId(
+            gameManager?.getCurrentPlayerId?.() ?? gameManager?.player?.id
+        );
+        if (localPlayerId === null) {
+            return opponentIds;
+        }
+
+        const globalDuelArenas = Array.isArray(gameManager?.globalDuelArenas) ? gameManager.globalDuelArenas : [];
+        globalDuelArenas.forEach((arena) => {
+            const playerAID = this.normalizePlayerId(arena?.playerAID);
+            const playerBID = this.normalizePlayerId(arena?.playerBID);
+            if (playerAID === null || playerBID === null) return;
+
+            if (playerAID === localPlayerId) {
+                opponentIds.add(playerBID);
+            } else if (playerBID === localPlayerId) {
+                opponentIds.add(playerAID);
+            }
+        });
+
+        return opponentIds;
+    }
+
     getEnemySoldiersForAssist () {
         const gameManager = this.core?.gameManager;
         const players = Array.isArray(gameManager?.players) ? gameManager.players : [];
-        const duelOpponentID = Number.isInteger(gameManager?.duelOpponentID) ? gameManager.duelOpponentID : null;
-        const duelOpponentPlayer = duelOpponentID === null
-            ? null
-            : players.find((player) => player && player.id === duelOpponentID);
-        const shouldFocusDuelOpponent = Boolean(duelOpponentPlayer);
-        const sourcePlayers = shouldFocusDuelOpponent ? [duelOpponentPlayer] : players;
+        const localPlayerId = this.normalizePlayerId(
+            gameManager?.getCurrentPlayerId?.() ?? gameManager?.player?.id
+        );
+
+        const playersById = new Map();
+        players.forEach((player) => {
+            const playerId = this.normalizePlayerId(player?.id);
+            if (player && playerId !== null) {
+                playersById.set(playerId, player);
+            }
+        });
+
+        const assistOpponentIds = this.getAssistOpponentIds();
+        let sourcePlayers = players;
+        if (assistOpponentIds.size > 0) {
+            sourcePlayers = Array.from(assistOpponentIds)
+                .map((id) => playersById.get(id))
+                .filter(Boolean);
+
+            // During an active X1, never fall back to all enemies if opponent
+            // mapping exists but the specific player entity is temporarily unavailable.
+            if (sourcePlayers.length === 0) {
+                return [];
+            }
+        }
         const enemySoldiers = [];
 
         sourcePlayers.forEach((player) => {
-            if (!player || player.isClient) return;
+            if (!player) return;
+            const playerId = this.normalizePlayerId(player.id);
+            if ((localPlayerId !== null && playerId === localPlayerId) || player.isClient) return;
 
             const groups = [player.units, player.spawningUnits];
             groups.forEach((group) => {
@@ -110,7 +168,7 @@ export default class UnitManager {
                 group.forEach((unit) => {
                     if (!unit || unit.type !== UnitTypes.SOLDIER || unit.isFadingOut || !unit.position) return;
                     enemySoldiers.push({
-                        key: `${player.id}:${unit.id}`,
+                        key: `${playerId}:${unit.id}`,
                         unit
                     });
                 });
