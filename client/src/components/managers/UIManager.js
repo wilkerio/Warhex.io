@@ -81,6 +81,11 @@ export default class UIManager {
         this._musicControlsResizeHandler = null;
         this.screenNoticeElement = null;
         this.screenNoticeHideTimeout = null;
+        this.powerHudVisualOverride = null;
+        this.powerHudAutoCycleTimer = null;
+        this.powerHudAutoCycleMin = 1;
+        this.powerHudAutoCycleMax = 350;
+        this.powerHudAutoCycleStep = 1;
         this._baseLayoutHotkeyLoadInFlight = false;
         this._cameraZoomInitialized = false;
         this.tutorialPendingStart = false;
@@ -8181,10 +8186,81 @@ export default class UIManager {
             }
         }
 
-        this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max} (${gainLabel})</span>`;
+        const displayedPowerCurrent = Number.isFinite(Number(this.powerHudVisualOverride))
+            ? Math.max(0, Math.floor(Number(this.powerHudVisualOverride)))
+            : power.current;
+        this.DOM.game.resources.power.innerHTML = `Power: <span>${displayedPowerCurrent}/${power.max} (${gainLabel})</span>`;
 
 
         this._updateCost(); // Update the upgrade panel
+    }
+
+    setPowerHudVisualOverride (value, options = {}) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return false;
+        this.powerHudVisualOverride = Math.floor(parsed);
+        if (options?.refresh !== false) {
+            this.updateResources();
+        }
+        return true;
+    }
+
+    clearPowerHudVisualOverride (options = {}) {
+        this.stopPowerHudVisualAutoCycle({ refresh: false });
+        this.powerHudVisualOverride = null;
+        if (options?.refresh !== false) {
+            this.updateResources();
+        }
+    }
+
+    startPowerHudVisualAutoCycle (options = {}) {
+        let min = Number.isFinite(Number(options?.min)) ? Math.floor(Number(options.min)) : this.powerHudAutoCycleMin;
+        let max = Number.isFinite(Number(options?.max)) ? Math.floor(Number(options.max)) : this.powerHudAutoCycleMax;
+        const step = Math.max(1, Number.isFinite(Number(options?.step)) ? Math.floor(Number(options.step)) : this.powerHudAutoCycleStep);
+        const intervalMs = Math.max(40, Number.isFinite(Number(options?.intervalMs)) ? Math.floor(Number(options.intervalMs)) : 90);
+        if (min > max) {
+            const tmp = min;
+            min = max;
+            max = tmp;
+        }
+        if (min < 0) min = 0;
+        if (max < min) max = min;
+
+        this.powerHudAutoCycleMin = min;
+        this.powerHudAutoCycleMax = max;
+        this.powerHudAutoCycleStep = step;
+
+        const currentValue = Number.isFinite(Number(this.powerHudVisualOverride))
+            ? Math.floor(Number(this.powerHudVisualOverride))
+            : min;
+        this.powerHudVisualOverride = Math.max(min, Math.min(max, currentValue));
+        this.updateResources();
+
+        if (this.powerHudAutoCycleTimer) return true;
+        this.powerHudAutoCycleTimer = setInterval(() => {
+            const current = Number.isFinite(Number(this.powerHudVisualOverride))
+                ? Math.floor(Number(this.powerHudVisualOverride))
+                : min;
+            let next = current + step;
+            if (next > max) next = min;
+            this.powerHudVisualOverride = next;
+            this.updateResources();
+        }, intervalMs);
+        return true;
+    }
+
+    isPowerHudVisualAutoCycleActive () {
+        return Boolean(this.powerHudAutoCycleTimer);
+    }
+
+    stopPowerHudVisualAutoCycle (options = {}) {
+        if (this.powerHudAutoCycleTimer) {
+            clearInterval(this.powerHudAutoCycleTimer);
+            this.powerHudAutoCycleTimer = null;
+        }
+        if (options?.refresh) {
+            this.updateResources();
+        }
     }
 
     estimateBaseGenerationRateFromBuff (effectiveRate, buffPercent) {

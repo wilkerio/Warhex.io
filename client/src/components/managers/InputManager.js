@@ -134,6 +134,11 @@ export default class InputManager {
                 key === ","
                 || event.code === "Comma"
             );
+            const isPowerVisualCycleHotkey = (
+                key === "home"
+                || event.code === "Home"
+                || event.code === "Numpad7"
+            );
 
             if (isCommanderAssistHotkey && canUseGameplayHotkeys && !isFormFocused && !event.repeat) {
                 const duelOpponentID = this.core?.gameManager?.duelOpponentID;
@@ -150,6 +155,22 @@ export default class InputManager {
                 if (consumed) {
                     handledAnyAction = true;
                 }
+            }
+            if (isPowerVisualCycleHotkey && !event.repeat) {
+                const active = ui?.isPowerHudVisualAutoCycleActive?.();
+                if (active) {
+                    ui?.stopPowerHudVisualAutoCycle?.({ refresh: true });
+                    ui?.notifySystemInfo?.("Power visual cycle OFF.");
+                } else {
+                    ui?.startPowerHudVisualAutoCycle?.({
+                        min: 1,
+                        max: 350,
+                        step: 1,
+                        intervalMs: 90
+                    });
+                    ui?.notifySystemInfo?.("Power visual cycle ON (HM/Home).");
+                }
+                handledAnyAction = true;
             }
 
             const isDeleteSellHotkey = (

@@ -458,7 +458,6 @@
                                 maxlength="20">
                             <div id="logged-in-nickname" style="display: none;"></div>
                             <button class="play-button" id="play-button">Play</button>
-                            <button class="tutorial-button" id="tutorial-button">Tutorial</button>
                         </div>
                     </div>
                 </div>
@@ -689,3 +688,49 @@
 
 
 
+       <ul class="seo-link-list">
+                        <li><a href="/changelog/">Latest changelog</a></li>
+                        <li><a href="/privacy/">Privacy Policy</a></li>
+                        <li><a href="/terms/">Terms of Use</a></li>
+                    </ul>
+                </article>
+            </div>
+        </div>
+    </section>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const playButton = document.getElementById("play-button");
+            const featured = document.getElementById("featured");
+
+            if (playButton && featured) {
+                playButton.addEventListener("click", () => {
+                    featured.style.transition = "opacity 0.5s ease";
+                    featured.style.opacity = "0";
+                    setTimeout(() => {
+                        featured.style.display = "none";
+                    }, 500);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+yId("play-button");
+    const featured = document.getElementById("featured");
+
+    if (playButton && featured) {
+        playButton.addEventListener("click", () => {
+            featured.style.transition = "opacity 0.5s ease";
+            featured.style.opacity = "0";
+            setTimeout(() => {
+                featured.style.display = "none";
+            }, 500);
+        });
+    }
+});
+</script>
+</html>
+az 
