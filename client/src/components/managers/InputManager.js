@@ -388,7 +388,9 @@ export default class InputManager {
 
     // Creates the selection circle and notifies listeners
     createSelectionCircle (mousePosition, button = 0) {
-        if (button !== 0 && button !== 2) {
+        // Keep box selection only on left click.
+        // Right click is reserved for move/target commands and must not alter selection.
+        if (button !== 0) {
             return;
         }
 

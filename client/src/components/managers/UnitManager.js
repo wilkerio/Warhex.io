@@ -464,8 +464,8 @@ export default class UnitManager {
         const inputButton = Number(this.core?.inputManager?.selectionCircleButton);
         const isPointSelection = dragDistanceSq <= clickSelectionThresholdSq;
 
-        // Preserve right-click move behavior: right click without drag should not alter selection.
-        if (isPointSelection && inputButton === 2) {
+        // Right click is move/target only; never change current unit selection.
+        if (inputButton === 2) {
             this.refreshSelectionHud();
             return;
         }

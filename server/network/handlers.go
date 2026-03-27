@@ -2246,55 +2246,55 @@ func handleClientX1ConcedeRound(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	loser, ok := game.GetPlayerByConn(conn)
-	if !ok || loser == nil || loser.IsMarkedForRemoval() {
+	requester, ok := game.GetPlayerByConn(conn)
+	if !ok || requester == nil || requester.IsMarkedForRemoval() {
 		return
 	}
-	loser.SetLastActivity()
+	requester.SetLastActivity()
 
-	winnerID := game.ID(payload[0])
-	if winnerID == 0 || winnerID == loser.ID {
+	targetID := game.ID(payload[0])
+	if targetID == 0 || targetID == requester.ID {
 		return
 	}
 
 	game.State.RLock()
-	winner := game.State.Players[winnerID]
+	target := game.State.Players[targetID]
 	game.State.RUnlock()
-	if winner == nil || winner.IsMarkedForRemoval() {
+	if target == nil || target.IsMarkedForRemoval() {
 		return
 	}
 
-	loser.RLock()
-	loserInDuel := loser.InDuel
-	loserOpponentID := loser.DuelOpponentID
-	loser.RUnlock()
-	winner.RLock()
-	winnerInDuel := winner.InDuel
-	winnerOpponentID := winner.DuelOpponentID
-	winner.RUnlock()
+	requester.RLock()
+	requesterInDuel := requester.InDuel
+	requesterOpponentID := requester.DuelOpponentID
+	requester.RUnlock()
+	target.RLock()
+	targetInDuel := target.InDuel
+	targetOpponentID := target.DuelOpponentID
+	target.RUnlock()
 
-	if !loserInDuel || !winnerInDuel {
+	if !requesterInDuel || !targetInDuel {
 		return
 	}
-	if loserOpponentID != winner.ID || winnerOpponentID != loser.ID {
+	if requesterOpponentID != target.ID || targetOpponentID != requester.ID {
 		return
 	}
 
 	x1RoundScoreMx.Lock()
-	if hasPendingX1RoundWinRequestUnsafe(loser.ID) || hasPendingX1RoundWinRequestUnsafe(winner.ID) {
+	if hasPendingX1RoundWinRequestUnsafe(requester.ID) || hasPendingX1RoundWinRequestUnsafe(target.ID) {
 		x1RoundScoreMx.Unlock()
-		sendX1RoundWinRequestResult(loser, loser, winner, x1RoundWinResultUnavailable)
+		sendX1RoundWinRequestResult(requester, requester, target, x1RoundWinResultUnavailable)
 		return
 	}
-	x1RoundWinRequests[winner.ID] = x1RoundWinRequest{
-		requesterID: loser.ID,
-		targetID:    winner.ID,
+	x1RoundWinRequests[target.ID] = x1RoundWinRequest{
+		requesterID: requester.ID,
+		targetID:    target.ID,
 		createdAt:   time.Now(),
 	}
 	x1RoundScoreMx.Unlock()
 
-	sendX1RoundWinRequestReceived(winner, loser)
-	sendX1RoundWinRequestResult(loser, loser, winner, x1RoundWinResultSent)
+	sendX1RoundWinRequestReceived(target, requester)
+	sendX1RoundWinRequestResult(requester, requester, target, x1RoundWinResultSent)
 }
 
 func handleClientX1RoundWinResponse(conn *websocket.Conn, payload []byte) {
@@ -2350,11 +2350,12 @@ func handleClientX1RoundWinResponse(conn *websocket.Conn, payload []byte) {
 	}
 
 	x1RoundScoreMx.Lock()
-	score := incrementX1RoundWinUnsafe(targetPlayer.ID, requester.ID)
+	// Accepted request always grants round win to requester.
+	score := incrementX1RoundWinUnsafe(requester.ID, targetPlayer.ID)
 	x1RoundScoreMx.Unlock()
 
-	resetX1RoundForPlayers(targetPlayer, requester)
-	sendX1RoundScoreToPlayers(targetPlayer, requester, score)
+	resetX1RoundForPlayers(requester, targetPlayer)
+	sendX1RoundScoreToPlayers(requester, targetPlayer, score)
 	sendX1RoundWinRequestResult(targetPlayer, requester, targetPlayer, x1RoundWinResultAccepted)
 	sendX1RoundWinRequestResult(requester, requester, targetPlayer, x1RoundWinResultAccepted)
 }
