@@ -49,22 +49,23 @@ type Player struct {
 	NextPortalAllowedAt    time.Time
 
 	// Unit
-	AvailableUnitIDs   *AvailableIDs
-	Units              map[ID]*Unit
-	UnitSpawning       []*UnitSpawning
-	UnitBulletSpawning []*BulletSpawning
-	UnitSpawningLimit  Capacity
-	HasCommander       bool
-	HasSoldierArmor    bool
-	HasTankBooster     bool
-	HasTankCannon      bool
-	HasTankCloak       bool
-	GroupUnits         bool
-	InDuel             bool
-	DuelOpponentID     ID
-	DuelArena          DuelArena
-	DuelPrepEndsAt     time.Time
-	LastBaseDamageAt   time.Time
+	AvailableUnitIDs       *AvailableIDs
+	Units                  map[ID]*Unit
+	UnitSpawning           []*UnitSpawning
+	UnitBulletSpawning     []*BulletSpawning
+	UnitSpawningLimit      Capacity
+	HasCommander           bool
+	HasSoldierArmor        bool
+	HasTankBooster         bool
+	HasTankCannon          bool
+	HasTankCloak           bool
+	GroupUnits             bool
+	CommanderAssistEnabled bool
+	InDuel                 bool
+	DuelOpponentID         ID
+	DuelArena              DuelArena
+	DuelPrepEndsAt         time.Time
+	LastBaseDamageAt       time.Time
 
 	// Script prevention
 	LastBuildingAction  time.Time // Timestamp of the last building upgraded/placed
@@ -162,6 +163,30 @@ func (p *Player) GetGenerating() Generating {
 	p.RLock()
 	defer p.RUnlock()
 	return p.Generating
+}
+
+func (p *Player) GetEffectiveGeneratingPower() uint16 {
+	p.RLock()
+	baseGenerating := p.Generating.Power
+	assistEnabled := p.CommanderAssistEnabled
+	hasCommander := p.HasCommander
+	p.RUnlock()
+
+	if !assistEnabled || !hasCommander {
+		return baseGenerating
+	}
+
+	// Commander Assist grants +20% generation while active.
+	bonus := baseGenerating / 5
+	if baseGenerating%5 != 0 {
+		bonus++
+	}
+
+	effective := uint32(baseGenerating) + uint32(bonus)
+	if effective > uint32(^uint16(0)) {
+		return ^uint16(0)
+	}
+	return uint16(effective)
 }
 
 func (p *Player) SetLastActivity() {
@@ -603,6 +628,12 @@ func (p *Player) SetGroupUnits(isGrouped bool) {
 	p.Lock()
 	defer p.Unlock()
 	p.GroupUnits = isGrouped
+}
+
+func (p *Player) SetCommanderAssistEnabled(enabled bool) {
+	p.Lock()
+	defer p.Unlock()
+	p.CommanderAssistEnabled = enabled
 }
 
 func (p *Player) ApplySoldierArmorUpgrade(enabled bool) {

@@ -70,6 +70,7 @@ export default class InputManager {
             };
             const keySelectArmy = bindKey("selectArmy", "q");
             const keySelectCommander = bindKey("selectCommander", "c");
+            const keySetCommanderDefenseRadius = bindKey("setCommanderDefenseRadius", "h");
             const keySelectAll = bindKey("selectAllUnits", "e");
             const keyToggleMap = bindKey("toggleMap", "m");
             const keyReturnToBase = bindKey("returnToBase", "r");
@@ -131,7 +132,12 @@ export default class InputManager {
             );
 
             if (isCommanderAssistHotkey && canUseGameplayHotkeys && !isFormFocused && !event.repeat) {
-                this.core.unitManager?.toggleCommanderAssistMode?.();
+                const duelOpponentID = this.core?.gameManager?.duelOpponentID;
+                const hasX1Opponent = duelOpponentID !== null && duelOpponentID !== undefined && duelOpponentID !== "";
+                const assistAction = this.core.unitManager?.handleCommanderAssistHotkeyPress?.();
+                if (hasX1Opponent) {
+                    this.core.unitManager?.showX1PowerInfo?.();
+                }
                 handledAnyAction = true;
             }
 
@@ -281,6 +287,12 @@ export default class InputManager {
                     handledAnyAction = true;
                 }
             }
+            if (key === keySetCommanderDefenseRadius) {
+                if (canUseGameplayHotkeys && !event.repeat) {
+                    this.core.unitManager?.requestCommanderDefenseRadiusPlacement?.();
+                    handledAnyAction = true;
+                }
+            }
             if (keySelectCommanderSoldiers && key === keySelectCommanderSoldiers) {
                 if (canUseGameplayHotkeys) {
                     this.core.unitManager.selectCommanderAndSoldiers();
@@ -387,6 +399,10 @@ export default class InputManager {
     // Creates the selection circle and notifies listeners
     createSelectionCircle (mousePosition, button = 0) {
         if (button !== 0) {
+            return;
+        }
+
+        if (this.core.unitManager?.isAwaitingCommanderDefenseRadiusPlacement?.()) {
             return;
         }
 

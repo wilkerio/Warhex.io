@@ -186,6 +186,35 @@ func sendX1DuelArenaUpdateToClient(conn *websocket.Conn, playerAID game.ID, play
 	sendToClient(conn, EncodeMessage(message), nil)
 }
 
+func sendX1PowerInfo(
+	player *game.Player,
+	status byte,
+	opponentID game.ID,
+	selfPower uint16,
+	selfGeneratingPower uint16,
+	opponentPower uint16,
+	opponentGeneratingPower uint16,
+) {
+	if player == nil || player.Conn == nil || player.IsMarkedForRemoval() {
+		return
+	}
+
+	message := Message{
+		Type: MessageTypeX1PowerInfo,
+	}
+
+	buffer := new(bytes.Buffer)
+	buffer.WriteByte(status)
+	buffer.WriteByte(byte(opponentID))
+	binary.Write(buffer, binary.BigEndian, selfPower)
+	binary.Write(buffer, binary.BigEndian, selfGeneratingPower)
+	binary.Write(buffer, binary.BigEndian, opponentPower)
+	binary.Write(buffer, binary.BigEndian, opponentGeneratingPower)
+	message.Payload = buffer.Bytes()
+
+	sendToClient(player.Conn, EncodeMessage(message), nil)
+}
+
 func buildX1DuelArenaMessage(playerAID game.ID, playerBID game.ID, arena game.DuelArena) Message {
 	message := Message{
 		Type: MessageTypeX1DuelArenaUpdate,
@@ -1098,8 +1127,11 @@ func sendResourceUpdate(player *game.Player) {
 	}
 
 	buffer := new(bytes.Buffer)
-	binary.Write(buffer, binary.BigEndian, player.Resources.Power.Current)
-	binary.Write(buffer, binary.BigEndian, player.Generating.Power)
+	player.Resources.Power.RLock()
+	currentPower := player.Resources.Power.Current
+	player.Resources.Power.RUnlock()
+	binary.Write(buffer, binary.BigEndian, currentPower)
+	binary.Write(buffer, binary.BigEndian, player.GetEffectiveGeneratingPower())
 	message.Payload = buffer.Bytes()
 
 	var toRemove []*websocket.Conn

@@ -129,6 +129,10 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleClientWatchLeaveBase(conn, payload)
 	case MessageTypeClientSecurityAlert:
 		handleClientSecurityAlert(conn, payload)
+	case MessageTypeClientToggleCommanderAssist:
+		handleClientToggleCommanderAssist(conn, payload)
+	case MessageTypeClientRequestX1Power:
+		handleClientRequestX1Power(conn, payload)
 
 	default:
 		log.Printf("Received unsupported message type: %d", messageType)
@@ -1452,6 +1456,76 @@ func handleToggleGroupUnitsMessage(conn *websocket.Conn, payload []byte) {
 	isGrouped := payload[0] == 1
 
 	player.SetGroupUnits(isGrouped)
+}
+
+func handleClientToggleCommanderAssist(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 1 {
+		log.Println("Invalid payload length for toggle commander assist message")
+		return
+	}
+
+	player, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		return
+	}
+
+	enabled := payload[0] == 1
+	player.SetCommanderAssistEnabled(enabled)
+	sendResourceUpdate(player)
+}
+
+func readPlayerPowerSnapshot(player *game.Player) (currentPower uint16, generatingPower uint16) {
+	if player == nil {
+		return 0, 0
+	}
+
+	player.Resources.Power.RLock()
+	currentPower = player.Resources.Power.Current
+	player.Resources.Power.RUnlock()
+
+	generatingPower = player.GetEffectiveGeneratingPower()
+	return currentPower, generatingPower
+}
+
+func handleClientRequestX1Power(conn *websocket.Conn, payload []byte) {
+	player, ok := game.GetPlayerByConn(conn)
+	if !ok {
+		return
+	}
+
+	status := byte(0)
+	opponentID := game.ID(0)
+	selfPower, selfGeneratingPower := readPlayerPowerSnapshot(player)
+	opponentPower := uint16(0)
+	opponentGeneratingPower := uint16(0)
+
+	player.RLock()
+	inDuel := player.InDuel
+	opponentID = player.DuelOpponentID
+	player.RUnlock()
+
+	if inDuel {
+		game.State.RLock()
+		opponent := game.State.Players[opponentID]
+		game.State.RUnlock()
+
+		if opponent != nil && !opponent.IsMarkedForRemoval() {
+			status = 1
+			opponentPower, opponentGeneratingPower = readPlayerPowerSnapshot(opponent)
+		} else {
+			status = 2
+		}
+	}
+
+	sendX1PowerInfo(
+		player,
+		status,
+		opponentID,
+		selfPower,
+		selfGeneratingPower,
+		opponentPower,
+		opponentGeneratingPower,
+	)
 }
 
 const (

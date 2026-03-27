@@ -1199,6 +1199,7 @@ export default class NetworkManager {
             [MessageTypes.X1_CHALLENGE_RECEIVED, () => this.handleX1ChallengeReceived(payload)],
             [MessageTypes.X1_CHALLENGE_RESULT, () => this.handleX1ChallengeResult(payload)],
             [MessageTypes.X1_DUEL_ARENA_UPDATE, () => this.handleX1DuelArenaUpdate(payload)],
+            [MessageTypes.X1_POWER_INFO, () => this.handleX1PowerInfo(payload)],
             [MessageTypes.WILD_PORTALS_UPDATE, () => this.handleWildPortalsUpdate(payload)],
             [MessageTypes.ERROR, () => this.handleError(payload)],
         ]);
@@ -2733,6 +2734,16 @@ export default class NetworkManager {
         this.sendMessage(message);
     }
 
+    sendToggleCommanderAssist(enabled) {
+        const message = Message.createToggleCommanderAssistMessage(Boolean(enabled));
+        this.sendMessage(message);
+    }
+
+    sendRequestX1PowerInfo() {
+        const message = Message.createRequestX1PowerInfoMessage();
+        this.sendMessage(message);
+    }
+
     handlePlayerInactiveWarning() {
         this.core.uiManager.showInactivityWarning();
     }
@@ -2804,6 +2815,52 @@ export default class NetworkManager {
         const { playerAID, playerBID, arena } = payload;
         if (!arena) return;
         this.core.gameManager.upsertGlobalDuelArena(playerAID, playerBID, arena);
+    }
+
+    handleX1PowerInfo(payload) {
+        const {
+            status,
+            opponentID,
+            selfPower,
+            selfGeneratingPower,
+            opponentPower,
+            opponentGeneratingPower
+        } = payload || {};
+
+        const gameManager = this.core?.gameManager;
+        gameManager?.setX1PowerInfo?.(payload);
+
+        const shouldShowChat = this.core?.unitManager?.consumePendingX1PowerChatRequest?.() === true;
+        if (!shouldShowChat) {
+            return;
+        }
+
+        const opponent = gameManager?.getPlayerById?.(opponentID);
+        const opponentName = opponent?.name || "Rival";
+
+        if (status === 1) {
+            this.core?.uiManager?.addChatMessage?.(
+                "System",
+                `X1 ${opponentName} | Seu power: ${selfPower} (+${selfGeneratingPower}/s) | Power rival: ${opponentPower} (+${opponentGeneratingPower}/s).`,
+                "#9fd7ff"
+            );
+            return;
+        }
+
+        if (status === 2) {
+            this.core?.uiManager?.addChatMessage?.(
+                "System",
+                `X1 | Seu power: ${selfPower} (+${selfGeneratingPower}/s). Rival indisponivel no momento.`,
+                "#9fd7ff"
+            );
+            return;
+        }
+
+        this.core?.uiManager?.addChatMessage?.(
+            "System",
+            `Power: ${selfPower} (+${selfGeneratingPower}/s). Nenhum X1 ativo.`,
+            "#9fd7ff"
+        );
     }
 
     sendResyncRequest () {

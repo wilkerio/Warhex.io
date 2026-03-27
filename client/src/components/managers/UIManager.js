@@ -450,6 +450,7 @@ export default class UIManager {
             keybinds: {
                 selectArmy: "q",
                 selectCommander: "c",
+                setCommanderDefenseRadius: "h",
                 selectAllUnits: "e",
                 toggleMap: "m",
                 returnToBase: "r",
@@ -1122,6 +1123,7 @@ export default class UIManager {
             { key: "selectTanksOnly", label: this.t("key.action.selectTanksOnly"), group: this.t("key.group.selection") },
             { key: "selectSiegeOnly", label: this.t("key.action.selectSiegeOnly"), group: this.t("key.group.selection") },
             { key: "selectCommander", label: this.t("key.action.selectCommander"), group: this.t("key.group.selection") },
+            { key: "setCommanderDefenseRadius", label: "Commander Defense Radius", group: this.t("key.group.selection") },
             { key: "selectAllUnits", label: this.t("key.action.selectAllUnits"), group: this.t("key.group.selection") },
             { key: "selectCommanderSoldiers", label: "Commander + Soldiers", group: this.t("key.group.selection") },
             { key: "selectCommanderTanks", label: "Commander + Tanks", group: this.t("key.group.selection") },
@@ -6203,8 +6205,17 @@ export default class UIManager {
 
         this.DOM.menu.playButton.addEventListener("click", async () => {
             this.core?.musicManager?.handleUserGestureStart?.();
-            const confirmed = await this.showPrePlaySkinPrompt();
-            if (!confirmed) return;
+            let confirmed = true;
+            try {
+                confirmed = await this.showPrePlaySkinPrompt();
+            } catch (error) {
+                console.warn("Pre-play skin prompt failed, starting directly:", error);
+                confirmed = true;
+            }
+            if (!confirmed) {
+                this.core?.setGameplayActive?.(false);
+                return;
+            }
             this.core?.musicManager?.handleUserGestureStart?.();
             await this.startGameWithSelectedSkin();
         });
@@ -6239,10 +6250,20 @@ export default class UIManager {
             const byName = this.availableSkins.find((s) => s.name === equippedSkinName);
             if (byName) currentSkin = byName;
         }
-        await this.updateToolbarAccentForSkin(currentSkin);
+        try {
+            await this.updateToolbarAccentForSkin(currentSkin);
+        } catch (error) {
+            console.warn("Failed to update skin accent before join:", error);
+        }
 
         console.log('Joining game with skin (byte):', equippedSkinByte, 'name:', equippedSkinName);
-        this.core.handlePlayButtonPress(playerName, equippedSkinByte);
+        try {
+            this.core.handlePlayButtonPress(playerName, equippedSkinByte);
+        } catch (error) {
+            console.error("Failed to start match from Play button:", error);
+            this.core?.setGameplayActive?.(false);
+            this.notifySystemWarning?.("Falha ao iniciar. Tente novamente.");
+        }
     }
 
     async showPrePlaySkinPrompt () {

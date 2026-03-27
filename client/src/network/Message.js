@@ -295,5 +295,16 @@ export default class Message {
         return new Message(MessageTypes.CLIENT_SECURITY_ALERT, payload);
     }
 
+    static createToggleCommanderAssistMessage (enabled) {
+        const payload = new Uint8Array(1);
+        payload[0] = enabled ? 1 : 0;
+        return new Message(MessageTypes.CLIENT_TOGGLE_COMMANDER_ASSIST, payload);
+    }
+
+    static createRequestX1PowerInfoMessage () {
+        const payload = new Uint8Array(0);
+        return new Message(MessageTypes.CLIENT_REQUEST_X1_POWER, payload);
+    }
+
 
 }

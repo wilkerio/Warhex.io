@@ -51,6 +51,7 @@ class GameManager {
         this.duelArena = null;
         this.duelOpponentID = null;
         this.globalDuelArenas = [];
+        this.x1PowerInfo = null;
         this.portalCooldownEndsAt = 0;
     }
 
@@ -102,6 +103,7 @@ class GameManager {
         this.duelArena = null;
         this.duelOpponentID = null;
         this.globalDuelArenas = [];
+        this.x1PowerInfo = null;
         this.portalCooldownEndsAt = 0;
 
         this.updateDynamicMapSize();
@@ -354,6 +356,30 @@ class GameManager {
     clearDuelArena() {
         this.duelArena = null;
         this.duelOpponentID = null;
+        this.x1PowerInfo = null;
+    }
+
+    setX1PowerInfo(payload = null) {
+        if (!payload || typeof payload !== "object") {
+            this.x1PowerInfo = null;
+            return;
+        }
+
+        const now = Date.now();
+        const toSafeNumber = (value, fallback = 0) => {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : fallback;
+        };
+
+        this.x1PowerInfo = {
+            status: toSafeNumber(payload.status, 0),
+            opponentID: toSafeNumber(payload.opponentID, null),
+            selfPower: toSafeNumber(payload.selfPower, 0),
+            selfGeneratingPower: toSafeNumber(payload.selfGeneratingPower, 0),
+            opponentPower: toSafeNumber(payload.opponentPower, 0),
+            opponentGeneratingPower: toSafeNumber(payload.opponentGeneratingPower, 0),
+            updatedAt: now
+        };
     }
 
     upsertGlobalDuelArena(playerAID, playerBID, arena) {

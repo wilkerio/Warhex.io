@@ -188,6 +188,7 @@ function decodePayload (messageType, payload) {
         [MessageTypes.X1_CHALLENGE_RECEIVED]: decodeX1ChallengeReceived,
         [MessageTypes.X1_CHALLENGE_RESULT]: decodeX1ChallengeResult,
         [MessageTypes.X1_DUEL_ARENA_UPDATE]: decodeX1DuelArenaUpdate,
+        [MessageTypes.X1_POWER_INFO]: decodeX1PowerInfo,
         [MessageTypes.WILD_PORTALS_UPDATE]: decodeWildPortalsUpdate,
         [MessageTypes.ERROR]: decodeError,
     };
@@ -590,6 +591,43 @@ function decodeBuildingPlaced (payload) {
     }
 
     return { isPlayer, ownerID, buildingID, buildingType, rotationStep, position, unitSpawningActive };
+}
+
+function decodeX1PowerInfo (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const status = dataView.byteLength >= 1 ? dataView.getUint8(offset++) : 0;
+    const opponentID = dataView.byteLength >= 2 ? dataView.getUint8(offset++) : 0;
+
+    let selfPower = 0;
+    let selfGeneratingPower = 0;
+    let opponentPower = 0;
+    let opponentGeneratingPower = 0;
+
+    if (dataView.byteLength >= offset + 2) {
+        selfPower = dataView.getUint16(offset, false);
+        offset += 2;
+    }
+    if (dataView.byteLength >= offset + 2) {
+        selfGeneratingPower = dataView.getUint16(offset, false);
+        offset += 2;
+    }
+    if (dataView.byteLength >= offset + 2) {
+        opponentPower = dataView.getUint16(offset, false);
+        offset += 2;
+    }
+    if (dataView.byteLength >= offset + 2) {
+        opponentGeneratingPower = dataView.getUint16(offset, false);
+    }
+
+    return {
+        status,
+        opponentID,
+        selfPower,
+        selfGeneratingPower,
+        opponentPower,
+        opponentGeneratingPower
+    };
 }
 
 
