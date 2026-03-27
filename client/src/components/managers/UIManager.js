@@ -653,7 +653,11 @@ export default class UIManager {
             mousebutton2: "mouse2",
             mousebutton3: "mouse3",
             mousebutton4: "mouse4",
-            mousebutton5: "mouse5"
+            mousebutton5: "mouse5",
+            multiply: "*",
+            numpadmultiply: "*",
+            asterisk: "*",
+            star: "*"
         };
 
         return aliases[normalized] || normalized;
@@ -3068,7 +3072,7 @@ export default class UIManager {
 
         const handleSignupSubmit = async () => {
             const email = String(this.DOM.account.signupEmail?.value || "").trim();
-            const nickname = String(this.DOM.account.signupNickname?.value || "").trim();
+            const nickname = this.normalizeNicknameForAccount(this.DOM.account.signupNickname?.value || "");
             const password = String(this.DOM.account.signupPassword?.value || "");
 
             if (!email || !nickname || !password) {
@@ -3079,11 +3083,6 @@ export default class UIManager {
             // Basic nickname validation
             if (nickname.length < 3) {
                 alert(this.t("error.nicknameShort"));
-                return;
-            }
-
-            if (!/^[a-zA-Z0-9_]+$/.test(nickname)) {
-                alert(this.t("error.nicknameInvalid"));
                 return;
             }
 
@@ -3293,9 +3292,9 @@ export default class UIManager {
 
     normalizeNicknameForAccount (value = "") {
         const sanitized = String(value || "")
+            .replace(/[\u0000-\u001F\u007F]/g, "")
             .trim()
-            .replace(/\s+/g, "_")
-            .replace(/[^a-zA-Z0-9_]/g, "")
+            .replace(/\s+/g, " ")
             .slice(0, 20);
         return sanitized;
     }
@@ -3356,11 +3355,6 @@ export default class UIManager {
 
         if (targetNickname.length < 3) {
             alert(this.t("error.nicknameShort"));
-            return null;
-        }
-
-        if (!/^[a-zA-Z0-9_]+$/.test(targetNickname)) {
-            alert(this.t("error.nicknameInvalid"));
             return null;
         }
 

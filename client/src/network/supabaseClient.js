@@ -218,7 +218,11 @@ export function clearLocalAuthState() {
 export async function signUp(email, password, nickname) {
     const normalizedEmail = String(email || "").trim().toLowerCase();
     const normalizedPassword = String(password || "");
-    const normalizedNickname = String(nickname || "").trim();
+    const normalizedNickname = String(nickname || "")
+        .replace(/[\u0000-\u001F\u007F]/g, "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 20);
     if (!normalizedEmail || !normalizedPassword || !normalizedNickname) {
         throw new Error("Email, nickname and password are required.");
     }
@@ -319,7 +323,11 @@ export async function signInWithGoogle() {
 }
 
 export async function updateAuthNickname(nickname) {
-    const cleanNickname = String(nickname || "").trim();
+    const cleanNickname = String(nickname || "")
+        .replace(/[\u0000-\u001F\u007F]/g, "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 20);
     if (!cleanNickname) throw new Error("Nickname is required.");
     const { data, error } = await supabase.auth.updateUser({
         data: {
@@ -332,9 +340,9 @@ export async function updateAuthNickname(nickname) {
 
 function deriveNicknameFromAuthUser(authUser, preferredNickname = "") {
     const normalize = (value) => String(value || "")
+        .replace(/[\u0000-\u001F\u007F]/g, "")
         .trim()
-        .replace(/\s+/g, "_")
-        .replace(/[^a-zA-Z0-9_]/g, "")
+        .replace(/\s+/g, " ")
         .slice(0, 20);
 
     const resolveAuthEmail = (user) => {

@@ -1414,8 +1414,8 @@ export class BuildingManager {
         const hasRelativeOffset = Number.isFinite(Number(entry.dx)) && Number.isFinite(Number(entry.dy));
         if (hasRelativeOffset) {
             return {
-                x: Math.round((player.position.x + Number(entry.dx)) * 10) / 10,
-                y: Math.round((player.position.y + Number(entry.dy)) * 10) / 10
+                x: player.position.x + Number(entry.dx),
+                y: player.position.y + Number(entry.dy)
             };
         }
 
@@ -1749,11 +1749,11 @@ export class BuildingManager {
                 type: building.type,
                 variant: Number.isFinite(Number(building.variant)) ? Number(building.variant) : 0,
                 rotationStep: Number.isFinite(Number(building.placementRotationStep)) ? Number(building.placementRotationStep) : 0,
-                dx: Math.round((building.position.x - player.position.x) * 10) / 10,
-                dy: Math.round((building.position.y - player.position.y) * 10) / 10,
+                dx: building.position.x - player.position.x,
+                dy: building.position.y - player.position.y,
                 position: {
-                    x: Math.round(building.position.x * 10) / 10,
-                    y: Math.round(building.position.y * 10) / 10
+                    x: Number(building.position.x),
+                    y: Number(building.position.y)
                 }
             }));
     }
@@ -2379,9 +2379,6 @@ export class BuildingManager {
             for (const entry of entries) {
                 const entryPosition = this.resolveDefenseEntryPosition(entry, player);
                 if (!entryPosition) continue;
-                if (!this.isDefensePositionInsideSector(entryPosition, player, runtime.attackSector, DEFENSE_ATTACK_SECTOR_ENTRY_BONUS)) {
-                    continue;
-                }
                 runtime.slotEntries.push({ entry, entryPosition });
             }
             runtime.slotCursor = 0;
