@@ -54,9 +54,6 @@ export default class UnitManager {
         this.commanderAssistLastThreatNearDefenseAt = 0;
         this.commanderAssistLastTarget = { x: Infinity, y: Infinity };
         this.commanderAssistEnemyTrack = new Map();
-        this.commanderAssistFocusTargetKey = null;
-        this.commanderAssistFocusLockUntil = 0;
-        this.commanderAssistFocusLockMs = 1800;
         this.commanderAssistActivationTapTarget = 1;
         this.commanderAssistActivationTapCount = 0;
         this.commanderAssistActivationTapWindowMs = 1300;
@@ -75,7 +72,6 @@ export default class UnitManager {
         this.commanderAssistBarracksSplitRequired = 4;
         this.commanderAssistCommanderBarracksQuota = 2;
         this.commanderAssistSplitModeActive = false;
-        this.commanderAssistPowerPromptElement = null;
         this.commanderAssistCatchupMinDistance = 230;
         this.commanderAssistCatchupMaxPredictSeconds = 3.2;
         this.commanderAssistCatchupStepSeconds = 0.2;
@@ -112,15 +108,12 @@ export default class UnitManager {
     }
 
     toggleCommanderAssistMode () {
-        this.closeCommanderAssistPowerReservePrompt();
         this.commanderAssistEnabled = !this.commanderAssistEnabled;
         this.commanderAssistLastTickAt = 0;
         this.pendingCommanderAutoSelectUntil = 0;
         this.commanderAssistActivationTapCount = 0;
         this.commanderAssistActivationTapLastAt = 0;
         this.commanderAssistLastThreatNearDefenseAt = 0;
-        this.commanderAssistFocusTargetKey = null;
-        this.commanderAssistFocusLockUntil = 0;
 
         if (!this.commanderAssistEnabled) {
             this.commanderAssistEnemyTrack.clear();
@@ -130,7 +123,6 @@ export default class UnitManager {
             this.commanderAssistSoldierLastTarget = { x: Infinity, y: Infinity };
             this.core?.buildingManager?.setCommanderAssistAutoDefenseEnabled?.(false);
         } else {
-            this.core?.uiManager?.clearPowerHudVisualOverride?.();
             this.commanderAssistMouseFollowEnabled = true;
             this.commanderAssistLastAutoSelectAt = 0;
             this.requestCommanderDefenseRadiusPlacement();
@@ -151,170 +143,11 @@ export default class UnitManager {
         );
     }
 
-    promptCommanderAssistPowerReserve () {
-        const buildingManager = this.core?.buildingManager;
-        if (!buildingManager?.setCommanderAssistPowerReserve) return false;
-
-        const currentReserve = Number(buildingManager.getCommanderAssistPowerReserve?.() || 0);
-        const safeCurrentReserve = Number.isFinite(currentReserve) && currentReserve >= 0
-            ? Math.floor(currentReserve)
-            : 0;
-        this.openCommanderAssistPowerReservePrompt(safeCurrentReserve, (reserveValue) => {
-            buildingManager.setCommanderAssistPowerReserve(reserveValue, { notify: true });
-            this.core?.uiManager?.setPowerHudVisualOverride?.(reserveValue, { refresh: true });
-            this.core?.uiManager?.addChatMessage?.(
-                "System",
-                `Power visual para print: ${reserveValue}.`,
-                "#9fd7ff"
-            );
-        });
-        return true;
-    }
-
-    closeCommanderAssistPowerReservePrompt () {
-        if (!this.commanderAssistPowerPromptElement) return;
-        const overlay = this.commanderAssistPowerPromptElement;
-        this.commanderAssistPowerPromptElement = null;
-        if (overlay.parentNode) {
-            overlay.parentNode.removeChild(overlay);
-        }
-    }
-
-    openCommanderAssistPowerReservePrompt (defaultValue = 0, onConfirm = null) {
-        if (this.commanderAssistPowerPromptElement?.isConnected) return;
-
-        const gameContainer = document.getElementById("game-container") || document.body;
-        if (!gameContainer) return;
-
-        const overlay = document.createElement("div");
-        overlay.style.position = "fixed";
-        overlay.style.inset = "0";
-        overlay.style.zIndex = "13000";
-        overlay.style.display = "flex";
-        overlay.style.alignItems = "center";
-        overlay.style.justifyContent = "center";
-        overlay.style.background = "rgba(0, 0, 0, 0.55)";
-
-        const card = document.createElement("div");
-        card.style.width = "min(420px, calc(100vw - 32px))";
-        card.style.background = "rgba(12, 22, 38, 0.96)";
-        card.style.border = "1px solid rgba(140, 210, 255, 0.38)";
-        card.style.borderRadius = "12px";
-        card.style.padding = "16px";
-        card.style.color = "#eaf8ff";
-        card.style.boxShadow = "0 16px 38px rgba(0, 0, 0, 0.45)";
-
-        const title = document.createElement("h3");
-        title.textContent = "Commander Assist OFF (*)";
-        title.style.margin = "0 0 10px 0";
-        title.style.fontSize = "16px";
-        title.style.fontWeight = "700";
-
-        const subtitle = document.createElement("p");
-        subtitle.textContent = "Digite quanto de power quer manter para print:";
-        subtitle.style.margin = "0 0 12px 0";
-        subtitle.style.fontSize = "13px";
-        subtitle.style.opacity = "0.92";
-
-        const input = document.createElement("input");
-        input.type = "number";
-        input.min = "0";
-        input.step = "1";
-        input.value = String(Math.max(0, Math.floor(Number(defaultValue) || 0)));
-        input.style.width = "100%";
-        input.style.boxSizing = "border-box";
-        input.style.padding = "10px 12px";
-        input.style.borderRadius = "8px";
-        input.style.border = "1px solid rgba(140, 210, 255, 0.45)";
-        input.style.background = "rgba(7, 14, 25, 0.9)";
-        input.style.color = "#f4fbff";
-        input.style.fontSize = "15px";
-
-        const actions = document.createElement("div");
-        actions.style.marginTop = "12px";
-        actions.style.display = "flex";
-        actions.style.justifyContent = "flex-end";
-        actions.style.gap = "8px";
-
-        const cancelBtn = document.createElement("button");
-        cancelBtn.type = "button";
-        cancelBtn.textContent = "Cancelar";
-        cancelBtn.style.padding = "8px 12px";
-        cancelBtn.style.borderRadius = "8px";
-        cancelBtn.style.border = "1px solid rgba(255,255,255,0.24)";
-        cancelBtn.style.background = "rgba(255,255,255,0.08)";
-        cancelBtn.style.color = "#eaf8ff";
-        cancelBtn.style.cursor = "pointer";
-
-        const confirmBtn = document.createElement("button");
-        confirmBtn.type = "button";
-        confirmBtn.textContent = "Confirmar";
-        confirmBtn.style.padding = "8px 12px";
-        confirmBtn.style.borderRadius = "8px";
-        confirmBtn.style.border = "1px solid rgba(108, 215, 255, 0.6)";
-        confirmBtn.style.background = "rgba(108, 215, 255, 0.18)";
-        confirmBtn.style.color = "#eaf8ff";
-        confirmBtn.style.cursor = "pointer";
-
-        const doCancel = () => {
-            this.core?.uiManager?.notifySystemInfo?.(`Commander Assist power reserve mantida em ${Math.max(0, Math.floor(Number(defaultValue) || 0))}.`);
-            this.closeCommanderAssistPowerReservePrompt();
-        };
-
-        const doConfirm = () => {
-            const parsed = Number(String(input.value || "").trim().replace(",", "."));
-            if (!Number.isFinite(parsed) || parsed < 0) {
-                this.core?.uiManager?.notifySystemWarning?.("Power invalido. Digite um numero maior ou igual a 0.");
-                input.focus();
-                input.select();
-                return;
-            }
-            const reserveValue = Math.floor(parsed);
-            if (typeof onConfirm === "function") {
-                onConfirm(reserveValue);
-            }
-            this.closeCommanderAssistPowerReservePrompt();
-        };
-
-        cancelBtn.addEventListener("click", doCancel);
-        confirmBtn.addEventListener("click", doConfirm);
-        input.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                doConfirm();
-            } else if (event.key === "Escape") {
-                event.preventDefault();
-                doCancel();
-            }
-        });
-        overlay.addEventListener("click", (event) => {
-            if (event.target === overlay) {
-                doCancel();
-            }
-        });
-
-        actions.appendChild(cancelBtn);
-        actions.appendChild(confirmBtn);
-        card.appendChild(title);
-        card.appendChild(subtitle);
-        card.appendChild(input);
-        card.appendChild(actions);
-        overlay.appendChild(card);
-        gameContainer.appendChild(overlay);
-        this.commanderAssistPowerPromptElement = overlay;
-
-        setTimeout(() => {
-            input.focus();
-            input.select();
-        }, 0);
-    }
-
     handleCommanderAssistHotkeyPress () {
         const now = Date.now();
 
         if (this.commanderAssistEnabled) {
             this.toggleCommanderAssistMode();
-            this.promptCommanderAssistPowerReserve();
             return {
                 toggled: true,
                 enabled: false,
@@ -863,157 +696,6 @@ export default class UnitManager {
         return bestPoint;
     }
 
-    getNearestEnemyThreatForAssist (enemyPoints = [], defenseCenter = null, commanderPosition = null) {
-        if (!Array.isArray(enemyPoints) || enemyPoints.length === 0) return null;
-
-        const reference = defenseCenter || commanderPosition;
-        const highestPriority = enemyPoints.reduce((best, point) => {
-            const priority = Math.max(1, Number(point?.priority || 1));
-            return priority > best ? priority : best;
-        }, 1);
-        if (!reference) {
-            return enemyPoints.find((point) =>
-                Math.max(1, Number(point?.priority || 1)) === highestPriority
-            ) || enemyPoints[0];
-        }
-
-        let bestThreat = null;
-        let bestDistanceSq = Infinity;
-        for (const point of enemyPoints) {
-            const priority = Math.max(1, Number(point?.priority || 1));
-            if (priority < highestPriority) continue;
-            const px = Number(point?.x);
-            const py = Number(point?.y);
-            if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
-            const dx = px - Number(reference.x);
-            const dy = py - Number(reference.y);
-            const distanceSq = dx * dx + dy * dy;
-            if (distanceSq < bestDistanceSq) {
-                bestDistanceSq = distanceSq;
-                bestThreat = point;
-            }
-        }
-        return bestThreat;
-    }
-
-    selectCommanderAssistFocusThreat (enemyPoints = [], commanderPosition = null, nowMs = Date.now()) {
-        const list = Array.isArray(enemyPoints) ? enemyPoints : [];
-        if (!list.length) {
-            this.commanderAssistFocusTargetKey = null;
-            this.commanderAssistFocusLockUntil = 0;
-            return null;
-        }
-
-        const byKey = new Map();
-        list.forEach((point) => {
-            const key = String(point?.key || "");
-            if (!key) return;
-            byKey.set(key, point);
-        });
-
-        if (this.commanderAssistFocusTargetKey && byKey.has(this.commanderAssistFocusTargetKey)) {
-            const lockedPoint = byKey.get(this.commanderAssistFocusTargetKey);
-            if (nowMs <= this.commanderAssistFocusLockUntil) {
-                return lockedPoint;
-            }
-            const alternative = this.getNearestEnemyThreatForAssist(list, null, commanderPosition);
-            const alternativeKey = String(alternative?.key || "");
-            if (!alternative || !alternativeKey || alternativeKey === this.commanderAssistFocusTargetKey) {
-                this.commanderAssistFocusLockUntil = nowMs + this.commanderAssistFocusLockMs;
-                return lockedPoint;
-            }
-
-            const cx = Number(commanderPosition?.x);
-            const cy = Number(commanderPosition?.y);
-            if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
-                this.commanderAssistFocusTargetKey = alternativeKey;
-                this.commanderAssistFocusLockUntil = nowMs + this.commanderAssistFocusLockMs;
-                return alternative;
-            }
-
-            const lockedX = Number(lockedPoint?.x);
-            const lockedY = Number(lockedPoint?.y);
-            const altX = Number(alternative?.x);
-            const altY = Number(alternative?.y);
-            const lockedDistSq = (lockedX - cx) * (lockedX - cx) + (lockedY - cy) * (lockedY - cy);
-            const altDistSq = (altX - cx) * (altX - cx) + (altY - cy) * (altY - cy);
-            const shouldSwitch = Number.isFinite(altDistSq) && Number.isFinite(lockedDistSq) && altDistSq < (lockedDistSq * 0.55);
-            if (shouldSwitch) {
-                this.commanderAssistFocusTargetKey = alternativeKey;
-                this.commanderAssistFocusLockUntil = nowMs + this.commanderAssistFocusLockMs;
-                return alternative;
-            }
-
-            this.commanderAssistFocusLockUntil = nowMs + this.commanderAssistFocusLockMs;
-            return lockedPoint;
-        }
-
-        const picked = this.getNearestEnemyThreatForAssist(list, null, commanderPosition);
-        const pickedKey = String(picked?.key || "");
-        if (picked && pickedKey) {
-            this.commanderAssistFocusTargetKey = pickedKey;
-            this.commanderAssistFocusLockUntil = nowMs + this.commanderAssistFocusLockMs;
-            return picked;
-        }
-
-        this.commanderAssistFocusTargetKey = null;
-        this.commanderAssistFocusLockUntil = 0;
-        return picked || null;
-    }
-
-    buildCommanderAssistInterceptTarget (commander, threatPoint, defenseCenter = null, defenseRadius = this.commanderDefenseRadius) {
-        if (!commander?.position || !threatPoint) return null;
-
-        const commanderX = Number(commander.position.x);
-        const commanderY = Number(commander.position.y);
-        if (!Number.isFinite(commanderX) || !Number.isFinite(commanderY)) return null;
-
-        const currentX = Number(threatPoint?.currentX ?? threatPoint?.x);
-        const currentY = Number(threatPoint?.currentY ?? threatPoint?.y);
-        if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) return null;
-
-        const vx = Number(threatPoint?.vx || 0);
-        const vy = Number(threatPoint?.vy || 0);
-        const safeVx = Number.isFinite(vx) ? vx : 0;
-        const safeVy = Number.isFinite(vy) ? vy : 0;
-        const threatSpeedPerMs = Math.hypot(safeVx, safeVy);
-        const commanderSpeed = Math.max(1, Number(commander?.details?.speed || 180));
-
-        const maxPredictSeconds = Math.max(0.5, Number(this.commanderAssistCatchupMaxPredictSeconds) || 3.2);
-        const stepSeconds = Math.max(0.05, Number(this.commanderAssistCatchupStepSeconds) || 0.2);
-        let intercept = null;
-        for (let t = stepSeconds; t <= maxPredictSeconds; t += stepSeconds) {
-            const tMs = t * 1000;
-            const futureX = currentX + safeVx * tMs;
-            const futureY = currentY + safeVy * tMs;
-            const distanceNeeded = Math.hypot(futureX - commanderX, futureY - commanderY);
-            const commanderTravel = commanderSpeed * t;
-            if (distanceNeeded <= commanderTravel * 1.08) {
-                intercept = { x: futureX, y: futureY };
-                break;
-            }
-        }
-
-        if (!intercept) {
-            const currentDistance = Math.hypot(currentX - commanderX, currentY - commanderY);
-            if (threatSpeedPerMs > this.commanderAssistMinThreatSpeed) {
-                const leadDistance = Math.max(
-                    this.commanderAssistMinCutLeadDistance,
-                    Math.min(this.commanderAssistMaxCutLeadDistance, currentDistance * 0.35)
-                );
-                const velocityLength = Math.hypot(safeVx, safeVy) || 1;
-                intercept = {
-                    x: currentX + (safeVx / velocityLength) * leadDistance,
-                    y: currentY + (safeVy / velocityLength) * leadDistance
-                };
-            } else {
-                intercept = { x: currentX, y: currentY };
-            }
-        }
-
-        return this.clampPointInsideCommanderDefenseRadius(intercept, defenseCenter, defenseRadius);
-    }
-
     getCommanderBarracksGuardTarget (enemyPoints = [], commanderPosition = null, defenseCenter = null) {
         const barracks = this.getClientBarracksForAssist();
         if (!barracks.length) return defenseCenter || null;
@@ -1044,18 +726,6 @@ export default class UnitManager {
         }
 
         return bestBarracks || defenseCenter || null;
-    }
-
-    getCommanderAssistIdleReturnTarget (commanderPosition = null, defenseCenter = null) {
-        const guardTarget = this.getCommanderBarracksGuardTarget([], commanderPosition, defenseCenter);
-        if (guardTarget) return guardTarget;
-        const playerPos = this.core?.gameManager?.player?.position;
-        const px = Number(playerPos?.x);
-        const py = Number(playerPos?.y);
-        if (Number.isFinite(px) && Number.isFinite(py)) {
-            return { x: px, y: py };
-        }
-        return defenseCenter || null;
     }
 
     moveCommanderAssistToTarget (commander, rawTarget, nowMs, cannonTarget = null, defenseCenter = null, defenseRadius = this.commanderDefenseRadius) {
@@ -1673,13 +1343,33 @@ export default class UnitManager {
         );
         this.updateCommanderAssistSoldiersFollowMouse(nowMs);
         this.commanderAssistSplitModeActive = split.active;
+        const soldiersForCatchup = split.active ? split.commanderSoldiers : this.getAliveClientSoldiers();
+        const commanderCatchupTarget = this.getCommanderCatchupTarget(
+            commander,
+            soldiersForCatchup,
+            defenseCenter,
+            defenseRadius
+        );
 
         const trackedEnemies = this.getEnemySoldiersForAssist();
         if (!trackedEnemies.length) {
             this.commanderAssistEnemyTrack.clear();
-            this.commanderAssistFocusTargetKey = null;
-            this.commanderAssistFocusLockUntil = 0;
-            const fallbackGuardTarget = this.getCommanderAssistIdleReturnTarget(commander.position, defenseCenter);
+            if (commanderCatchupTarget) {
+                this.moveCommanderAssistToTarget(
+                    commander,
+                    commanderCatchupTarget,
+                    nowMs,
+                    commanderCatchupTarget,
+                    defenseCenter,
+                    defenseRadius
+                );
+                return;
+            }
+            const shouldHoldDefensePosture = (nowMs - this.commanderAssistLastThreatNearDefenseAt) <= this.commanderAssistThreatMemoryMs;
+            if (shouldHoldDefensePosture) {
+                return;
+            }
+            const fallbackGuardTarget = this.getCommanderBarracksGuardTarget([], commander.position, defenseCenter);
             this.moveCommanderAssistToTarget(
                 commander,
                 fallbackGuardTarget,
@@ -1701,20 +1391,6 @@ export default class UnitManager {
         const predictedPoints = trackedEnemies
             .map((enemy) => this.predictEnemySoldierPosition(enemy, nowMs))
             .filter(Boolean);
-        if (!predictedPoints.length) {
-            this.commanderAssistFocusTargetKey = null;
-            this.commanderAssistFocusLockUntil = 0;
-            const fallbackGuardTarget = this.getCommanderAssistIdleReturnTarget(commander.position, defenseCenter);
-            this.moveCommanderAssistToTarget(
-                commander,
-                fallbackGuardTarget,
-                nowMs,
-                fallbackGuardTarget,
-                defenseCenter,
-                defenseRadius
-            );
-            return;
-        }
         const threatsNearDefense = this.getThreatsNearDefenseArea(
             predictedPoints,
             defenseCenter,
@@ -1726,44 +1402,53 @@ export default class UnitManager {
         if (threatsInsideDefenseRadius.length > 0) {
             this.commanderAssistLastThreatNearDefenseAt = nowMs;
         }
-        const focusPool = threatsInsideDefenseRadius.length
-            ? threatsInsideDefenseRadius
-            : (threatsNearDefense.length ? threatsNearDefense : predictedPoints);
-        const focusThreat = this.selectCommanderAssistFocusThreat(
-            focusPool,
-            commander.position,
-            nowMs
-        );
-        const focusTarget = this.buildCommanderAssistInterceptTarget(
-            commander,
-            focusThreat,
-            defenseCenter,
-            defenseRadius
-        );
-        if (focusTarget) {
-            const cannonTarget = {
-                x: Number(focusThreat?.x ?? focusTarget.x),
-                y: Number(focusThreat?.y ?? focusTarget.y)
-            };
+        if (!threatsInsideDefenseRadius.length) {
+            const shouldHoldDefensePosture = (nowMs - this.commanderAssistLastThreatNearDefenseAt) <= this.commanderAssistThreatMemoryMs;
+            if (shouldHoldDefensePosture) {
+                return;
+            }
+
+            if (commanderCatchupTarget) {
+                this.moveCommanderAssistToTarget(
+                    commander,
+                    commanderCatchupTarget,
+                    nowMs,
+                    commanderCatchupTarget,
+                    defenseCenter,
+                    defenseRadius
+                );
+                return;
+            }
+
+            const fallbackGuardTarget = this.getCommanderBarracksGuardTarget(
+                [],
+                commander.position,
+                defenseCenter
+            );
             this.moveCommanderAssistToTarget(
                 commander,
-                focusTarget,
+                fallbackGuardTarget,
                 nowMs,
-                cannonTarget,
+                fallbackGuardTarget,
                 defenseCenter,
                 defenseRadius
             );
             return;
         }
+        const cluster = this.findLargestEnemyCluster(threatsInsideDefenseRadius, commander.position);
+        if (!cluster) return;
 
-        this.commanderAssistFocusTargetKey = null;
-        this.commanderAssistFocusLockUntil = 0;
-        const fallbackGuardTarget = this.getCommanderAssistIdleReturnTarget(commander.position, defenseCenter);
+        const target = this.buildCommanderAssistTarget(
+            commander.position,
+            cluster,
+            defenseCenter,
+            defenseRadius
+        );
         this.moveCommanderAssistToTarget(
             commander,
-            fallbackGuardTarget,
+            target,
             nowMs,
-            fallbackGuardTarget,
+            { x: cluster.x, y: cluster.y },
             defenseCenter,
             defenseRadius
         );

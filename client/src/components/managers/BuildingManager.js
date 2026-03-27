@@ -146,10 +146,6 @@ export class BuildingManager {
         this.commanderAssistAutoDefenseTickIntervalMs = 150;
         this.commanderAssistAutoDefenseRemountIntervalMs = 260;
         this.commanderAssistAutoDefenseIdleRemountIntervalMs = 1250;
-        const cachedCommanderAssistPowerReserve = Number(localStorage.getItem("warhex_commander_assist_power_reserve"));
-        this.commanderAssistPowerReserve = Number.isFinite(cachedCommanderAssistPowerReserve)
-            ? Math.max(0, Math.floor(cachedCommanderAssistPowerReserve))
-            : 0;
 
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
@@ -1808,27 +1804,6 @@ export class BuildingManager {
         });
     }
 
-    getCommanderAssistPowerReserve () {
-        const value = Number(this.commanderAssistPowerReserve);
-        if (!Number.isFinite(value) || value < 0) return 0;
-        return Math.floor(value);
-    }
-
-    setCommanderAssistPowerReserve (value, options = {}) {
-        const parsed = Number(value);
-        if (!Number.isFinite(parsed) || parsed < 0) return false;
-        this.commanderAssistPowerReserve = Math.floor(parsed);
-        try {
-            localStorage.setItem("warhex_commander_assist_power_reserve", String(this.commanderAssistPowerReserve));
-        } catch (error) {
-            // localStorage can fail in private mode or restricted environments.
-        }
-        if (options?.notify !== false) {
-            this.core.uiManager?.notifySystemInfo?.(`Commander Assist power reserve: ${this.commanderAssistPowerReserve}.`);
-        }
-        return true;
-    }
-
     promptCommanderAssistRemountKey () {
         const suggestedRemount = this.defenseRemountKey || ",";
         const rawRemount = window.prompt(
@@ -1883,8 +1858,7 @@ export class BuildingManager {
         const hasActiveThreat = Boolean(attackSector?.active);
         const placed = this.placeDefenseWallBurst({
             force: hasActiveThreat,
-            attackSector,
-            minPowerReserve: this.getCommanderAssistPowerReserve()
+            attackSector
         });
         return placed;
     }
@@ -2081,7 +2055,6 @@ export class BuildingManager {
         if ((!this.defensePlacementActive && !forced) || !this.defenseProfile) return 0;
         const player = this.core.gameManager.player;
         if (!player) return 0;
-        const minPowerReserve = Math.max(0, Number(options?.minPowerReserve) || 0);
 
         const pressureBonus = Math.max(0, Math.floor(this.getDefensePlacementPressureLevel() * 1.35));
         const burst = Math.max(1, (Number(this.defensePlacementBurstSize) || 1) + pressureBonus);
@@ -2095,7 +2068,7 @@ export class BuildingManager {
         };
         let placed = 0;
         for (let i = 0; i < burst; i++) {
-            if (!this.placeOneDefenseWall(pendingPredictedWalls, sharedContext, { minPowerReserve })) break;
+            if (!this.placeOneDefenseWall(pendingPredictedWalls, sharedContext)) break;
             placed++;
         }
         return placed;
@@ -2365,7 +2338,7 @@ export class BuildingManager {
         return out;
     }
 
-    placeOneDefenseWall (pendingPredictedWalls = null, context = null, options = {}) {
+    placeOneDefenseWall (pendingPredictedWalls = null, context = null) {
         if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return false;
 
         const player = this.core.gameManager.player;
@@ -2374,10 +2347,7 @@ export class BuildingManager {
         const wallType = BuildingTypes.WALL;
         const wallSize = getBuildingDetails(wallType)?.size || 30;
         const cost = this.getPlacementCost(wallType);
-        const minPowerReserve = Math.max(0, Number(options?.minPowerReserve) || 0);
-        const currentPower = Number(this.core.gameManager.resources?.power?.current || 0);
-        if (!Number.isFinite(currentPower) || currentPower < cost) return false;
-        if ((currentPower - cost) < minPowerReserve) return false;
+        if (this.core.gameManager.resources.power.current < cost) return false;
 
         const positionToleranceSq = 14 * 14;
         const baseBuildings = (player.buildings || []).filter(b => b && !b.removeFlag);
