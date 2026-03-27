@@ -1,4 +1,4 @@
-import { BuildingTypes, BuildingVariantTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, Servers, UnitTypes } from "../../network/constants.js";
+import { BuildingTypes, BuildingVariantTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, PLAYER_NAME_MAX_BYTES, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
 import * as supabaseClientApi from "../../network/supabaseClient.js";
@@ -7838,11 +7838,11 @@ export default class UIManager {
             .trim();
         if (!input) return "";
 
-        // Keep compatibility with the 12-byte join protocol limit without stripping
+        // Keep compatibility with the join protocol byte limit without stripping
         // spaces/special characters.
         const encoder = new TextEncoder();
         const chars = Array.from(input);
-        while (chars.length > 0 && encoder.encode(chars.join("")).length > 12) {
+        while (chars.length > 0 && encoder.encode(chars.join("")).length > PLAYER_NAME_MAX_BYTES) {
             chars.pop();
         }
         return chars.join("");

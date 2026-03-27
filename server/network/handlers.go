@@ -146,7 +146,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	if len(payload) < 6 || len(payload) > 18 {
+	if len(payload) < 6 || len(payload) > (6+game.PLAYER_NAME_MAX_BYTES) {
 		log.Println("Invalid payload length for join message")
 		return
 	}

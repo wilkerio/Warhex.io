@@ -454,9 +454,9 @@ func startResourceUpdateLoop() {
 				ApplyOwnerGodMode(player)
 			}
 
-				generatingPower := player.GetEffectiveGeneratingPower()
-				player.Resources.Power.Increment(generatingPower)
-				player.EnforceCommanderAssistPowerFloor()
+			generatingPower := player.GetEffectiveGeneratingPower()
+			player.Resources.Power.Increment(generatingPower)
+			player.EnforceCommanderAssistPowerFloor()
 
 			numNeutralBases := len(player.CapturedNeutralBases)
 
@@ -2500,7 +2500,7 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		IsOwner:           isOwner,
 		AuthUserID:        strings.TrimSpace(authUserID),
 		Permission:        permission,
-		Name:              [12]byte{},
+		Name:              [PLAYER_NAME_MAX_BYTES]byte{},
 		SkinID:            skinID,
 		StartTime:         time.Now(),
 		Kills:             0,
@@ -2552,10 +2552,10 @@ func AddPlayer(conn *websocket.Conn, permission Permission, name []byte, color [
 		ApplyOwnerGodMode(player)
 	}
 
-	// Truncate the player name if it's longer than 12 bytes
-	if len(name) > 12 {
+	// Truncate the player name if it's longer than PLAYER_NAME_MAX_BYTES.
+	if len(name) > PLAYER_NAME_MAX_BYTES {
 		log.Println("Player name exceeds maximum length and will be truncated")
-		name = name[:12] // Truncate name to 12 bytes
+		name = name[:PLAYER_NAME_MAX_BYTES]
 	}
 
 	copy(player.Name[:], name)

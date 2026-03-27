@@ -131,8 +131,8 @@ func writePlayerData(buffer *bytes.Buffer, player *game.Player) error {
 	// Write base position
 	writeBasePosition(buffer, player.Base.GetPosition())
 
-	// Write player name (fixed-size array)
-	buffer.Write(player.Name[:]) // This writes 12 bytes, regardless of name length
+	// Write player name using the fixed protocol byte width.
+	buffer.Write(player.Name[:])
 
 	// Write the number of buildings for the player
 	numBuildings := len(player.Base.Buildings)

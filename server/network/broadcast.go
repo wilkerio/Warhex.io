@@ -156,7 +156,7 @@ func sendX1ChallengeResult(target *game.Player, status byte, other *game.Player)
 		buffer.Write(other.Name[:])
 	} else {
 		buffer.WriteByte(byte(0))
-		var emptyName [12]byte
+		var emptyName [game.PLAYER_NAME_MAX_BYTES]byte
 		buffer.Write(emptyName[:])
 	}
 

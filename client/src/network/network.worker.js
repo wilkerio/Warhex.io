@@ -1,14 +1,19 @@
-import { BuildingTypes, MessageTypes } from "./constants.js";
+import { BuildingTypes, MessageTypes, PLAYER_NAME_MAX_BYTES } from "./constants.js";
 
 
 // Helper function to read a fixed-length string 
 function readString (dataView, offset, length) {
-    let str = '';
+    let actualLength = 0;
     for (let i = 0; i < length; i++) {
-        const charCode = dataView.getUint8(offset + i);
-        if (charCode === 0) break; // Stop at null terminator
-        str += String.fromCharCode(charCode);
+        const byte = dataView.getUint8(offset + i);
+        if (byte === 0) break; // Stop at null terminator
+        actualLength = i + 1;
     }
+    const bytes = new Uint8Array(actualLength);
+    for (let i = 0; i < actualLength; i++) {
+        bytes[i] = dataView.getUint8(offset + i);
+    }
+    const str = new TextDecoder().decode(bytes);
     return { str, offset: offset + length };
 }
 
@@ -391,7 +396,7 @@ function decodeX1ChallengeReceived (payload) {
     const dataView = new DataView(payload);
     let offset = 0;
     const challengerID = dataView.getUint8(offset++);
-    const nameResult = readString(dataView, offset, 12);
+    const nameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
     return {
         challengerID,
         challengerName: nameResult.str
@@ -403,7 +408,7 @@ function decodeX1ChallengeResult (payload) {
     let offset = 0;
     const status = dataView.getUint8(offset++);
     const playerID = dataView.getUint8(offset++);
-    const nameResult = readString(dataView, offset, 12);
+    const nameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
     offset = nameResult.offset;
 
     let arena = null;
@@ -503,7 +508,7 @@ function decodePlayerJoined (payload) {
 
     offset += 4; // Move offset to next position
 
-    const maxNameLength = 12; // Maximum expected length
+    const maxNameLength = PLAYER_NAME_MAX_BYTES; // Maximum expected length
     let actualNameLength = 0;
     // Determine the actual length of the name
     for (let i = 0; i < maxNameLength; i++) {
@@ -686,7 +691,7 @@ function decodeInitialGameState (payload) {
 
         const position = { x: dataView.getInt16(offset), y: dataView.getInt16(offset + 2) };
         offset += 4;
-        const name = decodeName(12);
+        const name = decodeName(PLAYER_NAME_MAX_BYTES);
         const buildings = decodeBuildings();
         const units = decodeUnits();
         return { id, color, skinID, position, name, health, buildings, units, hasSpawnProtection };
@@ -1098,7 +1103,7 @@ function decodeInitialPlayerData (payload) {
 
     offset += 4; // Move offset to next position
 
-    const maxNameLength = 12; // Maximum expected length
+    const maxNameLength = PLAYER_NAME_MAX_BYTES; // Maximum expected length
     let actualNameLength = 0;
     // Determine the actual length of the name
     for (let i = 0; i < maxNameLength; i++) {

@@ -1,4 +1,4 @@
-import { MessageTypes } from "./constants.js";
+import { MessageTypes, PLAYER_NAME_MAX_BYTES } from "./constants.js";
 
 export default class Message {
     constructor (type, payload) {
@@ -19,7 +19,7 @@ export default class Message {
     }
 
     static createJoinMessage (name, equippedSkin, preferredColorIndex, fingerprint) {
-        // Keep protocol compatibility (name <= 12 bytes) while supporting
+        // Keep protocol compatibility (name <= PLAYER_NAME_MAX_BYTES) while supporting
         // spaces/special characters.
         const encoder = new TextEncoder();
         let normalizedName = String(name || "")
@@ -27,7 +27,7 @@ export default class Message {
             .trim();
         if (!normalizedName) normalizedName = "Player";
         const chars = Array.from(normalizedName);
-        while (chars.length > 0 && encoder.encode(chars.join("")).length > 12) {
+        while (chars.length > 0 && encoder.encode(chars.join("")).length > PLAYER_NAME_MAX_BYTES) {
             chars.pop();
         }
         normalizedName = chars.join("") || "Player";

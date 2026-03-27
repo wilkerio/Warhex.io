@@ -33,6 +33,8 @@ export const Servers = {
     "Default": `${runtimeScheme}://${runtimeHost}`,
 };
 
+export const PLAYER_NAME_MAX_BYTES = 32;
+
 export const MessageTypes = {
     JOIN: 0,                           
     CLIENT_PLACE_BUILDING: 1,            

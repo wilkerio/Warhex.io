@@ -1,6 +1,6 @@
 import Network from "../../network/Network.js";
 import Message from "../../network/Message.js";
-import { BuildingPlacementFailReasons, BuildingTypes, BuildingVariantTypes, ErrorCodes, MessageTypes, UnitTypes, UnitVariantTypes, getBulletDetails } from "../../network/constants.js";
+import { BuildingPlacementFailReasons, BuildingTypes, BuildingVariantTypes, ErrorCodes, MessageTypes, PLAYER_NAME_MAX_BYTES, UnitTypes, UnitVariantTypes, getBulletDetails } from "../../network/constants.js";
 import Player from "../../entities/Player.js";
 import NeutralBase from "../../entities/objective/NeutralBase.js";
 import { QueueType } from "../Renderer.js";
@@ -455,7 +455,7 @@ export default class NetworkManager {
 
         const encoder = new TextEncoder();
         const chars = Array.from(value);
-        while (chars.length > 0 && encoder.encode(chars.join("")).length > 12) {
+        while (chars.length > 0 && encoder.encode(chars.join("")).length > PLAYER_NAME_MAX_BYTES) {
             chars.pop();
         }
         return chars.join("");

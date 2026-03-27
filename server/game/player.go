@@ -16,7 +16,10 @@ type MovementPackage struct {
 	UnitIds        []byte
 }
 
-const commanderAssistPowerFloor uint16 = 2000
+const (
+	commanderAssistPowerFloor uint16 = 2000
+	PLAYER_NAME_MAX_BYTES     int    = 32
+)
 
 type Player struct {
 	// Identification & Connection
@@ -26,7 +29,7 @@ type Player struct {
 	IsOwner                 bool
 	AuthUserID              string
 	Permission              Permission
-	Name                    [12]byte
+	Name                    [PLAYER_NAME_MAX_BYTES]byte
 	LastActivity            time.Time // Used for timeout
 	LastActivityWarningSent time.Time
 	LastResync              time.Time
