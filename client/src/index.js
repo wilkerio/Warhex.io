@@ -99,7 +99,9 @@ async function bootstrap() {
     window.__WARHEX_CRAZYGAMES_ENV__ = platformBridge.isCrazyGamesEnvironment();
 
     await platformBridge.init();
-    new Core(getLoadBalancerAddress(), 6, platformBridge);
+    const core = new Core(getLoadBalancerAddress(), 6, platformBridge);
+    window.__WARHEX_CORE__ = core;
+    window.__warhexCore = core;
 }
 
 setupUserscriptRuntimeSignals();

@@ -124,6 +124,16 @@ export default class InputManager {
             );
             let handledAnyAction = consumedByBaseLayoutHotkey || consumedByGlobalUpgradeHotkey;
             const canUseGameplayHotkeys = !this.core.uiManager.isChatInputFocused && !gameplayInputBlocked;
+            const isCommanderAssistHotkey = (
+                key === "*"
+                || event.code === "NumpadMultiply"
+                || (event.code === "Digit8" && event.shiftKey)
+            );
+
+            if (isCommanderAssistHotkey && canUseGameplayHotkeys && !isFormFocused && !event.repeat) {
+                this.core.unitManager?.toggleCommanderAssistMode?.();
+                handledAnyAction = true;
+            }
 
             const isDeleteSellHotkey = (
                 key === "delete"

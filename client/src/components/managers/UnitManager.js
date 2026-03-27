@@ -31,6 +31,21 @@ export default class UnitManager {
         this.minMoveCommandIntervalMs = 80;
         this.minMoveDistanceSq = 64; // 8px
 
+        this.commanderAssistEnabled = false;
+        this.commanderAssistTickIntervalMs = 90;
+        this.commanderAssistPredictMs = 320;
+        this.commanderAssistClusterRadius = 175;
+        this.commanderAssistOvershootDistance = 85;
+        this.commanderAssistVelocitySmoothing = 0.45;
+        this.commanderAssistMinMoveIntervalMs = 120;
+        this.commanderAssistMinTargetDistanceSq = 45 * 45;
+        this.commanderAssistBuyCooldownMs = 900;
+        this.commanderAssistLastTickAt = 0;
+        this.commanderAssistLastMoveAt = 0;
+        this.commanderAssistLastBuyAt = 0;
+        this.commanderAssistLastTarget = { x: Infinity, y: Infinity };
+        this.commanderAssistEnemyTrack = new Map();
+
         // Register mouse handlers
         this.core.inputManager.registerMouseDownHandler((mousePosition, button) => this.handleMouseDown(mousePosition, button));
         this.core.inputManager.registerMouseUpHandler((mousePosition, button) => this.handleMouseUp(mousePosition, button));
@@ -48,6 +63,224 @@ export default class UnitManager {
 
     static getUnitClassByType (type) {
         return unitsArray[type];
+    }
+
+    toggleCommanderAssistMode () {
+        this.commanderAssistEnabled = !this.commanderAssistEnabled;
+        this.commanderAssistLastTickAt = 0;
+        this.pendingCommanderAutoSelectUntil = 0;
+
+        if (!this.commanderAssistEnabled) {
+            this.commanderAssistEnemyTrack.clear();
+        }
+
+        this.core?.uiManager?.notifySystemInfo?.(
+            this.commanderAssistEnabled
+                ? "Commander Assist ON (*): auto-select/buy + enemy cluster prediction."
+                : "Commander Assist OFF (*)."
+        );
+    }
+
+    getClientCommanderUnit () {
+        const units = this.core?.gameManager?.player?.units;
+        if (!Array.isArray(units)) return null;
+
+        return units.find(unit =>
+            unit && (unit.type === UnitTypes.COMMANDER || unit.type === UnitTypes.TRI_COMMANDER)
+        ) || null;
+    }
+
+    getEnemySoldiersForAssist () {
+        const gameManager = this.core?.gameManager;
+        const players = Array.isArray(gameManager?.players) ? gameManager.players : [];
+        const duelOpponentID = Number.isInteger(gameManager?.duelOpponentID) ? gameManager.duelOpponentID : null;
+        const duelOpponentPlayer = duelOpponentID === null
+            ? null
+            : players.find((player) => player && player.id === duelOpponentID);
+        const shouldFocusDuelOpponent = Boolean(duelOpponentPlayer);
+        const sourcePlayers = shouldFocusDuelOpponent ? [duelOpponentPlayer] : players;
+        const enemySoldiers = [];
+
+        sourcePlayers.forEach((player) => {
+            if (!player || player.isClient) return;
+
+            const groups = [player.units, player.spawningUnits];
+            groups.forEach((group) => {
+                if (!Array.isArray(group)) return;
+                group.forEach((unit) => {
+                    if (!unit || unit.type !== UnitTypes.SOLDIER || unit.isFadingOut || !unit.position) return;
+                    enemySoldiers.push({
+                        key: `${player.id}:${unit.id}`,
+                        unit
+                    });
+                });
+            });
+        });
+
+        return enemySoldiers;
+    }
+
+    predictEnemySoldierPosition (trackedEnemy, nowMs) {
+        const { key, unit } = trackedEnemy;
+        const currentX = Number(unit?.position?.x || 0);
+        const currentY = Number(unit?.position?.y || 0);
+        const previous = this.commanderAssistEnemyTrack.get(key);
+
+        if (!previous) {
+            this.commanderAssistEnemyTrack.set(key, {
+                x: currentX,
+                y: currentY,
+                vx: 0,
+                vy: 0,
+                t: nowMs
+            });
+            return { x: currentX, y: currentY };
+        }
+
+        const dt = Math.max(1, nowMs - previous.t);
+        const instantVx = (currentX - previous.x) / dt;
+        const instantVy = (currentY - previous.y) / dt;
+        const smoothing = this.commanderAssistVelocitySmoothing;
+        const vx = previous.vx * (1 - smoothing) + instantVx * smoothing;
+        const vy = previous.vy * (1 - smoothing) + instantVy * smoothing;
+
+        this.commanderAssistEnemyTrack.set(key, {
+            x: currentX,
+            y: currentY,
+            vx,
+            vy,
+            t: nowMs
+        });
+
+        return {
+            x: currentX + vx * this.commanderAssistPredictMs,
+            y: currentY + vy * this.commanderAssistPredictMs
+        };
+    }
+
+    findLargestEnemyCluster (predictedPoints, commanderPosition) {
+        if (!Array.isArray(predictedPoints) || predictedPoints.length === 0) return null;
+
+        const radiusSq = this.commanderAssistClusterRadius * this.commanderAssistClusterRadius;
+        let bestCluster = null;
+
+        for (let i = 0; i < predictedPoints.length; i++) {
+            const anchor = predictedPoints[i];
+            const members = [];
+
+            for (let j = 0; j < predictedPoints.length; j++) {
+                const candidate = predictedPoints[j];
+                const dx = anchor.x - candidate.x;
+                const dy = anchor.y - candidate.y;
+                if (dx * dx + dy * dy <= radiusSq) {
+                    members.push(candidate);
+                }
+            }
+
+            if (!members.length) continue;
+
+            const center = members.reduce((acc, point) => {
+                acc.x += point.x;
+                acc.y += point.y;
+                return acc;
+            }, { x: 0, y: 0 });
+
+            center.x /= members.length;
+            center.y /= members.length;
+
+            const distanceToCommanderSq = (() => {
+                if (!commanderPosition) return Infinity;
+                const dx = center.x - commanderPosition.x;
+                const dy = center.y - commanderPosition.y;
+                return dx * dx + dy * dy;
+            })();
+
+            if (
+                !bestCluster
+                || members.length > bestCluster.count
+                || (members.length === bestCluster.count && distanceToCommanderSq < bestCluster.distanceToCommanderSq)
+            ) {
+                bestCluster = {
+                    x: center.x,
+                    y: center.y,
+                    count: members.length,
+                    distanceToCommanderSq
+                };
+            }
+        }
+
+        return bestCluster;
+    }
+
+    buildCommanderAssistTarget (commanderPosition, clusterCenter) {
+        const vx = clusterCenter.x - commanderPosition.x;
+        const vy = clusterCenter.y - commanderPosition.y;
+        const length = Math.hypot(vx, vy) || 1;
+
+        return {
+            x: clusterCenter.x + (vx / length) * this.commanderAssistOvershootDistance,
+            y: clusterCenter.y + (vy / length) * this.commanderAssistOvershootDistance
+        };
+    }
+
+    buyCommanderForAssist () {
+        if (this.core?.gameManager?.hasCommander) return false;
+        this.core?.buildingManager?.deselectBuildings?.();
+        this.core?.uiManager?.hideUpgrades?.();
+        this.core?.networkManager?.sendBuyCommander?.();
+        return true;
+    }
+
+    updateCommanderAssist (deltaTime = 0) {
+        if (!this.commanderAssistEnabled) return;
+
+        const nowMs = Date.now();
+        if (nowMs - this.commanderAssistLastTickAt < this.commanderAssistTickIntervalMs) return;
+        this.commanderAssistLastTickAt = nowMs;
+
+        if (this.core?.uiManager?.isGameplayInputBlocked?.()) return;
+        if (!this.core?.gameManager?.player) return;
+
+        let commander = this.getClientCommanderUnit();
+        if (!commander) {
+            if (nowMs - this.commanderAssistLastBuyAt >= this.commanderAssistBuyCooldownMs) {
+                this.commanderAssistLastBuyAt = nowMs;
+                this.buyCommanderForAssist();
+            }
+            return;
+        }
+
+        const trackedEnemies = this.getEnemySoldiersForAssist();
+        if (!trackedEnemies.length) {
+            this.commanderAssistEnemyTrack.clear();
+            return;
+        }
+
+        const activeEnemyKeys = new Set(trackedEnemies.map(enemy => enemy.key));
+        for (const key of this.commanderAssistEnemyTrack.keys()) {
+            if (!activeEnemyKeys.has(key)) {
+                this.commanderAssistEnemyTrack.delete(key);
+            }
+        }
+
+        const predictedPoints = trackedEnemies.map((enemy) => this.predictEnemySoldierPosition(enemy, nowMs));
+        const cluster = this.findLargestEnemyCluster(predictedPoints, commander.position);
+        if (!cluster) return;
+
+        const target = this.buildCommanderAssistTarget(commander.position, cluster);
+        const dx = target.x - this.commanderAssistLastTarget.x;
+        const dy = target.y - this.commanderAssistLastTarget.y;
+        const movedEnough = (dx * dx + dy * dy) >= this.commanderAssistMinTargetDistanceSq;
+        const intervalPassed = (nowMs - this.commanderAssistLastMoveAt) >= this.commanderAssistMinMoveIntervalMs;
+        if (!movedEnough && !intervalPassed) return;
+
+        this.core?.networkManager?.moveUnits?.([commander], target);
+        if (typeof commander.setCannonTargetPoint === "function") {
+            commander.setCannonTargetPoint({ x: cluster.x, y: cluster.y });
+        }
+
+        this.commanderAssistLastMoveAt = nowMs;
+        this.commanderAssistLastTarget = target;
     }
 
     hasSelectedUnits () {
