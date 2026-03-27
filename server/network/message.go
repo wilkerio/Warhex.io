@@ -72,6 +72,11 @@ const (
 	MessageTypeClientToggleCommanderAssist byte = 55
 	MessageTypeClientRequestX1Power        byte = 56
 	MessageTypeX1PowerInfo                 byte = 57
+	MessageTypeClientX1ConcedeRound        byte = 58
+	MessageTypeX1RoundScoreUpdate          byte = 59
+	MessageTypeClientX1RoundWinResponse    byte = 60
+	MessageTypeX1RoundWinRequestReceived   byte = 61
+	MessageTypeX1RoundWinRequestResult     byte = 62
 	MessageTypeHeartbeat                   byte = 69
 	MessageTypeServerVersion               byte = 98
 	MessageTypeRebootAlertMessage          byte = 99

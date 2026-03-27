@@ -1,6 +1,6 @@
 import Network from "../../network/Network.js";
 import Message from "../../network/Message.js";
-import { BuildingPlacementFailReasons, BuildingTypes, BuildingVariantTypes, ErrorCodes, MessageTypes, PLAYER_NAME_MAX_BYTES, UnitTypes, UnitVariantTypes, getBulletDetails } from "../../network/constants.js";
+import { BuildingPlacementFailReasons, BuildingTypes, BuildingVariantTypes, ErrorCodes, MessageTypes, PLAYER_NAME_MAX_BYTES, UnitTypes, UnitVariantTypes, X1DuelModes, getBulletDetails } from "../../network/constants.js";
 import Player from "../../entities/Player.js";
 import NeutralBase from "../../entities/objective/NeutralBase.js";
 import { QueueType } from "../Renderer.js";
@@ -53,6 +53,9 @@ const INJECTED_SCRIPT_MARKERS = [
     "injected-web.js",
     "injected.js",
 ];
+const UPGRADE_VERIFY_DELAY_MS = 420;
+const UPGRADE_VERIFY_MAX_RETRIES = 2;
+const UPGRADE_VERIFY_RESYNC_COOLDOWN_MS = 11000;
 
 function hasKnownEditingExtensionToken(text) {
     return KNOWN_GAME_EDITING_EXTENSIONS.some((ext) => ext.tokens.some((token) => text.includes(token)));
@@ -106,6 +109,9 @@ export default class NetworkManager {
         this.extensionWatchdogTimer = null;
         this.unauthorizedExtensionDetected = false;
         this.enforceStrictClientSecurity = resolveStrictClientSecurityGuards();
+        this.pendingBuildingUpgrades = new Map();
+        this.pendingUpgradeVerifyTimer = null;
+        this.lastUpgradeAutoResyncAt = 0;
 
         // Use async initialization for login status
         // this.initialize();
@@ -1194,12 +1200,13 @@ export default class NetworkManager {
             [MessageTypes.SKIN_DATA, () => this.handleSkinData(payload)],
             [MessageTypes.SERVER_VERSION, () => this.handleServerVersion(payload)],
             [MessageTypes.REBOOT_ALERT, () => this.handleRebootAlert(payload)],
-            [MessageTypes.PLAYER_INACTIVE_WARNING, () => this.handlePlayerInactiveWarning()],
-            [MessageTypes.PLAYER_ACTIVE, () => this.handlePlayerActive()],
             [MessageTypes.X1_CHALLENGE_RECEIVED, () => this.handleX1ChallengeReceived(payload)],
             [MessageTypes.X1_CHALLENGE_RESULT, () => this.handleX1ChallengeResult(payload)],
             [MessageTypes.X1_DUEL_ARENA_UPDATE, () => this.handleX1DuelArenaUpdate(payload)],
             [MessageTypes.X1_POWER_INFO, () => this.handleX1PowerInfo(payload)],
+            [MessageTypes.X1_ROUND_SCORE_UPDATE, () => this.handleX1RoundScoreUpdate(payload)],
+            [MessageTypes.X1_ROUND_WIN_REQUEST_RECEIVED, () => this.handleX1RoundWinRequestReceived(payload)],
+            [MessageTypes.X1_ROUND_WIN_REQUEST_RESULT, () => this.handleX1RoundWinRequestResult(payload)],
             [MessageTypes.WILD_PORTALS_UPDATE, () => this.handleWildPortalsUpdate(payload)],
             [MessageTypes.ERROR, () => this.handleError(payload)],
         ]);
@@ -1317,6 +1324,7 @@ export default class NetworkManager {
     handleGameState (payload) {
         const { players, neutralBases, bushes, rocks, wildPortals = [] } = payload;
         const clientPlayer = this.core.gameManager.player;
+        this.clearPendingBuildingUpgradeTracking();
         // Reset game state and clear render queues
         this.core.gameManager.reset();
         this.core.renderer.clearQueues();
@@ -1723,6 +1731,8 @@ export default class NetworkManager {
         if (this.core.gameManager.duelOpponentID === playerID) {
             this.core.gameManager.clearDuelArena();
             this.core.uiManager.hideX1DuelStatus();
+            this.core.uiManager.hideX1RoundScore();
+            this.core.uiManager.hideX1RoundWinPrompt();
         }
         this.core.gameManager.removePlayer(playerID);
         this.core.leaderboard.removePlayer(playerID);
@@ -1887,6 +1897,8 @@ export default class NetworkManager {
         if (!killer) return;
         this.core.gameManager.clearDuelArena();
         this.core.uiManager.hideX1DuelStatus();
+        this.core.uiManager.hideX1RoundScore();
+        this.core.uiManager.hideX1RoundWinPrompt();
         this.core.gameManager.player = null; //? Invalidate the client player, to make GameState work correcly
         this.core.uiManager.gameOver(killer, score);
 
@@ -1898,6 +1910,8 @@ export default class NetworkManager {
         const { reason, score, xp, kills, playtime } = payload;
         this.core.gameManager.clearDuelArena();
         this.core.uiManager.hideX1DuelStatus();
+        this.core.uiManager.hideX1RoundScore();
+        this.core.uiManager.hideX1RoundWinPrompt();
         this.core.uiManager.kicked(reason, score);
         console.log(payload)
         this._updateUserDataLocally(score, xp, kills, playtime);
@@ -2027,6 +2041,7 @@ export default class NetworkManager {
 
     handleBuildingsUpgraded (payload) {
         const { isPlayer, ownerID, buildingIDs, buildingVariant } = payload;
+        this.resolvePendingBuildingUpgradeFromAck(payload);
         let base = null;
         let isClient = false;
 
@@ -2082,6 +2097,7 @@ export default class NetworkManager {
 
     handleBuildingsRemoved (payload) {
         const { isPlayer, ownerID, buildingIDs } = payload;
+        this.clearPendingBuildingUpgradesForRemoved(payload);
         if (isPlayer) {
             const player = this.core.gameManager.getPlayerById(ownerID);
             if (!player) return;
@@ -2658,7 +2674,186 @@ export default class NetworkManager {
         return chunks;
     }
 
-    upgradeBuildings (buildingIDs, buildingVariant, neutralBaseID = null) {
+    getPendingUpgradeBaseToken (neutralBaseID = null) {
+        const neutralID = Number(neutralBaseID);
+        if (Number.isInteger(neutralID) && neutralID >= 0) {
+            return `neutral:${neutralID}`;
+        }
+        return "player";
+    }
+
+    resolvePendingUpgradeBaseTokenFromPayload (payload) {
+        if (!payload) return null;
+        const { isPlayer, ownerID } = payload;
+        if (isPlayer) {
+            const localPlayerID = Number(this.core.gameManager?.player?.id);
+            if (!Number.isInteger(localPlayerID) || Number(ownerID) !== localPlayerID) {
+                return null;
+            }
+            return "player";
+        }
+        const neutralID = Number(ownerID);
+        if (!Number.isInteger(neutralID) || neutralID < 0) {
+            return null;
+        }
+        const capturedNeutrals = Array.isArray(this.core.gameManager?.capturedNeutrals)
+            ? this.core.gameManager.capturedNeutrals
+            : [];
+        const isCapturedByClient = capturedNeutrals.some((neutral) => Number(neutral?.id) === neutralID);
+        return isCapturedByClient ? `neutral:${neutralID}` : null;
+    }
+
+    getPendingUpgradeKey (baseToken, buildingID) {
+        return `${baseToken}:${Number(buildingID)}`;
+    }
+
+    getPendingUpgradeBaseByToken (baseToken) {
+        if (baseToken === "player") {
+            return this.core.gameManager?.player || null;
+        }
+        if (!String(baseToken).startsWith("neutral:")) {
+            return null;
+        }
+        const neutralID = Number(String(baseToken).slice("neutral:".length));
+        if (!Number.isInteger(neutralID)) {
+            return null;
+        }
+        return this.core.gameManager?.getNeutralById?.(neutralID) || null;
+    }
+
+    clearPendingBuildingUpgradeTracking () {
+        this.pendingBuildingUpgrades.clear();
+        if (this.pendingUpgradeVerifyTimer) {
+            clearTimeout(this.pendingUpgradeVerifyTimer);
+            this.pendingUpgradeVerifyTimer = null;
+        }
+    }
+
+    schedulePendingUpgradeVerification (delayMs = UPGRADE_VERIFY_DELAY_MS) {
+        if (this.pendingUpgradeVerifyTimer || this.pendingBuildingUpgrades.size === 0) {
+            return;
+        }
+        this.pendingUpgradeVerifyTimer = setTimeout(() => {
+            this.pendingUpgradeVerifyTimer = null;
+            this.verifyPendingBuildingUpgrades();
+        }, Math.max(120, Number(delayMs) || UPGRADE_VERIFY_DELAY_MS));
+    }
+
+    trackPendingBuildingUpgrade (buildingIDs, buildingVariant, neutralBaseID = null) {
+        const chunks = this.chunkBuildingIDs(buildingIDs, 255);
+        if (chunks.length === 0) {
+            return;
+        }
+        const normalizedIDs = chunks.flat();
+        if (normalizedIDs.length === 0) {
+            return;
+        }
+
+        const targetVariant = Number(buildingVariant);
+        if (!Number.isFinite(targetVariant)) {
+            return;
+        }
+
+        const baseToken = this.getPendingUpgradeBaseToken(neutralBaseID);
+        const sentAt = Date.now();
+        normalizedIDs.forEach((buildingID) => {
+            const key = this.getPendingUpgradeKey(baseToken, buildingID);
+            this.pendingBuildingUpgrades.set(key, {
+                baseToken,
+                buildingID,
+                neutralBaseID: baseToken === "player" ? null : Number(neutralBaseID),
+                targetVariant,
+                attempts: 0,
+                lastSentAt: sentAt,
+            });
+        });
+        this.schedulePendingUpgradeVerification(UPGRADE_VERIFY_DELAY_MS);
+    }
+
+    resolvePendingBuildingUpgradeFromAck (payload) {
+        const baseToken = this.resolvePendingUpgradeBaseTokenFromPayload(payload);
+        if (!baseToken) return;
+        const targetVariant = Number(payload?.buildingVariant);
+        const buildingIDs = Array.isArray(payload?.buildingIDs) ? payload.buildingIDs : [];
+        buildingIDs.forEach((buildingID) => {
+            const key = this.getPendingUpgradeKey(baseToken, buildingID);
+            const pending = this.pendingBuildingUpgrades.get(key);
+            if (pending && Number(pending.targetVariant) === targetVariant) {
+                this.pendingBuildingUpgrades.delete(key);
+            }
+        });
+    }
+
+    clearPendingBuildingUpgradesForRemoved (payload) {
+        const baseToken = this.resolvePendingUpgradeBaseTokenFromPayload(payload);
+        if (!baseToken) return;
+        const buildingIDs = Array.isArray(payload?.buildingIDs) ? payload.buildingIDs : [];
+        buildingIDs.forEach((buildingID) => {
+            const key = this.getPendingUpgradeKey(baseToken, buildingID);
+            this.pendingBuildingUpgrades.delete(key);
+        });
+    }
+
+    verifyPendingBuildingUpgrades () {
+        if (this.pendingBuildingUpgrades.size === 0) {
+            return;
+        }
+
+        const retryQueue = [];
+        let shouldResync = false;
+        const now = Date.now();
+
+        for (const [key, pending] of this.pendingBuildingUpgrades.entries()) {
+            const base = this.getPendingUpgradeBaseByToken(pending.baseToken);
+            const building = base?.getBuilding?.(pending.buildingID);
+            if (building && Number(building.variant) === Number(pending.targetVariant)) {
+                this.pendingBuildingUpgrades.delete(key);
+                continue;
+            }
+
+            if (pending.attempts >= UPGRADE_VERIFY_MAX_RETRIES) {
+                this.pendingBuildingUpgrades.delete(key);
+                shouldResync = true;
+                continue;
+            }
+
+            if (now - pending.lastSentAt < UPGRADE_VERIFY_DELAY_MS) {
+                continue;
+            }
+
+            pending.attempts += 1;
+            pending.lastSentAt = now;
+            retryQueue.push({
+                buildingID: pending.buildingID,
+                neutralBaseID: pending.neutralBaseID,
+                targetVariant: pending.targetVariant,
+            });
+        }
+
+        retryQueue.forEach((retry) => {
+            this.upgradeBuildings([retry.buildingID], retry.targetVariant, retry.neutralBaseID, { trackPending: false });
+        });
+
+        if (shouldResync && now - this.lastUpgradeAutoResyncAt >= UPGRADE_VERIFY_RESYNC_COOLDOWN_MS) {
+            this.lastUpgradeAutoResyncAt = now;
+            this.sendResyncRequest();
+            this.core.uiManager.addChatMessage(
+                "System",
+                "Upgrade sync check detected mismatch. Requesting server resync...",
+                "#ffcc66"
+            );
+        }
+
+        if (this.pendingBuildingUpgrades.size > 0) {
+            this.schedulePendingUpgradeVerification(UPGRADE_VERIFY_DELAY_MS);
+        }
+    }
+
+    upgradeBuildings (buildingIDs, buildingVariant, neutralBaseID = null, options = {}) {
+        const trackPending = options?.trackPending !== false;
+        if (trackPending) {
+            this.trackPendingBuildingUpgrade(buildingIDs, buildingVariant, neutralBaseID);
+        }
         const chunks = this.chunkBuildingIDs(buildingIDs, 40);
         chunks.forEach((chunk) => {
             const message = Message.createUpgradeBuildingsMessage(chunk, buildingVariant, neutralBaseID);
@@ -2719,13 +2914,35 @@ export default class NetworkManager {
         this.sendMessage(message);
     }
 
-    sendX1Challenge(targetPlayerID) {
-        const message = Message.createSendX1ChallengeMessage(targetPlayerID);
+    normalizeX1DuelMode(mode) {
+        return Number(mode) === X1DuelModes.TRADITIONAL_BASE
+            ? X1DuelModes.TRADITIONAL_BASE
+            : X1DuelModes.CURRENT_BASE;
+    }
+
+    getX1DuelModeLabel(mode) {
+        return this.normalizeX1DuelMode(mode) === X1DuelModes.TRADITIONAL_BASE
+            ? "traditional base"
+            : "current base";
+    }
+
+    sendX1Challenge(targetPlayerID, duelMode = X1DuelModes.CURRENT_BASE) {
+        const message = Message.createSendX1ChallengeMessage(targetPlayerID, this.normalizeX1DuelMode(duelMode));
         this.sendMessage(message);
     }
 
-    sendX1ChallengeResponse(challengerPlayerID, accepted) {
-        const message = Message.createX1ChallengeResponseMessage(challengerPlayerID, accepted);
+    sendX1ChallengeResponse(challengerPlayerID, accepted, duelMode = X1DuelModes.CURRENT_BASE) {
+        const message = Message.createX1ChallengeResponseMessage(challengerPlayerID, accepted, this.normalizeX1DuelMode(duelMode));
+        this.sendMessage(message);
+    }
+
+    sendX1ConcedeRound(targetPlayerID) {
+        const message = Message.createX1ConcedeRoundMessage(targetPlayerID);
+        this.sendMessage(message);
+    }
+
+    sendX1RoundWinResponse(requesterPlayerID, accepted) {
+        const message = Message.createX1RoundWinResponseMessage(requesterPlayerID, accepted);
         this.sendMessage(message);
     }
 
@@ -2734,36 +2951,20 @@ export default class NetworkManager {
         this.sendMessage(message);
     }
 
-    sendToggleCommanderAssist(enabled) {
-        const message = Message.createToggleCommanderAssistMessage(Boolean(enabled));
-        this.sendMessage(message);
-    }
-
-    sendRequestX1PowerInfo() {
-        const message = Message.createRequestX1PowerInfoMessage();
-        this.sendMessage(message);
-    }
-
-    handlePlayerInactiveWarning() {
-        this.core.uiManager.showInactivityWarning();
-    }
-
-    handlePlayerActive() {
-        this.core.uiManager.hideInactivityWarning();
-    }
-
     handleX1ChallengeReceived(payload) {
-        const { challengerID, challengerName } = payload;
+        const { challengerID, challengerName, challengerMode } = payload;
         this.core.uiManager.showX1ChallengePrompt(
             challengerName,
-            () => this.sendX1ChallengeResponse(challengerID, true),
-            () => this.sendX1ChallengeResponse(challengerID, false)
+            this.normalizeX1DuelMode(challengerMode),
+            (selectedMode) => this.sendX1ChallengeResponse(challengerID, true, selectedMode),
+            () => this.sendX1ChallengeResponse(challengerID, false, X1DuelModes.CURRENT_BASE)
         );
     }
 
     handleX1ChallengeResult(payload) {
-        const { status, playerName, playerID, arena, prepSeconds } = payload;
+        const { status, playerName, playerID, arena, prepSeconds, duelMode } = payload;
         const opponent = playerName || "Player";
+        const modeLabel = this.getX1DuelModeLabel(duelMode);
 
         switch (status) {
             case 0:
@@ -2772,7 +2973,7 @@ export default class NetworkManager {
             case 1:
                 this.core.uiManager.addChatMessage(
                     "System",
-                    `X1 accepted by ${opponent}. Protected arena active${prepSeconds ? ` (${prepSeconds}s setup)` : ""}.`,
+                    `X1 accepted by ${opponent}. Protected arena active${prepSeconds ? ` (${prepSeconds}s setup)` : ""} (${modeLabel}).`,
                     "#7CFC00"
                 );
                 if (arena) {
@@ -2818,49 +3019,67 @@ export default class NetworkManager {
     }
 
     handleX1PowerInfo(payload) {
-        const {
-            status,
-            opponentID,
-            selfPower,
-            selfGeneratingPower,
-            opponentPower,
-            opponentGeneratingPower
-        } = payload || {};
-
         const gameManager = this.core?.gameManager;
         gameManager?.setX1PowerInfo?.(payload);
+    }
 
-        const shouldShowChat = this.core?.unitManager?.consumePendingX1PowerChatRequest?.() === true;
-        if (!shouldShowChat) {
-            return;
-        }
+    handleX1RoundScoreUpdate(payload) {
+        this.core.uiManager.showX1RoundScore(payload);
+    }
 
-        const opponent = gameManager?.getPlayerById?.(opponentID);
-        const opponentName = opponent?.name || "Rival";
+    handleX1RoundWinRequestReceived(payload) {
+        const requesterName = payload?.requesterName || "Player";
+        const requesterID = Number(payload?.requesterID || 0);
+        if (!requesterID) return;
 
-        if (status === 1) {
-            this.core?.uiManager?.addChatMessage?.(
-                "System",
-                `X1 ${opponentName} | Seu power: ${selfPower} (+${selfGeneratingPower}/s) | Power rival: ${opponentPower} (+${opponentGeneratingPower}/s).`,
-                "#9fd7ff"
-            );
-            return;
-        }
-
-        if (status === 2) {
-            this.core?.uiManager?.addChatMessage?.(
-                "System",
-                `X1 | Seu power: ${selfPower} (+${selfGeneratingPower}/s). Rival indisponivel no momento.`,
-                "#9fd7ff"
-            );
-            return;
-        }
-
-        this.core?.uiManager?.addChatMessage?.(
-            "System",
-            `Power: ${selfPower} (+${selfGeneratingPower}/s). Nenhum X1 ativo.`,
-            "#9fd7ff"
+        this.core.uiManager.showX1RoundWinPrompt(
+            requesterName,
+            () => this.sendX1RoundWinResponse(requesterID, true),
+            () => this.sendX1RoundWinResponse(requesterID, false)
         );
+    }
+
+    handleX1RoundWinRequestResult(payload) {
+        const status = Number(payload?.status ?? -1);
+        const localID = Number(this.core?.gameManager?.getCurrentPlayerId?.() || 0);
+        const requesterID = Number(payload?.requesterID || 0);
+        const targetID = Number(payload?.targetID || 0);
+        const requesterName = payload?.requesterName || "Player";
+        const targetName = payload?.targetName || "Player";
+        const isRequester = localID && localID === requesterID;
+        const isTarget = localID && localID === targetID;
+        switch (status) {
+            case 0:
+                this.core.uiManager.addChatMessage("System", `Round win request sent to ${targetName}.`, "#60c1ff");
+                break;
+            case 1:
+                if (isRequester) {
+                    this.core.uiManager.addChatMessage("System", `${targetName} accepted your round win request.`, "#7CFC00");
+                } else if (isTarget) {
+                    this.core.uiManager.addChatMessage("System", `You accepted ${requesterName}'s round win request.`, "#7CFC00");
+                } else {
+                    this.core.uiManager.addChatMessage("System", `${targetName} accepted ${requesterName}'s round win request.`, "#7CFC00");
+                }
+                break;
+            case 2:
+                if (isRequester) {
+                    this.core.uiManager.addChatMessage("System", `${targetName} declined your round win request.`, "#ffcc66");
+                } else if (isTarget) {
+                    this.core.uiManager.addChatMessage("System", `You declined ${requesterName}'s round win request.`, "#ffcc66");
+                } else {
+                    this.core.uiManager.addChatMessage("System", `${targetName} declined ${requesterName}'s round win request.`, "#ffcc66");
+                }
+                break;
+            case 3:
+                this.core.uiManager.addChatMessage("System", "Round win request unavailable right now.", "#ff7b7b");
+                break;
+            default:
+                break;
+        }
+
+        if (status === 1 || status === 2 || status === 3) {
+            this.core.uiManager.hideX1RoundWinPrompt();
+        }
     }
 
     sendResyncRequest () {

@@ -133,6 +133,10 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleClientToggleCommanderAssist(conn, payload)
 	case MessageTypeClientRequestX1Power:
 		handleClientRequestX1Power(conn, payload)
+	case MessageTypeClientX1ConcedeRound:
+		handleClientX1ConcedeRound(conn, payload)
+	case MessageTypeClientX1RoundWinResponse:
+		handleClientX1RoundWinResponse(conn, payload)
 
 	default:
 		log.Printf("Received unsupported message type: %d", messageType)
@@ -323,6 +327,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	collectAndSendTrapperBullets(player)
 	sendInitialPlayerData(player)
 	sendActiveDuelArenas(player)
+	sendActiveX1RoundScores(player)
 	broadcastPlayerJoined(player)
 
 	changes, changed := game.State.Leaderboard.Update(game.State.Players)
@@ -356,6 +361,7 @@ func handleClientRequestResync(conn *websocket.Conn) {
 	collectAndSendTrapperBullets(player)
 	sendInitialLeaderboardUpdate(player)
 	sendActiveDuelArenas(player)
+	sendActiveX1RoundScores(player)
 }
 
 func handleClientRequestSkinData(conn *websocket.Conn) {
@@ -753,7 +759,7 @@ func handleUpgradeBuildingsMessage(conn *websocket.Conn, payload []byte) {
 			player.Population.IncrementCapacity(capacity)
 		}
 
-		var wasUnitSpawningActive bool
+		wasUnitSpawningActive := true
 		switch building.Type {
 		case game.BARRACKS:
 			// Save the current activation state of the unit spawning before removing the old one
@@ -1304,6 +1310,7 @@ func handleBuyRelocateBase(conn *websocket.Conn, payload []byte) {
 		}
 		sendGameState(p, nil)
 		sendActiveDuelArenas(p)
+		sendActiveX1RoundScores(p)
 	}
 }
 
@@ -1379,11 +1386,46 @@ type PlayerMessageState struct {
 	lastMessage     string
 }
 
+type x1ChallengeRequest struct {
+	challengerID   game.ID
+	challengerMode game.X1DuelMode
+}
+
+type x1RoundScore struct {
+	playerAID   game.ID
+	playerBID   game.ID
+	playerAWins uint32
+	playerBWins uint32
+}
+
+type x1RoundWinRequest struct {
+	requesterID game.ID
+	targetID    game.ID
+	createdAt   time.Time
+}
+
+type x1RoundState struct {
+	playerAID       game.ID
+	playerBID       game.ID
+	mode            game.X1DuelMode
+	playerASnapshot game.X1PlayerSnapshot
+	playerBSnapshot game.X1PlayerSnapshot
+}
+
+type x1PairKey struct {
+	a game.ID
+	b game.ID
+}
+
 var (
 	messageState        = make(map[game.ID]*PlayerMessageState)
 	messageMx           sync.Mutex
-	x1ChallengeRequests = make(map[game.ID]game.ID) // target -> challenger
+	x1ChallengeRequests = make(map[game.ID]x1ChallengeRequest) // target -> challenge data
 	x1ChallengeMx       sync.Mutex
+	x1RoundScores       = make(map[x1PairKey]x1RoundScore)
+	x1RoundStates       = make(map[x1PairKey]x1RoundState)
+	x1RoundWinRequests  = make(map[game.ID]x1RoundWinRequest)
+	x1RoundScoreMx      sync.Mutex
 )
 
 func handleClientNewChatMessage(conn *websocket.Conn, payload []byte) {
@@ -1577,6 +1619,13 @@ const (
 	x1ResultWatchNotice byte = 8
 )
 
+const (
+	x1RoundWinResultSent        byte = 0
+	x1RoundWinResultAccepted    byte = 1
+	x1RoundWinResultDeclined    byte = 2
+	x1RoundWinResultUnavailable byte = 3
+)
+
 const x1TargetUnderAttackWindow = 5 * time.Minute
 
 func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
@@ -1648,8 +1697,8 @@ func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
 }
 
 func hasPendingX1ForPlayerUnsafe(playerID game.ID) bool {
-	for targetID, challengerID := range x1ChallengeRequests {
-		if targetID == playerID || challengerID == playerID {
+	for targetID, request := range x1ChallengeRequests {
+		if targetID == playerID || request.challengerID == playerID {
 			return true
 		}
 	}
@@ -1657,14 +1706,172 @@ func hasPendingX1ForPlayerUnsafe(playerID game.ID) bool {
 }
 
 func clearPendingX1ForPlayersUnsafe(playerIDs ...game.ID) {
-	for targetID, challengerID := range x1ChallengeRequests {
+	for targetID, request := range x1ChallengeRequests {
 		for _, playerID := range playerIDs {
-			if targetID == playerID || challengerID == playerID {
+			if targetID == playerID || request.challengerID == playerID {
 				delete(x1ChallengeRequests, targetID)
 				break
 			}
 		}
 	}
+}
+
+func newX1PairKey(playerAID game.ID, playerBID game.ID) x1PairKey {
+	if playerAID <= playerBID {
+		return x1PairKey{a: playerAID, b: playerBID}
+	}
+	return x1PairKey{a: playerBID, b: playerAID}
+}
+
+func resetX1RoundScoreUnsafe(playerAID game.ID, playerBID game.ID) x1RoundScore {
+	key := newX1PairKey(playerAID, playerBID)
+	score := x1RoundScore{
+		playerAID:   key.a,
+		playerBID:   key.b,
+		playerAWins: 0,
+		playerBWins: 0,
+	}
+	x1RoundScores[key] = score
+	return score
+}
+
+func incrementX1RoundWinUnsafe(winnerID game.ID, loserID game.ID) x1RoundScore {
+	key := newX1PairKey(winnerID, loserID)
+	score, exists := x1RoundScores[key]
+	if !exists {
+		score = x1RoundScore{
+			playerAID: key.a,
+			playerBID: key.b,
+		}
+	}
+
+	if winnerID == score.playerAID {
+		score.playerAWins++
+	} else if winnerID == score.playerBID {
+		score.playerBWins++
+	}
+
+	x1RoundScores[key] = score
+	return score
+}
+
+func clearX1RoundScoresForPlayerUnsafe(playerID game.ID) {
+	for key := range x1RoundScores {
+		if key.a == playerID || key.b == playerID {
+			delete(x1RoundScores, key)
+		}
+	}
+	for key := range x1RoundStates {
+		if key.a == playerID || key.b == playerID {
+			delete(x1RoundStates, key)
+		}
+	}
+	for targetID, request := range x1RoundWinRequests {
+		if request.requesterID == playerID || request.targetID == playerID || targetID == playerID {
+			delete(x1RoundWinRequests, targetID)
+		}
+	}
+}
+
+func setX1RoundStateUnsafe(playerAID game.ID, playerBID game.ID, state x1RoundState) {
+	x1RoundStates[newX1PairKey(playerAID, playerBID)] = state
+}
+
+func getX1RoundStateUnsafe(playerAID game.ID, playerBID game.ID) (x1RoundState, bool) {
+	state, exists := x1RoundStates[newX1PairKey(playerAID, playerBID)]
+	return state, exists
+}
+
+func hasPendingX1RoundWinRequestUnsafe(playerID game.ID) bool {
+	if playerID == 0 {
+		return false
+	}
+	now := time.Now()
+	for targetID, request := range x1RoundWinRequests {
+		if now.Sub(request.createdAt) > 15*time.Second {
+			delete(x1RoundWinRequests, targetID)
+			continue
+		}
+		if targetID == playerID || request.requesterID == playerID || request.targetID == playerID {
+			return true
+		}
+	}
+	return false
+}
+
+func resetX1RoundForPlayers(winner *game.Player, loser *game.Player) {
+	if winner == nil || loser == nil {
+		return
+	}
+	x1RoundScoreMx.Lock()
+	state, exists := getX1RoundStateUnsafe(winner.ID, loser.ID)
+	x1RoundScoreMx.Unlock()
+	if !exists {
+		return
+	}
+
+	if state.mode == game.X1DuelModeTraditionalBase {
+		// Traditional mode must always remount the exact ExternAtk + upgrades each round.
+		game.ApplyTraditionalX1Setup(winner, loser)
+		ensureX1CommanderSpawn(winner)
+		ensureX1CommanderSpawn(loser)
+		return
+	}
+
+	restored := false
+	if winner.ID == state.playerAID && loser.ID == state.playerBID {
+		game.RestoreX1PlayerSnapshot(winner, state.playerASnapshot)
+		game.RestoreX1PlayerSnapshot(loser, state.playerBSnapshot)
+		restored = true
+	} else if winner.ID == state.playerBID && loser.ID == state.playerAID {
+		game.RestoreX1PlayerSnapshot(winner, state.playerBSnapshot)
+		game.RestoreX1PlayerSnapshot(loser, state.playerASnapshot)
+		restored = true
+	}
+	if !restored {
+		return
+	}
+
+	ensureX1CommanderSpawn(winner)
+	ensureX1CommanderSpawn(loser)
+}
+
+func ensureX1CommanderSpawn(player *game.Player) {
+	if player == nil || player.IsMarkedForRemoval() {
+		return
+	}
+
+	hasCommanderUnit := false
+	player.RLock()
+	hasCommanderFlag := player.HasCommander
+	for _, unit := range player.Units {
+		if unit != nil && unit.Type == game.COMMANDER && !unit.IsMarkedForRemoval() {
+			hasCommanderUnit = true
+			break
+		}
+	}
+	player.RUnlock()
+	if hasCommanderFlag && hasCommanderUnit {
+		return
+	}
+	if hasCommanderFlag && !hasCommanderUnit {
+		player.Lock()
+		player.HasCommander = false
+		player.Unlock()
+	}
+
+	player.RLock()
+	hasCommander := player.HasCommander
+	player.RUnlock()
+	if hasCommander {
+		return
+	}
+
+	unit, ok := player.AddCommander()
+	if !ok || unit == nil {
+		return
+	}
+	broadcastUnitSpawn(player.Base.Owner, 255, unit)
 }
 
 func isInProtectedX1(player *game.Player) bool {
@@ -1802,8 +2009,57 @@ func clampTargetAgainstForeignDuelArenas(player *game.Player, target game.Positi
 	return target
 }
 
+func sendX1RoundScoreToPlayers(playerA *game.Player, playerB *game.Player, score x1RoundScore) {
+	if playerA == nil || playerB == nil {
+		return
+	}
+
+	game.State.RLock()
+	recipients := make([]*game.Player, 0, len(game.State.Players))
+	for _, player := range game.State.Players {
+		if player == nil || player.IsMarkedForRemoval() {
+			continue
+		}
+		recipients = append(recipients, player)
+	}
+	game.State.RUnlock()
+
+	for _, player := range recipients {
+		sendX1RoundScoreUpdate(player, playerA, playerB, score.playerAWins, score.playerBWins)
+	}
+}
+
+func sendActiveX1RoundScores(player *game.Player) {
+	if player == nil || player.Conn == nil || player.IsMarkedForRemoval() {
+		return
+	}
+
+	x1RoundScoreMx.Lock()
+	scores := make([]x1RoundScore, 0, len(x1RoundScores))
+	for _, score := range x1RoundScores {
+		scores = append(scores, score)
+	}
+	x1RoundScoreMx.Unlock()
+	if len(scores) == 0 {
+		return
+	}
+
+	game.State.RLock()
+	players := make(map[game.ID]*game.Player, len(game.State.Players))
+	for id, statePlayer := range game.State.Players {
+		players[id] = statePlayer
+	}
+	game.State.RUnlock()
+
+	for _, score := range scores {
+		playerA := players[score.playerAID]
+		playerB := players[score.playerBID]
+		sendX1RoundScoreUpdate(player, playerA, playerB, score.playerAWins, score.playerBWins)
+	}
+}
+
 func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
-	if len(payload) != 1 {
+	if len(payload) < 1 || len(payload) > 2 {
 		return
 	}
 
@@ -1813,6 +2069,10 @@ func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
 	}
 	challenger.SetLastActivity()
 	targetID := game.ID(payload[0])
+	challengerMode := game.X1DuelModeCurrentBase
+	if len(payload) >= 2 {
+		challengerMode = game.NormalizeX1DuelMode(payload[1])
+	}
 	if targetID == challenger.ID {
 		sendX1ChallengeResult(challenger, x1ResultUnavailable, challenger)
 		return
@@ -1854,13 +2114,16 @@ func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
 		sendX1ChallengeResult(challenger, x1ResultUnavailable, target)
 		return
 	}
-	x1ChallengeRequests[target.ID] = challenger.ID
+	x1ChallengeRequests[target.ID] = x1ChallengeRequest{
+		challengerID:   challenger.ID,
+		challengerMode: challengerMode,
+	}
 	x1ChallengeMx.Unlock()
 
 	// Re-check duel state right before notifying target to avoid race with duel start.
 	if isInProtectedX1(challenger) || isInProtectedX1(target) {
 		x1ChallengeMx.Lock()
-		if currentChallengerID, exists := x1ChallengeRequests[target.ID]; exists && currentChallengerID == challenger.ID {
+		if currentRequest, exists := x1ChallengeRequests[target.ID]; exists && currentRequest.challengerID == challenger.ID {
 			delete(x1ChallengeRequests, target.ID)
 		}
 		x1ChallengeMx.Unlock()
@@ -1868,12 +2131,12 @@ func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
 		return
 	}
 
-	sendX1ChallengeReceived(target, challenger)
+	sendX1ChallengeReceived(target, challenger, challengerMode)
 	sendX1ChallengeResult(challenger, x1ResultSent, target)
 }
 
 func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
-	if len(payload) != 2 {
+	if len(payload) < 2 || len(payload) > 3 {
 		return
 	}
 
@@ -1885,10 +2148,14 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 
 	challengerID := game.ID(payload[0])
 	accepted := payload[1] == 1
+	targetMode := game.X1DuelModeCurrentBase
+	if len(payload) >= 3 {
+		targetMode = game.NormalizeX1DuelMode(payload[2])
+	}
 
 	x1ChallengeMx.Lock()
-	expectedChallengerID, exists := x1ChallengeRequests[targetPlayer.ID]
-	if !exists || expectedChallengerID != challengerID {
+	request, exists := x1ChallengeRequests[targetPlayer.ID]
+	if !exists || request.challengerID != challengerID {
 		x1ChallengeMx.Unlock()
 		sendX1ChallengeResult(targetPlayer, x1ResultNoPending, nil)
 		return
@@ -1929,16 +2196,167 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 		x1ChallengeMx.Lock()
 		clearPendingX1ForPlayersUnsafe(challenger.ID, targetPlayer.ID)
 		x1ChallengeMx.Unlock()
+		x1RoundScoreMx.Lock()
+		for targetID, request := range x1RoundWinRequests {
+			if request.requesterID == challenger.ID || request.requesterID == targetPlayer.ID || request.targetID == challenger.ID || request.targetID == targetPlayer.ID || targetID == challenger.ID || targetID == targetPlayer.ID {
+				delete(x1RoundWinRequests, targetID)
+			}
+		}
+		x1RoundScoreMx.Unlock()
 
+		finalMode := game.ResolveX1DuelMode(request.challengerMode, targetMode)
 		arena := game.StartProtectedDuel(challenger, targetPlayer)
-		sendX1ChallengeResult(challenger, x1ResultAccepted, targetPlayer)
-		sendX1ChallengeResult(targetPlayer, x1ResultAccepted, challenger)
+		if finalMode == game.X1DuelModeTraditionalBase {
+			game.ApplyTraditionalX1Setup(challenger, targetPlayer)
+		}
+		game.RefillX1Power(challenger, targetPlayer)
+		ensureX1CommanderSpawn(challenger)
+		ensureX1CommanderSpawn(targetPlayer)
+		challengerSnapshot := game.CaptureX1PlayerSnapshot(challenger)
+		targetSnapshot := game.CaptureX1PlayerSnapshot(targetPlayer)
+		x1RoundScoreMx.Lock()
+		score := resetX1RoundScoreUnsafe(challenger.ID, targetPlayer.ID)
+		playerASnapshot := challengerSnapshot
+		playerBSnapshot := targetSnapshot
+		if score.playerAID == targetPlayer.ID {
+			playerASnapshot = targetSnapshot
+			playerBSnapshot = challengerSnapshot
+		}
+		setX1RoundStateUnsafe(challenger.ID, targetPlayer.ID, x1RoundState{
+			playerAID:       score.playerAID,
+			playerBID:       score.playerBID,
+			mode:            finalMode,
+			playerASnapshot: playerASnapshot,
+			playerBSnapshot: playerBSnapshot,
+		})
+		x1RoundScoreMx.Unlock()
+		sendX1ChallengeResult(challenger, x1ResultAccepted, targetPlayer, finalMode)
+		sendX1ChallengeResult(targetPlayer, x1ResultAccepted, challenger, finalMode)
+		sendX1RoundScoreToPlayers(challenger, targetPlayer, score)
 		broadcastX1DuelArenaUpdate(challenger.ID, targetPlayer.ID, arena)
 		return
 	}
 
 	sendX1ChallengeResult(challenger, x1ResultDeclined, targetPlayer)
 	sendX1ChallengeResult(targetPlayer, x1ResultDeclined, challenger)
+}
+
+func handleClientX1ConcedeRound(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 1 {
+		return
+	}
+
+	loser, ok := game.GetPlayerByConn(conn)
+	if !ok || loser == nil || loser.IsMarkedForRemoval() {
+		return
+	}
+	loser.SetLastActivity()
+
+	winnerID := game.ID(payload[0])
+	if winnerID == 0 || winnerID == loser.ID {
+		return
+	}
+
+	game.State.RLock()
+	winner := game.State.Players[winnerID]
+	game.State.RUnlock()
+	if winner == nil || winner.IsMarkedForRemoval() {
+		return
+	}
+
+	loser.RLock()
+	loserInDuel := loser.InDuel
+	loserOpponentID := loser.DuelOpponentID
+	loser.RUnlock()
+	winner.RLock()
+	winnerInDuel := winner.InDuel
+	winnerOpponentID := winner.DuelOpponentID
+	winner.RUnlock()
+
+	if !loserInDuel || !winnerInDuel {
+		return
+	}
+	if loserOpponentID != winner.ID || winnerOpponentID != loser.ID {
+		return
+	}
+
+	x1RoundScoreMx.Lock()
+	if hasPendingX1RoundWinRequestUnsafe(loser.ID) || hasPendingX1RoundWinRequestUnsafe(winner.ID) {
+		x1RoundScoreMx.Unlock()
+		sendX1RoundWinRequestResult(loser, loser, winner, x1RoundWinResultUnavailable)
+		return
+	}
+	x1RoundWinRequests[winner.ID] = x1RoundWinRequest{
+		requesterID: loser.ID,
+		targetID:    winner.ID,
+		createdAt:   time.Now(),
+	}
+	x1RoundScoreMx.Unlock()
+
+	sendX1RoundWinRequestReceived(winner, loser)
+	sendX1RoundWinRequestResult(loser, loser, winner, x1RoundWinResultSent)
+}
+
+func handleClientX1RoundWinResponse(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 2 {
+		return
+	}
+
+	targetPlayer, ok := game.GetPlayerByConn(conn)
+	if !ok || targetPlayer == nil || targetPlayer.IsMarkedForRemoval() {
+		return
+	}
+	targetPlayer.SetLastActivity()
+
+	requesterID := game.ID(payload[0])
+	accepted := payload[1] == 1
+
+	x1RoundScoreMx.Lock()
+	request, exists := x1RoundWinRequests[targetPlayer.ID]
+	if !exists || request.requesterID != requesterID {
+		x1RoundScoreMx.Unlock()
+		sendX1RoundWinRequestResult(targetPlayer, nil, nil, x1RoundWinResultUnavailable)
+		return
+	}
+	delete(x1RoundWinRequests, targetPlayer.ID)
+	x1RoundScoreMx.Unlock()
+
+	game.State.RLock()
+	requester := game.State.Players[requesterID]
+	game.State.RUnlock()
+	if requester == nil || requester.IsMarkedForRemoval() {
+		sendX1RoundWinRequestResult(targetPlayer, nil, nil, x1RoundWinResultUnavailable)
+		return
+	}
+
+	targetPlayer.RLock()
+	targetInDuel := targetPlayer.InDuel
+	targetOpponentID := targetPlayer.DuelOpponentID
+	targetPlayer.RUnlock()
+	requester.RLock()
+	requesterInDuel := requester.InDuel
+	requesterOpponentID := requester.DuelOpponentID
+	requester.RUnlock()
+	if !targetInDuel || !requesterInDuel || targetOpponentID != requester.ID || requesterOpponentID != targetPlayer.ID {
+		sendX1RoundWinRequestResult(targetPlayer, requester, targetPlayer, x1RoundWinResultUnavailable)
+		sendX1RoundWinRequestResult(requester, requester, targetPlayer, x1RoundWinResultUnavailable)
+		return
+	}
+
+	if !accepted {
+		sendX1RoundWinRequestResult(targetPlayer, requester, targetPlayer, x1RoundWinResultDeclined)
+		sendX1RoundWinRequestResult(requester, requester, targetPlayer, x1RoundWinResultDeclined)
+		return
+	}
+
+	x1RoundScoreMx.Lock()
+	score := incrementX1RoundWinUnsafe(targetPlayer.ID, requester.ID)
+	x1RoundScoreMx.Unlock()
+
+	resetX1RoundForPlayers(targetPlayer, requester)
+	sendX1RoundScoreToPlayers(targetPlayer, requester, score)
+	sendX1RoundWinRequestResult(targetPlayer, requester, targetPlayer, x1RoundWinResultAccepted)
+	sendX1RoundWinRequestResult(requester, requester, targetPlayer, x1RoundWinResultAccepted)
 }
 
 func handleClientWatchLeaveBase(conn *websocket.Conn, payload []byte) {
@@ -1981,11 +2399,15 @@ func removePlayerMessageState(playerID game.ID) {
 	defer x1ChallengeMx.Unlock()
 
 	delete(x1ChallengeRequests, playerID)
-	for targetID, challengerID := range x1ChallengeRequests {
-		if challengerID == playerID {
+	for targetID, request := range x1ChallengeRequests {
+		if request.challengerID == playerID {
 			delete(x1ChallengeRequests, targetID)
 		}
 	}
+
+	x1RoundScoreMx.Lock()
+	clearX1RoundScoresForPlayerUnsafe(playerID)
+	x1RoundScoreMx.Unlock()
 }
 
 func getPositionIntFromPayload(payload []byte) game.PositionInt {

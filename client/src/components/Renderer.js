@@ -2,6 +2,8 @@ import Renderable from "./Renderable.js";
 import Player from "../entities/Player.js";
 import Effect from "../entities/effects/Effect.js";
 import ThemeManager from "./managers/ThemeManager.js";
+import Bush from "../entities/Bush.js";
+import Rock from "../entities/Rock.js";
 
 export const QueueType = {
     STATIC: 0,
@@ -315,11 +317,7 @@ export class Renderer {
         const gameManager = this.core?.gameManager;
         if (!gameManager) return;
 
-        const arenas = Array.isArray(gameManager.globalDuelArenas) ? [...gameManager.globalDuelArenas] : [];
-        // Fallback for local player arena in case global update is delayed.
-        if (arenas.length === 0 && gameManager.duelArena) {
-            arenas.push(gameManager.duelArena);
-        }
+        const arenas = this._getActiveDuelArenas();
         if (arenas.length === 0) return;
 
         for (const arena of arenas) {
@@ -354,6 +352,46 @@ export class Renderer {
             context.stroke();
             context.restore();
         }
+    }
+
+    _getActiveDuelArenas () {
+        const gameManager = this.core?.gameManager;
+        if (!gameManager) return [];
+
+        const arenas = Array.isArray(gameManager.globalDuelArenas) ? [...gameManager.globalDuelArenas] : [];
+        if (arenas.length === 0 && gameManager.duelArena) {
+            arenas.push(gameManager.duelArena);
+        }
+        return arenas;
+    }
+
+    _isPointInsideArena (point, arena, padding = 0) {
+        if (!point || !arena) return false;
+        return point.x >= (arena.minX - padding) &&
+            point.x <= (arena.maxX + padding) &&
+            point.y >= (arena.minY - padding) &&
+            point.y <= (arena.maxY + padding);
+    }
+
+    _shouldSkipObstacleInDuelArena (renderable, arenas) {
+        if (!Array.isArray(arenas) || arenas.length === 0 || !renderable) {
+            return false;
+        }
+        if (!(renderable instanceof Bush) && !(renderable instanceof Rock)) {
+            return false;
+        }
+
+        const point = renderable.position;
+        const padding = renderable instanceof Rock
+            ? Math.max(0, Number(renderable.size || 0))
+            : Math.max(20, Number(renderable.size || 0) * 0.35);
+
+        for (const arena of arenas) {
+            if (this._isPointInsideArena(point, arena, padding)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     renderRelocationSlots () {
@@ -578,7 +616,14 @@ export class Renderer {
             //! needs to be async...
             // this.core.networkManager.sendCameraUpdate(position, camera.getZoom());
         }
-        this.queues.static.forEach(renderable => renderable.render(context, camera, deltaTime));
+        const duelArenas = this._getActiveDuelArenas();
+
+        this.queues.static.forEach(renderable => {
+            if (this._shouldSkipObstacleInDuelArena(renderable, duelArenas)) {
+                return;
+            }
+            renderable.render(context, camera, deltaTime);
+        });
 
         const spawningUnitsUnder = [];
         const spawningUnitsOver = [];
@@ -648,6 +693,9 @@ export class Renderer {
         }
 
         for (const renderable of this.queues.overlay) {
+            if (this._shouldSkipObstacleInDuelArena(renderable, duelArenas)) {
+                continue;
+            }
             renderable.render(this.context, this.camera, deltaTime);
         }
     }

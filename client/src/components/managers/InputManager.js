@@ -15,6 +15,9 @@ export default class InputManager {
         this.shiftPressed = false;
         this.activeKeys = new Set();
         this.selectionCircle = null;
+        this.selectionCircleButton = null;
+        this.suppressNextRightMouseUpAction = false;
+        this.rightSelectionDragMinDistanceSq = 36; // 6px
         this.selectionCircleHandlers = {
             onCreate: [],
             onUpdate: [],
@@ -23,34 +26,31 @@ export default class InputManager {
 
         this.registerMouseDownHandler((mousePosition, button) => this.createSelectionCircle(mousePosition, button));
         this.registerMouseUpHandler((mousePosition, button) => {
-            if (button === 0) {
+            if (button === 0 || button === 2) {
                 this.removeSelectionCircle(mousePosition);
             }
         });
         this.registerMouseMoveHandler((mousePosition) => this.updateSelectionCircle(mousePosition));
 
-        this.activityEvents = ['mousemove', 'keydown', 'mousedown'];
-        this.activityHandler = () => this.notifyServerOfActivity();
-        this.addActivityListeners();
+        this.activityKeepAliveIntervalMs = 25000;
+        this.activityKeepAliveTimer = null;
+        this.startActivityKeepAlive();
 
         this.initializeKeyListeners();
     }
 
-    addActivityListeners() {
-        this.activityEvents.forEach(eventType => {
-            document.addEventListener(eventType, this.activityHandler);
-        });
-    }
+    startActivityKeepAlive () {
+        if (this.activityKeepAliveTimer) {
+            clearInterval(this.activityKeepAliveTimer);
+            this.activityKeepAliveTimer = null;
+        }
 
-    removeActivityListeners() {
-        this.activityEvents.forEach(eventType => {
-            document.removeEventListener(eventType, this.activityHandler);
-        });
-    }
+        const sendHeartbeat = () => {
+            this.core?.networkManager?.sendPlayerActivity?.();
+        };
 
-    notifyServerOfActivity() {
-        this.core.networkManager.sendPlayerActivity();
-        this.core.uiManager.hideInactivityWarning();
+        sendHeartbeat();
+        this.activityKeepAliveTimer = setInterval(sendHeartbeat, this.activityKeepAliveIntervalMs);
     }
 
     initializeKeyListeners () {
@@ -70,10 +70,11 @@ export default class InputManager {
             };
             const keySelectArmy = bindKey("selectArmy", "q");
             const keySelectCommander = bindKey("selectCommander", "c");
-            const keySetCommanderDefenseRadius = bindKey("setCommanderDefenseRadius", "h");
             const keySelectAll = bindKey("selectAllUnits", "e");
             const keyToggleMap = bindKey("toggleMap", "m");
             const keyReturnToBase = bindKey("returnToBase", "r");
+            const keyViewAllPlayers = bindKey("viewAllPlayers", "h");
+            const keyCenterBaseView = bindKey("centerBaseView", "j");
             const keyToggleGroupTroops = bindKey("toggleGroupTroops", "z");
             const keyToggleHudMiniMap = bindKey("toggleHudMiniMap", "");
             const keyToggleHudChat = bindKey("toggleHudChat", "");
@@ -125,33 +126,6 @@ export default class InputManager {
             );
             let handledAnyAction = consumedByBaseLayoutHotkey || consumedByGlobalUpgradeHotkey;
             const canUseGameplayHotkeys = !this.core.uiManager.isChatInputFocused && !gameplayInputBlocked;
-            const isCommanderAssistHotkey = (
-                key === "*"
-                || event.code === "NumpadMultiply"
-                || (event.code === "Digit8" && event.shiftKey)
-            );
-            const isCommanderReturnHotkey = (
-                key === ","
-                || event.code === "Comma"
-            );
-
-            if (isCommanderAssistHotkey && canUseGameplayHotkeys && !isFormFocused && !event.repeat) {
-                const duelOpponentID = this.core?.gameManager?.duelOpponentID;
-                const hasX1Opponent = duelOpponentID !== null && duelOpponentID !== undefined && duelOpponentID !== "";
-                const assistAction = this.core.unitManager?.handleCommanderAssistHotkeyPress?.();
-                if (hasX1Opponent) {
-                    this.core.unitManager?.showX1PowerInfo?.();
-                }
-                handledAnyAction = true;
-            }
-
-            if (isCommanderReturnHotkey && canUseGameplayHotkeys && !isFormFocused && !event.repeat) {
-                const consumed = this.core.unitManager?.handleCommanderReturnToBaseHotkey?.();
-                if (consumed) {
-                    handledAnyAction = true;
-                }
-            }
-
             const isDeleteSellHotkey = (
                 key === "delete"
                 && !this.core.uiManager?.isChatInputFocused
@@ -188,10 +162,21 @@ export default class InputManager {
             }
             if (keyReturnToBase && key === keyReturnToBase) {
                 if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
-                    if (this.core.gameManager.player) {
-                        const playerPosition = this.core.gameManager.player.position;
-                        this.core.camera.setPosition(playerPosition);
-                        this.core.buildingManager.updateBuildingPosition();
+                    if (this.core.centerCameraOnBase?.({ smooth: false, applyHudZoom: true })) {
+                        handledAnyAction = true;
+                    }
+                }
+            }
+            if (keyViewAllPlayers && key === keyViewAllPlayers) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
+                    if (this.core.focusAllPlayersOverview?.()) {
+                        handledAnyAction = true;
+                    }
+                }
+            }
+            if (keyCenterBaseView && key === keyCenterBaseView) {
+                if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
+                    if (this.core.centerCameraOnBase?.({ smooth: false, applyHudZoom: true })) {
                         handledAnyAction = true;
                     }
                 }
@@ -295,12 +280,6 @@ export default class InputManager {
             if (key === keySelectCommander) {
                 if (canUseGameplayHotkeys && !event.repeat) {
                     this.core.unitManager.selectCommanderOrBuy();
-                    handledAnyAction = true;
-                }
-            }
-            if (key === keySetCommanderDefenseRadius) {
-                if (canUseGameplayHotkeys && !event.repeat) {
-                    this.core.unitManager?.requestCommanderDefenseRadiusPlacement?.();
                     handledAnyAction = true;
                 }
             }
@@ -409,19 +388,11 @@ export default class InputManager {
 
     // Creates the selection circle and notifies listeners
     createSelectionCircle (mousePosition, button = 0) {
-        if (button !== 0) {
-            return;
-        }
-
-        if (this.core.unitManager?.isAwaitingCommanderDefenseRadiusPlacement?.()) {
+        if (button !== 0 && button !== 2) {
             return;
         }
 
         if (this.core.uiManager?.isGameplayInputBlocked?.()) {
-            return;
-        }
-
-        if (this.core.unitManager?.hasSelectedUnits?.() && !this.shiftPressed) {
             return;
         }
 
@@ -436,6 +407,7 @@ export default class InputManager {
         }
 
         this.selectionCircle = new Renderable();
+        this.selectionCircleButton = button;
         this.selectionCircle.position = { x: mousePosition.x - this.core.camera.x, y: mousePosition.y - this.core.camera.y };
         this.selectionCircle.width = 0;
         this.selectionCircle.height = 0;
@@ -482,7 +454,14 @@ export default class InputManager {
             // Notify listeners about the removal
             this.invokeSelectionCircleOnRemoveHandler(this.selectionCircle);
             this.selectionCircle = null;
+            this.selectionCircleButton = null;
         }
+    }
+
+    consumeRightMouseUpActionSuppression () {
+        const shouldSuppress = this.suppressNextRightMouseUpAction === true;
+        this.suppressNextRightMouseUpAction = false;
+        return shouldSuppress;
     }
 
 
@@ -539,6 +518,7 @@ export default class InputManager {
 
     onCanvasContextMenu (event) {
         if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
+        if (this.selectionCircle && this.selectionCircleButton === 2) return;
         this.invokeRightClickHandlers(this.core.eventManager.mousePosition);
     }
 
@@ -573,6 +553,18 @@ export default class InputManager {
 
     onMouseUp (event) {
         if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
+        if (
+            event?.button === 2
+            && this.selectionCircle
+            && this.selectionCircleButton === 2
+        ) {
+            const width = Number(this.selectionCircle.width) || 0;
+            const height = Number(this.selectionCircle.height) || 0;
+            const dragDistanceSq = (width * width) + (height * height);
+            this.suppressNextRightMouseUpAction = dragDistanceSq >= this.rightSelectionDragMinDistanceSq;
+        } else {
+            this.suppressNextRightMouseUpAction = false;
+        }
         this.invokeMouseUpHandlers(this.core.eventManager.mousePosition, event.button);
     }
 

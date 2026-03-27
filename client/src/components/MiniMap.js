@@ -204,11 +204,35 @@ export default class MiniMap {
             drawBase(n.position.x, n.position.y, n.color, n.buildingRadius.max);
         });
 
+        const duelArenas = (() => {
+            const gameManager = this.core?.gameManager;
+            if (!gameManager) return [];
+            const arenas = Array.isArray(gameManager.globalDuelArenas) ? [...gameManager.globalDuelArenas] : [];
+            if (arenas.length === 0 && gameManager.duelArena) {
+                arenas.push(gameManager.duelArena);
+            }
+            return arenas;
+        })();
+
+        const shouldHideObstacle = (position, padding = 0) => {
+            if (!Array.isArray(duelArenas) || duelArenas.length === 0 || !position) {
+                return false;
+            }
+            return duelArenas.some(arena =>
+                position.x >= (arena.minX - padding) &&
+                position.x <= (arena.maxX + padding) &&
+                position.y >= (arena.minY - padding) &&
+                position.y <= (arena.maxY + padding)
+            );
+        };
+
         this.bushes.forEach(b => {
+            if (shouldHideObstacle(b.position, Math.max(20, (b.size || 0) * 0.35))) return;
             drawBase(b.position.x, b.position.y, "#7aaf4c", b.size * 1.2, false, 0, false);
         });
 
         this.rocks.forEach(r => {
+            if (shouldHideObstacle(r.position, Math.max(0, r.size || 0))) return;
             drawBase(r.position.x, r.position.y, "#98a3a8", r.size * 1.3, false, 0, false);
         });
 

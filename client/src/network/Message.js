@@ -1,4 +1,4 @@
-import { MessageTypes, PLAYER_NAME_MAX_BYTES } from "./constants.js";
+import { MessageTypes, PLAYER_NAME_MAX_BYTES, X1DuelModes } from "./constants.js";
 
 export default class Message {
     constructor (type, payload) {
@@ -270,17 +270,32 @@ export default class Message {
         return new Message(MessageTypes.TOGGLE_GROUP_UNITS, payload);
     }
 
-    static createSendX1ChallengeMessage (targetPlayerID) {
-        const payload = new Uint8Array(1);
+    static createSendX1ChallengeMessage (targetPlayerID, duelMode = X1DuelModes.CURRENT_BASE) {
+        const payload = new Uint8Array(2);
         payload[0] = targetPlayerID;
+        payload[1] = Number.isFinite(duelMode) ? Math.max(0, Math.min(255, Math.floor(duelMode))) : X1DuelModes.CURRENT_BASE;
         return new Message(MessageTypes.CLIENT_SEND_X1_CHALLENGE, payload);
     }
 
-    static createX1ChallengeResponseMessage (challengerPlayerID, accepted) {
-        const payload = new Uint8Array(2);
+    static createX1ChallengeResponseMessage (challengerPlayerID, accepted, duelMode = X1DuelModes.CURRENT_BASE) {
+        const payload = new Uint8Array(3);
         payload[0] = challengerPlayerID;
         payload[1] = accepted ? 1 : 0;
+        payload[2] = Number.isFinite(duelMode) ? Math.max(0, Math.min(255, Math.floor(duelMode))) : X1DuelModes.CURRENT_BASE;
         return new Message(MessageTypes.CLIENT_X1_CHALLENGE_RESPONSE, payload);
+    }
+
+    static createX1ConcedeRoundMessage (targetPlayerID) {
+        const payload = new Uint8Array(1);
+        payload[0] = targetPlayerID;
+        return new Message(MessageTypes.CLIENT_X1_CONCEDE_ROUND, payload);
+    }
+
+    static createX1RoundWinResponseMessage (requesterPlayerID, accepted) {
+        const payload = new Uint8Array(2);
+        payload[0] = requesterPlayerID;
+        payload[1] = accepted ? 1 : 0;
+        return new Message(MessageTypes.CLIENT_X1_ROUND_WIN_RESPONSE, payload);
     }
 
     static createWatchLeaveBaseMessage (targetPlayerID) {
@@ -294,17 +309,5 @@ export default class Message {
         payload[0] = Math.max(0, Math.min(255, Number(reasonCode) || 0));
         return new Message(MessageTypes.CLIENT_SECURITY_ALERT, payload);
     }
-
-    static createToggleCommanderAssistMessage (enabled) {
-        const payload = new Uint8Array(1);
-        payload[0] = enabled ? 1 : 0;
-        return new Message(MessageTypes.CLIENT_TOGGLE_COMMANDER_ASSIST, payload);
-    }
-
-    static createRequestX1PowerInfoMessage () {
-        const payload = new Uint8Array(0);
-        return new Message(MessageTypes.CLIENT_REQUEST_X1_POWER, payload);
-    }
-
 
 }

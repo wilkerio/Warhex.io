@@ -151,17 +151,27 @@ func (p *Player) MarkForRemoval() {
 	p.RemoveFlag = true
 }
 
-// GetUnitSpawningForBarrack returns the active UnitSpawning for a specific barrack if it's activated.
+func isSameBarracksRef(a *Building, b *Building) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return a == b || a.ID == b.ID
+}
+
+// GetUnitSpawningForBarrack returns the UnitSpawning for a specific barrack.
 func (p *Player) GetUnitSpawningForBarrack(barrack *Building) *UnitSpawning {
 	p.RLock() // Lock for thread safety during read operation
 	defer p.RUnlock()
 
 	for _, unitSpawn := range p.UnitSpawning {
-		if unitSpawn.Barracks == barrack {
+		if unitSpawn == nil {
+			continue
+		}
+		if isSameBarracksRef(unitSpawn.Barracks, barrack) {
 			return unitSpawn
 		}
 	}
-	return nil // Return nil if no active spawning is found for the barrack
+	return nil
 }
 
 func (p *Player) GetGenerating() Generating {
@@ -353,6 +363,13 @@ func (p *Player) WasBaseDamagedWithin(window time.Duration) bool {
 }
 
 func (p *Player) IncrementScore(value uint32) {
+	p.RLock()
+	inDuel := p.InDuel
+	p.RUnlock()
+	if inDuel {
+		// Do not award rank score while player is in protected X1.
+		return
+	}
 	p.Lock()
 	p.Score += uint32(value)
 	p.Unlock()
@@ -498,6 +515,12 @@ func (p *Player) RemoveUnit(unitID ID) bool {
 }
 
 func (p *Player) AddUnitSpawning(barracks *Building, setActive bool) bool {
+	if barracks == nil {
+		return false
+	}
+	// Ensure a single UnitSpawning entry per barracks (safe even if no entry exists).
+	p.RemoveUnitSpawning(barracks)
+
 	// Get unit spawning data based on barracks variant
 	unitSpawning, ok := GetUnitSpawning(barracks.Variant)
 	if !ok {
@@ -555,7 +578,10 @@ func (p *Player) AddUnitSpawning(barracks *Building, setActive bool) bool {
 }
 
 func (p *Player) RemoveUnitSpawning(barracks *Building) {
-	var wasActive bool
+	if barracks == nil {
+		return
+	}
+	var activeRemoved uint16
 
 	// Create a new slice to store updated UnitSpawning entries
 	var updatedUnitSpawning []*UnitSpawning
@@ -563,9 +589,14 @@ func (p *Player) RemoveUnitSpawning(barracks *Building) {
 	p.Lock()
 	// Iterate through player's UnitSpawning list
 	for _, s := range p.UnitSpawning {
-		// Check if Barracks pointer matches
-		if s.Barracks == barracks {
-			wasActive = s.Activated
+		if s == nil {
+			continue
+		}
+		// Match by pointer or barracks ID to avoid stale-pointer desync.
+		if isSameBarracksRef(s.Barracks, barracks) {
+			if s.Activated {
+				activeRemoved++
+			}
 			// Skip this UnitSpawning entry (effectively removing it)
 			continue
 		}
@@ -578,8 +609,8 @@ func (p *Player) RemoveUnitSpawning(barracks *Building) {
 	p.UnitSpawning = updatedUnitSpawning
 	p.Unlock()
 
-	if wasActive {
-		p.UnitSpawningLimit.Decrement(1)
+	if activeRemoved > 0 {
+		p.UnitSpawningLimit.Decrement(activeRemoved)
 	}
 }
 

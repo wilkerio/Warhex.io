@@ -203,6 +203,9 @@ func AddDynamicBushesForPlayerCount(playerCount int) {
 	}
 
 	isFarEnough := func(pos PositionInt) bool {
+		if isPointInsideAnyActiveDuelArenaUnsafe(PositionFloat{X: float32(pos.X), Y: float32(pos.Y)}, 64) {
+			return false
+		}
 		for _, basePos := range occupied {
 			if isTooClose(pos, basePos, baseMinDistance, baseMinDistance) {
 				return false

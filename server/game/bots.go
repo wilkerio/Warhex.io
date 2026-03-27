@@ -2084,7 +2084,7 @@ func maybeUpgradeBuilding(player *Player, rt *botRuntime) bool {
 		player.Population.IncrementCapacity(capacity)
 	}
 
-	wasUnitSpawningActive := false
+	wasUnitSpawningActive := true
 	switch bestBuilding.Type {
 	case BARRACKS:
 		unitSpawning := player.GetUnitSpawningForBarrack(bestBuilding)

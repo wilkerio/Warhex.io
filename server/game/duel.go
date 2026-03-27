@@ -61,9 +61,6 @@ func StartProtectedDuel(p1 *Player, p2 *Player) DuelArena {
 
 	first.Lock()
 	second.Lock()
-	defer second.Unlock()
-	defer first.Unlock()
-
 	p1.InDuel = true
 	p1.DuelOpponentID = p2.ID
 	p1.DuelArena = arena
@@ -74,7 +71,82 @@ func StartProtectedDuel(p1 *Player, p2 *Player) DuelArena {
 	p2.DuelArena = arena
 	p2.DuelPrepEndsAt = prepEndsAt
 
+	second.Unlock()
+	first.Unlock()
+
+	// Keep X1 battlefield clean: no bushes/rocks inside active duel arena.
+	ClearDuelArenaObstacles(arena)
+
 	return arena
+}
+
+func isPointInsideDuelArena(arena DuelArena, point PositionFloat, padding float32) bool {
+	minX := arena.MinX - padding
+	maxX := arena.MaxX + padding
+	minY := arena.MinY - padding
+	maxY := arena.MaxY + padding
+	return point.X >= minX && point.X <= maxX && point.Y >= minY && point.Y <= maxY
+}
+
+func isPointInsideAnyActiveDuelArenaUnsafe(point PositionFloat, padding float32) bool {
+	seen := make(map[[2]ID]struct{})
+	for _, player := range State.Players {
+		if player == nil {
+			continue
+		}
+		player.RLock()
+		inDuel := player.InDuel
+		arena := player.DuelArena
+		ownerID := player.ID
+		opponentID := player.DuelOpponentID
+		player.RUnlock()
+		if !inDuel || opponentID == 0 {
+			continue
+		}
+		key := [2]ID{ownerID, opponentID}
+		if key[0] > key[1] {
+			key[0], key[1] = key[1], key[0]
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		if isPointInsideDuelArena(arena, point, padding) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsPointInsideAnyActiveDuelArena(point PositionFloat, padding float32) bool {
+	State.RLock()
+	defer State.RUnlock()
+	return isPointInsideAnyActiveDuelArenaUnsafe(point, padding)
+}
+
+func ClearDuelArenaObstacles(arena DuelArena) {
+	State.Lock()
+	defer State.Unlock()
+
+	filteredBushes := make([]PositionInt, 0, len(State.Bushes))
+	for _, bush := range State.Bushes {
+		point := PositionFloat{X: float32(bush.X), Y: float32(bush.Y)}
+		if isPointInsideDuelArena(arena, point, 36) {
+			continue
+		}
+		filteredBushes = append(filteredBushes, bush)
+	}
+	State.Bushes = filteredBushes
+
+	filteredRocks := make([]Rock, 0, len(State.Rocks))
+	for _, rock := range State.Rocks {
+		padding := float32(rock.Size) + 16
+		if isPointInsideDuelArena(arena, rock.Polygon.Center, padding) {
+			continue
+		}
+		filteredRocks = append(filteredRocks, rock)
+	}
+	State.Rocks = filteredRocks
 }
 
 func ClearProtectedDuel(p *Player) {

@@ -85,6 +85,8 @@ const GLOBAL_RANK_CACHE_KEY = "warhex_global_rank_cache_v2";
 const PUBLIC_BASES_CACHE_KEY = "warhex_public_bases_cache_v1";
 const BASE_LAYOUTS_VISIBILITY_PREF_KEY = "warhex_base_layout_visibility_pref_v1";
 const MUSIC_BUCKET = "music";
+const ACCOUNT_NICKNAME_MAX_CHARS = 20;
+const ACCOUNT_NICKNAME_MIN_CHARS = 3;
 
 let skinsCache = {
     data: [],
@@ -214,17 +216,29 @@ export function clearLocalAuthState() {
     clearSupabaseAuthKeys(sessionStorage);
 }
 
+function getUnicodeCharacterCount(value = "") {
+    return Array.from(String(value || "")).length;
+}
+
+function normalizeAccountNickname(value = "") {
+    const sanitized = String(value || "")
+        .replace(/[\u0000-\u001F\u007F]/g, "")
+        .trim()
+        .replace(/\s+/g, " ");
+    if (!sanitized) return "";
+    return Array.from(sanitized).slice(0, ACCOUNT_NICKNAME_MAX_CHARS).join("");
+}
+
 // Auth functions
 export async function signUp(email, password, nickname) {
     const normalizedEmail = String(email || "").trim().toLowerCase();
     const normalizedPassword = String(password || "");
-    const normalizedNickname = String(nickname || "")
-        .replace(/[\u0000-\u001F\u007F]/g, "")
-        .trim()
-        .replace(/\s+/g, " ")
-        .slice(0, 20);
+    const normalizedNickname = normalizeAccountNickname(nickname);
     if (!normalizedEmail || !normalizedPassword || !normalizedNickname) {
         throw new Error("Email, nickname and password are required.");
+    }
+    if (getUnicodeCharacterCount(normalizedNickname) < ACCOUNT_NICKNAME_MIN_CHARS) {
+        throw new Error("Nickname must be at least 3 characters long.");
     }
 
     const { data, error } = await supabase.auth.signUp({
@@ -323,12 +337,11 @@ export async function signInWithGoogle() {
 }
 
 export async function updateAuthNickname(nickname) {
-    const cleanNickname = String(nickname || "")
-        .replace(/[\u0000-\u001F\u007F]/g, "")
-        .trim()
-        .replace(/\s+/g, " ")
-        .slice(0, 20);
+    const cleanNickname = normalizeAccountNickname(nickname);
     if (!cleanNickname) throw new Error("Nickname is required.");
+    if (getUnicodeCharacterCount(cleanNickname) < ACCOUNT_NICKNAME_MIN_CHARS) {
+        throw new Error("Nickname must be at least 3 characters long.");
+    }
     const { data, error } = await supabase.auth.updateUser({
         data: {
             nickname: cleanNickname
@@ -339,12 +352,6 @@ export async function updateAuthNickname(nickname) {
 }
 
 function deriveNicknameFromAuthUser(authUser, preferredNickname = "") {
-    const normalize = (value) => String(value || "")
-        .replace(/[\u0000-\u001F\u007F]/g, "")
-        .trim()
-        .replace(/\s+/g, " ")
-        .slice(0, 20);
-
     const resolveAuthEmail = (user) => {
         const directEmail = user?.email || user?.user_metadata?.email || user?.raw_user_meta_data?.email || "";
         if (directEmail) return String(directEmail).trim();
@@ -369,8 +376,8 @@ function deriveNicknameFromAuthUser(authUser, preferredNickname = "") {
     ];
 
     for (const candidate of candidates) {
-        const value = normalize(candidate);
-        if (value.length >= 3) return value;
+        const value = normalizeAccountNickname(candidate);
+        if (getUnicodeCharacterCount(value) >= ACCOUNT_NICKNAME_MIN_CHARS) return value;
     }
     return "Player";
 }
@@ -812,7 +819,7 @@ async function listAllStorageFiles(bucketName = "skins", prefix = '', state = { 
     return files;
 }
 
-// Function to fetch skins from Supabase storage bucket (PNG and SVG, nested folders supported)
+// Function to fetch skins from Supabase storage bucket (common image formats, nested folders supported)
 export async function fetchSkins() {
     const now = Date.now();
     if (skinsCache.data.length > 0 && (now - skinsCache.fetchedAt) < SKINS_CACHE_TTL_MS) {
@@ -825,24 +832,114 @@ export async function fetchSkins() {
 
     skinsCache.inFlight = (async () => {
     try {
-        const files = await listAllStorageFiles("skins", '');
+        let files = [];
+        let lastListError = null;
 
-        // Filter only PNG or SVG files, sort alphabetically (by base name), and create skin objects with URLs
-        const skins = files
-            .filter(file => /\.(png|svg)$/i.test(file.fullPath))
+        // Prefer authenticated client (works when bucket listing requires auth).
+        try {
+            files = await listAllStorageFiles("skins", '', { requests: 0 }, supabase);
+        } catch (error) {
+            lastListError = error;
+        }
+
+        // Fallback to public client (works for public buckets / guest flows).
+        if (!Array.isArray(files) || files.length === 0) {
+            try {
+                files = await listAllStorageFiles("skins", '', { requests: 0 }, supabasePublic);
+            } catch (error) {
+                lastListError = error;
+            }
+        }
+
+        const SKIN_FILE_REGEX = /\.(png|svg|webp|jpg|jpeg|avif|gif)$/i;
+
+        const normalizeSkinStoragePath = (value) => {
+            let path = String(value || "").trim();
+            if (!path) return "";
+
+            if (/^https?:\/\//i.test(path)) {
+                try {
+                    const url = new URL(path);
+                    const lowerPathname = String(url.pathname || "").toLowerCase();
+                    const markers = [
+                        "/storage/v1/object/public/skins/",
+                        "/storage/v1/object/sign/skins/",
+                        "/storage/v1/object/authenticated/skins/"
+                    ];
+                    let extracted = "";
+                    for (const marker of markers) {
+                        const idx = lowerPathname.indexOf(marker);
+                        if (idx >= 0) {
+                            extracted = decodeURIComponent(url.pathname.slice(idx + marker.length));
+                            break;
+                        }
+                    }
+                    if (!extracted) return "";
+                    path = extracted;
+                } catch {
+                    return "";
+                }
+            }
+
+            path = path.replace(/\\/g, "/").replace(/^\/+/, "");
+            if (path.toLowerCase().startsWith("skins/")) {
+                path = path.slice("skins/".length);
+            }
+            return path;
+        };
+
+        const pickCatalogPathCandidate = (row) => {
+            if (!row || typeof row !== "object") return "";
+            const preferredKeys = [
+                "file_path",
+                "path",
+                "storage_path",
+                "image_path",
+                "asset_path",
+                "url",
+                "public_url",
+                "image_url",
+                "skin_url",
+                "cdn_url",
+                "file_name",
+                "filename",
+                "image",
+                "file"
+            ];
+            for (const key of preferredKeys) {
+                const value = row[key];
+                if (typeof value === "string" && value.trim()) {
+                    return value.trim();
+                }
+            }
+
+            // Last resort: scan any string field that looks like an image path/URL.
+            for (const value of Object.values(row)) {
+                if (typeof value !== "string") continue;
+                const trimmed = value.trim();
+                if (!trimmed) continue;
+                if (/^https?:\/\//i.test(trimmed) || /skins\//i.test(trimmed) || /\.(png|svg|webp|jpg|jpeg|avif|gif)$/i.test(trimmed)) {
+                    return trimmed;
+                }
+            }
+
+            return "";
+        };
+
+        const fileSkins = (Array.isArray(files) ? files : [])
+            .filter(file => SKIN_FILE_REGEX.test(file.fullPath))
             .map(file => {
-                const skinName = file.fullPath.replace(/\.(png|svg)$/i, '').split('/').pop();
-                return { file, skinName };
-            })
-            .sort((a, b) => a.skinName.localeCompare(b.skinName))
-            .map(({ file, skinName }) => {
+                const skinName = file.fullPath.replace(SKIN_FILE_REGEX, '').split('/').pop();
                 const publicUrl = supabase.storage.from('skins').getPublicUrl(file.fullPath).data.publicUrl;
-                const extension = (file.fullPath.match(/\.(png|svg)$/i) || [])[0] || '';
+                const extension = (file.fullPath.match(SKIN_FILE_REGEX) || [])[0] || '';
                 return {
                     id: skinName,
                     name: skinName,
                     url: publicUrl,
                     extension: extension.replace('.', '').toLowerCase(),
+                    bucket: 'skins',
+                    source: 'supabase-storage',
+                    fullPath: file.fullPath,
                     category: 'default',
                     unlocked: true,
                     requiredLevel: 0,
@@ -850,6 +947,66 @@ export async function fetchSkins() {
                     isPurchasable: false
                 };
             });
+
+        let skins = fileSkins;
+
+        // Some deployments block storage listing. Fallback to DB catalog that references the skins bucket.
+        if (skins.length === 0) {
+            const catalogRows = await fetchSkinsCatalog();
+            const seenNames = new Set();
+            const catalogSkins = [];
+
+            for (const row of (Array.isArray(catalogRows) ? catalogRows : [])) {
+                if (!row || typeof row !== "object") continue;
+
+                const nameCandidate = String(
+                    row.skin_name || row.name || row.title || ""
+                ).trim();
+
+                const rawPathCandidate = pickCatalogPathCandidate(row);
+
+                const normalizedPath = normalizeSkinStoragePath(rawPathCandidate);
+                if (!normalizedPath || !SKIN_FILE_REGEX.test(normalizedPath)) continue;
+
+                const derivedName = normalizedPath.replace(SKIN_FILE_REGEX, "").split("/").pop();
+                const skinName = (nameCandidate || derivedName || "").trim();
+                if (!skinName) continue;
+                const keyName = skinName.toLowerCase();
+                if (seenNames.has(keyName)) continue;
+                seenNames.add(keyName);
+
+                const extension = (normalizedPath.match(SKIN_FILE_REGEX) || [])[0] || "";
+                const publicUrl = supabase.storage.from("skins").getPublicUrl(normalizedPath).data.publicUrl;
+
+                catalogSkins.push({
+                    id: row.id ?? skinName,
+                    name: skinName,
+                    url: publicUrl,
+                    extension: extension.replace(".", "").toLowerCase(),
+                    bucket: "skins",
+                    source: "supabase-catalog",
+                    fullPath: normalizedPath,
+                    category: String(row.category || "default"),
+                    unlocked: true,
+                    requiredLevel: Number(row.required_level || 0) || 0,
+                    price: Number(row.price || 0) || 0,
+                    isPurchasable: Boolean(row.is_purchasable)
+                });
+            }
+
+            skins = catalogSkins;
+            console.log("Skins fallback source: catalog", catalogSkins.length);
+        } else {
+            console.log("Skins source: storage listing", fileSkins.length);
+        }
+
+        if (skins.length === 0) {
+            if (lastListError) {
+                console.warn("Skins storage list failed and catalog fallback produced no skins:", lastListError);
+            } else {
+                console.warn("No skins returned from storage listing or catalog fallback.");
+            }
+        }
 
         console.log('Fetched skins from storage:', skins.length, 'files');
         skinsCache = {
@@ -1025,11 +1182,18 @@ export async function fetchGameMusicTracks(limit = 40) {
 // Fetch skins catalog from database (includes level/shop skins)
 export async function fetchSkinsCatalog() {
     try {
-        const { data, error } = await supabase
+        let query = supabase
             .from('skins')
-            .select('*')
-            .order('required_level', { ascending: true });
-        
+            .select('*');
+
+        let { data, error } = await query.order('required_level', { ascending: true });
+        if (error) {
+            // Some schemas don't have required_level; retry without ordering.
+            const retry = await query;
+            data = retry.data;
+            error = retry.error;
+        }
+
         if (error) {
             console.error('Error fetching skins catalog:', error);
             return [];

@@ -130,7 +130,7 @@ func broadcastChatMessage(playerID game.ID, text []byte) {
 	broadcastToAll(EncodeMessage(message))
 }
 
-func sendX1ChallengeReceived(target *game.Player, challenger *game.Player) {
+func sendX1ChallengeReceived(target *game.Player, challenger *game.Player, challengerMode game.X1DuelMode) {
 	message := Message{
 		Type: MessageTypeX1ChallengeReceived,
 	}
@@ -138,18 +138,23 @@ func sendX1ChallengeReceived(target *game.Player, challenger *game.Player) {
 	buffer := new(bytes.Buffer)
 	buffer.WriteByte(byte(challenger.ID))
 	buffer.Write(challenger.Name[:])
+	buffer.WriteByte(byte(challengerMode))
 
 	message.Payload = buffer.Bytes()
 	sendToClient(target.Conn, EncodeMessage(message), nil)
 }
 
-func sendX1ChallengeResult(target *game.Player, status byte, other *game.Player) {
+func sendX1ChallengeResult(target *game.Player, status byte, other *game.Player, duelMode ...game.X1DuelMode) {
 	message := Message{
 		Type: MessageTypeX1ChallengeResult,
 	}
 
 	buffer := new(bytes.Buffer)
 	buffer.WriteByte(status)
+	finalMode := game.X1DuelModeCurrentBase
+	if len(duelMode) > 0 {
+		finalMode = duelMode[0]
+	}
 
 	if other != nil {
 		buffer.WriteByte(byte(other.ID))
@@ -170,6 +175,7 @@ func sendX1ChallengeResult(target *game.Player, status byte, other *game.Player)
 		binary.Write(buffer, binary.BigEndian, arena.MaxX)
 		binary.Write(buffer, binary.BigEndian, arena.MaxY)
 		buffer.WriteByte(game.DuelPreparationSeconds())
+		buffer.WriteByte(byte(finalMode))
 	}
 
 	message.Payload = buffer.Bytes()
@@ -213,6 +219,107 @@ func sendX1PowerInfo(
 	message.Payload = buffer.Bytes()
 
 	sendToClient(player.Conn, EncodeMessage(message), nil)
+}
+
+func sendX1RoundScoreUpdate(
+	target *game.Player,
+	playerA *game.Player,
+	playerB *game.Player,
+	playerAWins uint32,
+	playerBWins uint32,
+) {
+	if target == nil || target.Conn == nil || target.IsMarkedForRemoval() {
+		return
+	}
+
+	message := Message{
+		Type: MessageTypeX1RoundScoreUpdate,
+	}
+
+	buffer := new(bytes.Buffer)
+	if playerA != nil {
+		buffer.WriteByte(byte(playerA.ID))
+	} else {
+		buffer.WriteByte(0)
+	}
+	if playerB != nil {
+		buffer.WriteByte(byte(playerB.ID))
+	} else {
+		buffer.WriteByte(0)
+	}
+	binary.Write(buffer, binary.BigEndian, playerAWins)
+	binary.Write(buffer, binary.BigEndian, playerBWins)
+
+	var emptyName [game.PLAYER_NAME_MAX_BYTES]byte
+	if playerA != nil {
+		buffer.Write(playerA.Name[:])
+	} else {
+		buffer.Write(emptyName[:])
+	}
+	if playerB != nil {
+		buffer.Write(playerB.Name[:])
+	} else {
+		buffer.Write(emptyName[:])
+	}
+
+	message.Payload = buffer.Bytes()
+	sendToClient(target.Conn, EncodeMessage(message), nil)
+}
+
+func sendX1RoundWinRequestReceived(target *game.Player, requester *game.Player) {
+	if target == nil || target.Conn == nil || target.IsMarkedForRemoval() {
+		return
+	}
+
+	message := Message{
+		Type: MessageTypeX1RoundWinRequestReceived,
+	}
+
+	buffer := new(bytes.Buffer)
+	if requester != nil {
+		buffer.WriteByte(byte(requester.ID))
+		buffer.Write(requester.Name[:])
+	} else {
+		buffer.WriteByte(byte(0))
+		var emptyName [game.PLAYER_NAME_MAX_BYTES]byte
+		buffer.Write(emptyName[:])
+	}
+
+	message.Payload = buffer.Bytes()
+	sendToClient(target.Conn, EncodeMessage(message), nil)
+}
+
+func sendX1RoundWinRequestResult(target *game.Player, requester *game.Player, targetPlayer *game.Player, status byte) {
+	if target == nil || target.Conn == nil || target.IsMarkedForRemoval() {
+		return
+	}
+
+	message := Message{
+		Type: MessageTypeX1RoundWinRequestResult,
+	}
+
+	buffer := new(bytes.Buffer)
+	buffer.WriteByte(status)
+	if requester != nil {
+		buffer.WriteByte(byte(requester.ID))
+		buffer.Write(requester.Name[:])
+	} else {
+		buffer.WriteByte(byte(0))
+		var emptyName [game.PLAYER_NAME_MAX_BYTES]byte
+		buffer.Write(emptyName[:])
+	}
+
+	if targetPlayer != nil {
+		buffer.WriteByte(byte(targetPlayer.ID))
+		buffer.Write(targetPlayer.Name[:])
+	} else {
+		buffer.WriteByte(byte(0))
+		var emptyName [game.PLAYER_NAME_MAX_BYTES]byte
+		buffer.Write(emptyName[:])
+	}
+
+	message.Payload = buffer.Bytes()
+	sendToClient(target.Conn, EncodeMessage(message), nil)
 }
 
 func buildX1DuelArenaMessage(playerAID game.ID, playerBID game.ID, arena game.DuelArena) Message {

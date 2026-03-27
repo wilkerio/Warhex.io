@@ -1,4 +1,4 @@
-import { BuildingTypes, BuildingVariantTypes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, PLAYER_NAME_MAX_BYTES, Servers, UnitTypes } from "../../network/constants.js";
+import { BuildingTypes, BuildingVariantTypes, X1DuelModes, calculateRequiredXP, getAvailableBuildingUpgrades, getBuildingDetails, getColorForLevel, PLAYER_NAME_MAX_BYTES, Servers, UnitTypes } from "../../network/constants.js";
 import Network from "../../network/Network.js";
 import SkinCache from "../SkinCache.js";
 import * as supabaseClientApi from "../../network/supabaseClient.js";
@@ -39,10 +39,9 @@ export default class UIManager {
         this.selectedUpgradeTab = 0;
         this.upgradePanelOpen = false;
         this.upgradeBulkMode = false;
-        this.inactivityTimerInterval = null;
-        this.inactivityTimeout = 540; // Warning starts after 1 minute; 9 minutes remain until 10-minute kick.
         this.x1PromptElement = null;
         this.x1SendPromptElement = null;
+        this.x1RoundWinPromptElement = null;
         this.enemyCoreActionsElement = null;
         this.relocatePromptElement = null;
         this.baseLayoutDialogElement = null;
@@ -51,9 +50,14 @@ export default class UIManager {
         this.prePlaySkinPromptElement = null;
         this.discordJoinPromptElement = null;
         this.x1StatusElement = null;
+        this.x1RoundScoreElement = null;
+        this.x1RoundScoreElementsByPair = new Map();
+        this.x1RoundScoreDataByPair = new Map();
+        this.x1RoundScoreAnimationFrame = null;
         this.x1StatusInterval = null;
         this.x1PromptTimeout = null;
         this.x1SendPromptTimeout = null;
+        this.x1RoundWinPromptTimeout = null;
         this._pinAutoBuildMenuOpen = false;
         this._lastGlobalRankLoginState = null;
         this.hudConfig = this.getDefaultHudConfig();
@@ -73,6 +77,8 @@ export default class UIManager {
         this.discordOnboardingInProgress = false;
         this.soldierSelectionCounterElement = null;
         this._globalLeaderboardRefreshTimer = null;
+        this.chatMessageMaxRunes = 120;
+        this.chatMessageMaxBytes = 180;
         this.musicControlsElement = null;
         this.musicControlsTrackLabel = null;
         this.musicControlsVolumeLabel = null;
@@ -394,8 +400,6 @@ export default class UIManager {
         if (scoreStrong) scoreStrong.textContent = `${this.t("menu.score")}:`;
         if (timeStrong) timeStrong.textContent = `${this.t("game.time")}:`;
         setText("#continue-button", "game.continue");
-        setText("#inactivity-warning-container h1", "game.areYouThere");
-        setText("#inactivity-warning-container p:nth-child(2)", "game.inactiveKick");
         setText("#game-settings .slider button", "game.settings");
         setText("#game-settings .theme-settings p", "game.theme");
         const removeGridLabel = document.querySelector('label[for="remove-grid-checkbox"]');
@@ -450,11 +454,14 @@ export default class UIManager {
             keybinds: {
                 selectArmy: "q",
                 selectCommander: "c",
-                setCommanderDefenseRadius: "h",
                 selectAllUnits: "e",
                 toggleMap: "m",
                 returnToBase: "r",
+                viewAllPlayers: "h",
+                centerBaseView: "j",
                 toggleGroupTroops: "z",
+                defensePlacement: "",
+                defenseRemount: "",
                 toggleHudMiniMap: "",
                 toggleHudChat: "",
                 toggleHudLeaderboard: "",
@@ -479,9 +486,15 @@ export default class UIManager {
                 upgradeDestroyAll: "u"
             },
             upgradeHotkeys: {},
+            defenseRemount: {
+                sellWallsInSlots: true,
+                sellConflictingInSlots: true,
+                upgradeTargets: {}
+            },
             cameraControls: {
                 speed: 3,
-                zoom: 1.5
+                zoom: 1.5,
+                scrollSpeed: 1.5
             },
             unitShapes: {
                 soldier: "triangle",
@@ -531,6 +544,7 @@ export default class UIManager {
             upgradeHotkeys: (incoming?.upgradeHotkeys && typeof incoming.upgradeHotkeys === "object")
                 ? { ...incoming.upgradeHotkeys }
                 : {},
+            defenseRemount: this.normalizeDefenseRemountConfig(incoming?.defenseRemount),
             cameraControls: {
                 ...defaults.cameraControls,
                 ...((incoming?.cameraControls && typeof incoming.cameraControls === "object") ? incoming.cameraControls : {})
@@ -653,11 +667,7 @@ export default class UIManager {
             mousebutton2: "mouse2",
             mousebutton3: "mouse3",
             mousebutton4: "mouse4",
-            mousebutton5: "mouse5",
-            multiply: "*",
-            numpadmultiply: "*",
-            asterisk: "*",
-            star: "*"
+            mousebutton5: "mouse5"
         };
 
         return aliases[normalized] || normalized;
@@ -712,6 +722,96 @@ export default class UIManager {
             return this.normalizeKeybindValue(all[actionName]);
         }
         return this.normalizeKeybindValue(fallbackKey);
+    }
+
+    normalizeDefenseRemountUpgradeTarget (value) {
+        if (value === null || value === undefined) return "saved";
+        if (Number.isFinite(Number(value))) {
+            const numeric = Math.floor(Number(value));
+            return numeric > 0 ? `variant:${numeric}` : "saved";
+        }
+        const raw = String(value).trim().toLowerCase();
+        if (!raw) return "saved";
+        if (raw === "saved" || raw === "none") return raw;
+        const variantMatch = /^variant:(\d+)$/.exec(raw) || /^(\d+)$/.exec(raw);
+        if (variantMatch) {
+            const numeric = Math.floor(Number(variantMatch[1]));
+            if (Number.isFinite(numeric) && numeric > 0) {
+                return `variant:${numeric}`;
+            }
+        }
+        return "saved";
+    }
+
+    normalizeDefenseRemountConfig (incoming = {}) {
+        const defaults = this.getDefaultHudConfig().defenseRemount || {};
+        const safeIncoming = (incoming && typeof incoming === "object") ? incoming : {};
+        const rawTargets = (safeIncoming.upgradeTargets && typeof safeIncoming.upgradeTargets === "object")
+            ? safeIncoming.upgradeTargets
+            : {};
+        const upgradeTargets = {};
+        Object.keys(rawTargets).forEach((typeKey) => {
+            const normalizedType = String(Math.floor(Number(typeKey)));
+            if (!/^-?\d+$/.test(normalizedType)) return;
+            const normalizedTarget = this.normalizeDefenseRemountUpgradeTarget(rawTargets[typeKey]);
+            if (normalizedTarget === "saved") return;
+            upgradeTargets[normalizedType] = normalizedTarget;
+        });
+
+        return {
+            sellWallsInSlots: safeIncoming.sellWallsInSlots === undefined
+                ? Boolean(defaults.sellWallsInSlots)
+                : Boolean(safeIncoming.sellWallsInSlots),
+            sellConflictingInSlots: safeIncoming.sellConflictingInSlots === undefined
+                ? Boolean(defaults.sellConflictingInSlots)
+                : Boolean(safeIncoming.sellConflictingInSlots),
+            upgradeTargets
+        };
+    }
+
+    getDefenseRemountConfig () {
+        const normalized = this.normalizeDefenseRemountConfig(this.hudConfig?.defenseRemount);
+        if (!this.hudConfig || typeof this.hudConfig !== "object") {
+            return normalized;
+        }
+        this.hudConfig.defenseRemount = normalized;
+        return normalized;
+    }
+
+    setDefenseRemountFlag (flagKey, value) {
+        if (!this.hudConfig || typeof this.hudConfig !== "object") return;
+        const normalized = this.getDefenseRemountConfig();
+        if (!Object.prototype.hasOwnProperty.call(normalized, flagKey)) return;
+        normalized[flagKey] = Boolean(value);
+        this.hudConfig.defenseRemount = normalized;
+        this.scheduleHudConfigSync();
+        this.refreshKeybindEditorUI();
+    }
+
+    setDefenseRemountUpgradeTarget (buildingType, nextValue) {
+        const safeType = Math.floor(Number(buildingType));
+        if (!Number.isFinite(safeType)) return;
+        if (!this.hudConfig || typeof this.hudConfig !== "object") return;
+
+        const normalized = this.getDefenseRemountConfig();
+        const key = String(safeType);
+        const target = this.normalizeDefenseRemountUpgradeTarget(nextValue);
+        if (target === "saved") {
+            delete normalized.upgradeTargets[key];
+        } else {
+            normalized.upgradeTargets[key] = target;
+        }
+        this.hudConfig.defenseRemount = normalized;
+        this.scheduleHudConfigSync();
+        this.refreshKeybindEditorUI();
+    }
+
+    getDefenseRemountUpgradeTarget (buildingType) {
+        const safeType = Math.floor(Number(buildingType));
+        if (!Number.isFinite(safeType)) return "saved";
+        const config = this.getDefenseRemountConfig();
+        const key = String(safeType);
+        return this.normalizeDefenseRemountUpgradeTarget(config?.upgradeTargets?.[key] || "saved");
     }
 
     formatEnumLabel (rawValue) {
@@ -1081,7 +1181,10 @@ export default class UIManager {
             this.hudConfig.cameraControls = { ...this.getDefaultHudConfig().cameraControls };
         }
         const defaults = this.getDefaultHudConfig().cameraControls;
-        let parsed = Number(rawValue);
+        const normalizedRaw = typeof rawValue === "string"
+            ? rawValue.trim().replace(",", ".")
+            : rawValue;
+        let parsed = Number(normalizedRaw);
         if (!Number.isFinite(parsed)) {
             parsed = Number(defaults?.[key]);
         }
@@ -1092,6 +1195,9 @@ export default class UIManager {
             parsed = Math.round(parsed * 10) / 10;
         } else if (key === "zoom") {
             parsed = Math.max(0.05, Math.min(8, parsed));
+            parsed = Math.round(parsed * 100) / 100;
+        } else if (key === "scrollSpeed") {
+            parsed = Math.max(0.1, Math.min(10, parsed));
             parsed = Math.round(parsed * 100) / 100;
         }
 
@@ -1110,6 +1216,12 @@ export default class UIManager {
             camera.cameraSpeed = Math.max(0.5, Math.min(20, speed));
         }
 
+        const scrollSpeed = this.getCameraControlValue("scrollSpeed", 1.5);
+        const clampedScrollSpeed = Number.isFinite(scrollSpeed)
+            ? Math.max(0.1, Math.min(10, scrollSpeed))
+            : 1.5;
+        this.core.mouseWheelZoomSensitivity = clampedScrollSpeed * 0.001;
+
         if (!options?.applyZoom) return;
         const desiredZoom = this.getCameraControlValue("zoom", camera.zoom);
         if (!Number.isFinite(desiredZoom)) return;
@@ -1127,7 +1239,6 @@ export default class UIManager {
             { key: "selectTanksOnly", label: this.t("key.action.selectTanksOnly"), group: this.t("key.group.selection") },
             { key: "selectSiegeOnly", label: this.t("key.action.selectSiegeOnly"), group: this.t("key.group.selection") },
             { key: "selectCommander", label: this.t("key.action.selectCommander"), group: this.t("key.group.selection") },
-            { key: "setCommanderDefenseRadius", label: "Commander Defense Radius", group: this.t("key.group.selection") },
             { key: "selectAllUnits", label: this.t("key.action.selectAllUnits"), group: this.t("key.group.selection") },
             { key: "selectCommanderSoldiers", label: "Commander + Soldiers", group: this.t("key.group.selection") },
             { key: "selectCommanderTanks", label: "Commander + Tanks", group: this.t("key.group.selection") },
@@ -1138,7 +1249,11 @@ export default class UIManager {
             { key: "selectCommanderArmy", label: "Commander + Army", group: this.t("key.group.selection") },
             { key: "toggleMap", label: this.t("key.action.toggleMap"), group: this.t("key.group.hud") },
             { key: "returnToBase", label: this.t("key.action.returnToBase"), group: this.t("key.group.hud") },
+            { key: "viewAllPlayers", label: this.t("key.action.viewAllPlayers"), group: this.t("key.group.hud") },
+            { key: "centerBaseView", label: this.t("key.action.centerBaseView"), group: this.t("key.group.hud") },
             { key: "toggleGroupTroops", label: this.t("key.action.toggleGroupTroops"), group: this.t("key.group.hud") },
+            { key: "defensePlacement", label: this.t("key.action.defensePlacement"), group: this.t("key.group.defense") },
+            { key: "defenseRemount", label: this.t("key.action.defenseRemount"), group: this.t("key.group.defense") },
             { key: "toggleHudMiniMap", label: "Toggle Minimap", group: this.t("key.group.hud") },
             { key: "toggleHudChat", label: "Minimize Chat", group: this.t("key.group.hud") },
             { key: "toggleHudLeaderboard", label: "Minimize Rank", group: this.t("key.group.hud") },
@@ -1714,6 +1829,7 @@ export default class UIManager {
             <div class="hud-camera-controls">
                 <label>Camera Speed <input id="hud-camera-speed" type="number" min="0.5" max="20" step="0.1" value="3"></label>
                 <label>Camera Zoom <input id="hud-camera-zoom" type="number" min="0.05" max="8" step="0.05" value="1.5"></label>
+                <label>Scroll Speed <input id="hud-camera-scroll-speed" type="number" min="0.1" max="10" step="0.1" value="1.5"></label>
             </div>
             <div class="hud-unit-shape-controls">
                 <label>Soldier Shape
@@ -1837,6 +1953,7 @@ export default class UIManager {
         bindInput("#hud-key-upgrade-destroy-all", "keybinds", "upgradeDestroyAll");
         bindCameraInput("#hud-camera-speed", "speed");
         bindCameraInput("#hud-camera-zoom", "zoom");
+        bindCameraInput("#hud-camera-scroll-speed", "scrollSpeed");
         bindSelect("#hud-shape-soldier", "soldier");
         bindSelect("#hud-shape-tank", "tank");
         bindSelect("#hud-shape-siege", "siege");
@@ -1868,6 +1985,7 @@ export default class UIManager {
         setVal("#hud-key-upgrade-destroy-all", this.hudConfig?.keybinds?.upgradeDestroyAll ?? "u");
         setVal("#hud-camera-speed", String(this.getCameraControlValue("speed", 3)));
         setVal("#hud-camera-zoom", String(this.getCameraControlValue("zoom", 1.5)));
+        setVal("#hud-camera-scroll-speed", String(this.getCameraControlValue("scrollSpeed", 1.5)));
         setVal("#hud-shape-soldier", this.hudConfig?.unitShapes?.soldier || "triangle");
         setVal("#hud-shape-tank", this.hudConfig?.unitShapes?.tank || "triangle");
         setVal("#hud-shape-siege", this.hudConfig?.unitShapes?.siege || "triangle");
@@ -2026,9 +2144,10 @@ export default class UIManager {
         overlay.querySelector(".keybind-editor-close")?.addEventListener("click", () => this.showKeybindEditor(false));
         overlay.querySelector(".keybind-editor-done")?.addEventListener("click", () => this.showKeybindEditor(false));
         overlay.querySelector(".keybind-editor-reset")?.addEventListener("click", () => {
-            const defaults = this.getDefaultHudConfig().keybinds;
-            this.hudConfig.keybinds = { ...defaults };
+            const defaults = this.getDefaultHudConfig();
+            this.hudConfig.keybinds = { ...defaults.keybinds };
             this.hudConfig.upgradeHotkeys = {};
+            this.hudConfig.defenseRemount = this.normalizeDefenseRemountConfig(defaults.defenseRemount);
             this.scheduleHudConfigSync();
             this.refreshCustomizationSettingsUI();
             this.refreshKeybindEditorUI();
@@ -2160,6 +2279,100 @@ export default class UIManager {
             return row;
         };
 
+        const remountTypeOrder = [
+            BuildingTypes.WALL,
+            BuildingTypes.SIMPLE_TURRET,
+            BuildingTypes.SNIPER_TURRET,
+            BuildingTypes.ARMORY,
+            BuildingTypes.GENERATOR,
+            BuildingTypes.HOUSE
+        ];
+        const defenseSearchPool = [
+            "defense remount rebuild remontar defend wall cleanup conflict upgrade",
+            ...remountTypeOrder.map((buildingType) => `${this.getBuildingTypeLabel(buildingType)} upgrade`)
+        ].map((entry) => String(entry || "").toLowerCase());
+        const matchesDefenseSettingsFilter = !filter || defenseSearchPool.some((entry) => entry.includes(filter));
+        const appendDefenseRemountSettings = (targetBody) => {
+            if (!targetBody || !matchesDefenseSettingsFilter) return;
+            const config = this.getDefenseRemountConfig();
+            const createSettingRow = (labelText, controlElement) => {
+                const row = document.createElement("div");
+                row.className = "keybind-editor-setting-row";
+                const label = document.createElement("div");
+                label.className = "keybind-editor-setting-label";
+                label.textContent = labelText;
+                row.appendChild(label);
+                row.appendChild(controlElement);
+                return row;
+            };
+
+            const wallToggle = document.createElement("label");
+            wallToggle.className = "keybind-editor-setting-toggle";
+            const wallToggleInput = document.createElement("input");
+            wallToggleInput.type = "checkbox";
+            wallToggleInput.checked = Boolean(config.sellWallsInSlots);
+            wallToggleInput.addEventListener("change", () => {
+                this.setDefenseRemountFlag("sellWallsInSlots", wallToggleInput.checked);
+            });
+            const wallToggleText = document.createElement("span");
+            wallToggleText.textContent = "Sell walls in saved slots before rebuilding";
+            wallToggle.appendChild(wallToggleInput);
+            wallToggle.appendChild(wallToggleText);
+            targetBody.appendChild(createSettingRow("Wall Cleanup", wallToggle));
+
+            const conflictToggle = document.createElement("label");
+            conflictToggle.className = "keybind-editor-setting-toggle";
+            const conflictToggleInput = document.createElement("input");
+            conflictToggleInput.type = "checkbox";
+            conflictToggleInput.checked = Boolean(config.sellConflictingInSlots);
+            conflictToggleInput.addEventListener("change", () => {
+                this.setDefenseRemountFlag("sellConflictingInSlots", conflictToggleInput.checked);
+            });
+            const conflictToggleText = document.createElement("span");
+            conflictToggleText.textContent = "Sell conflicting buildings in saved slots";
+            conflictToggle.appendChild(conflictToggleInput);
+            conflictToggle.appendChild(conflictToggleText);
+            targetBody.appendChild(createSettingRow("Conflict Handling", conflictToggle));
+
+            remountTypeOrder.forEach((buildingType) => {
+                if (!Number.isFinite(Number(buildingType))) return;
+                const typeLabel = this.getBuildingTypeLabel(buildingType);
+                const select = document.createElement("select");
+                select.className = "keybind-editor-setting-select";
+
+                const currentTarget = this.getDefenseRemountUpgradeTarget(buildingType);
+                const addOption = (value, labelText) => {
+                    const option = document.createElement("option");
+                    option.value = value;
+                    option.textContent = labelText;
+                    select.appendChild(option);
+                };
+                addOption("saved", "Follow saved layout");
+                addOption("none", "No auto-upgrade");
+
+                const variants = this.getReachableBuildingUpgradeVariants(buildingType)
+                    .filter((variant) => Number.isFinite(Number(variant)) && Number(variant) > 0);
+                variants.forEach((variant) => {
+                    const details = getBuildingDetails(buildingType, variant);
+                    const variantName = String(details?.name || `Variant ${variant}`);
+                    addOption(`variant:${variant}`, variantName);
+                });
+                if (![...select.options].some((option) => option.value === currentTarget)) {
+                    addOption(currentTarget, `Custom ${currentTarget}`);
+                }
+                select.value = currentTarget;
+                select.addEventListener("change", () => {
+                    this.setDefenseRemountUpgradeTarget(buildingType, select.value);
+                });
+
+                const searchLine = `${typeLabel} ${select.value} defense remount wall conflict upgrade`.toLowerCase();
+                if (filter && !searchLine.includes(filter)) {
+                    return;
+                }
+                targetBody.appendChild(createSettingRow(`${typeLabel} Upgrade`, select));
+            });
+        };
+
         const defs = this.getKeybindActionDefinitions();
         const groupedActions = new Map();
         defs.forEach((def) => {
@@ -2169,12 +2382,13 @@ export default class UIManager {
         });
 
         groupedActions.forEach((entries, groupName) => {
+            const isDefenseGroup = entries.some((entry) => entry.key === "defensePlacement" || entry.key === "defenseRemount");
             const visibleEntries = entries.filter((entry) => {
                 if (!filter) return true;
                 const haystack = `${entry.label} ${groupName}`.toLowerCase();
                 return haystack.includes(filter);
             });
-            if (visibleEntries.length === 0) return;
+            if (visibleEntries.length === 0 && !(isDefenseGroup && matchesDefenseSettingsFilter)) return;
             const body = createSection(groupName);
             visibleEntries.forEach((entry) => {
                 body.appendChild(createRow(
@@ -2186,6 +2400,9 @@ export default class UIManager {
                     }
                 ));
             });
+            if (isDefenseGroup) {
+                appendDefenseRemountSettings(body);
+            }
         });
 
         const upgradeDefs = this.getUpgradeHotkeyDefinitions();
@@ -2363,7 +2580,8 @@ export default class UIManager {
             const cachedSkins = localStorage.getItem('supabaseSkins');
             const cachedName = localStorage.getItem('equippedSkinName') || null;
             if (cachedSkins) {
-                const skins = JSON.parse(cachedSkins);
+                const parsedSkins = JSON.parse(cachedSkins);
+                const skins = this.sanitizeSupabaseSkins(parsedSkins);
                 if (Array.isArray(skins) && skins.length > 0) {
                     SkinCache.supabaseSkins = skins;
                     // rebuild maps when loading from cache
@@ -2391,23 +2609,64 @@ export default class UIManager {
                     this.applyStartupRandomSkin();
                     return;
                 }
+
+                // Cache exists but has no valid Supabase entries; clear it to avoid stale skins in UI.
+                if (Array.isArray(parsedSkins) && parsedSkins.length > 0) {
+                    console.warn('Ignoring stale non-Supabase skin cache entries.');
+                    localStorage.removeItem('supabaseSkins');
+                }
             }
         } catch (error) {
             console.warn('Could not load skins from cache:', error);
         }
 
-        // Fallback to bundled catalog skins if available, otherwise default only.
-        const fallbackSkins = this.getFallbackCatalogSkins();
-        this.availableSkins = this.buildAvailableSkins(fallbackSkins);
+        // Strict mode: only Default while waiting for Supabase fetch.
+        this.availableSkins = this.buildAvailableSkins([]);
         this.currentSkinIndex = 0;
         this.updateSkinCircle();
         this.updateUseButton();
         this.applyStartupRandomSkin();
     }
 
+    isSupabaseSkinUrl(url) {
+        if (typeof url !== 'string') return false;
+        const trimmed = url.trim();
+        if (!trimmed) return false;
+        if (!/^https?:\/\//i.test(trimmed)) return false;
+        try {
+            const parsed = new URL(trimmed);
+            const host = String(parsed.hostname || '').toLowerCase();
+            const path = String(parsed.pathname || '').toLowerCase();
+            // Never allow local bundled assets in this list.
+            if (path.includes('/assets/skins/') || path.startsWith('assets/skins/')) return false;
+            if (path.includes('/storage/v1/object/public/skins/')) return true;
+            if (host.includes('supabase') && path.includes('/skins/')) return true;
+            return host.endsWith('.supabase.co');
+        } catch {
+            return false;
+        }
+    }
+
+    sanitizeSupabaseSkins(rawSkins) {
+        if (!Array.isArray(rawSkins) || rawSkins.length === 0) return [];
+        return rawSkins.filter((skin) => {
+            if (!skin || typeof skin !== 'object') return false;
+            const name = typeof skin.name === 'string' ? skin.name.trim() : '';
+            const url = typeof skin.url === 'string' ? skin.url.trim() : '';
+            if (!name || name.toLowerCase() === 'default') return false;
+            const source = typeof skin.source === 'string' ? skin.source.trim().toLowerCase() : '';
+            const bucket = typeof skin.bucket === 'string' ? skin.bucket.trim().toLowerCase() : '';
+            if ((source === 'supabase-storage' || source === 'supabase-catalog') && bucket === 'skins' && /^https?:\/\//i.test(url)) {
+                return true;
+            }
+            return this.isSupabaseSkinUrl(url);
+        });
+    }
+
     buildAvailableSkins(rawSkins) {
         const defaultSkin = { name: 'Default', id: 0, numericId: 0, url: null };
-        if (!Array.isArray(rawSkins) || rawSkins.length === 0) {
+        const sourceSkins = this.sanitizeSupabaseSkins(rawSkins);
+        if (sourceSkins.length === 0) {
             return [defaultSkin];
         }
 
@@ -2416,7 +2675,7 @@ export default class UIManager {
         const seenUrls = new Set();
         let nextNumericId = 200;
 
-        for (const skin of rawSkins) {
+        for (const skin of sourceSkins) {
             if (!skin) continue;
 
             const name = typeof skin.name === 'string' ? skin.name.trim() : '';
@@ -2448,36 +2707,10 @@ export default class UIManager {
         return [defaultSkin, ...cleaned];
     }
 
-    getFallbackCatalogSkins() {
-        const categories = ["default", "veteran", "premium"];
-        const result = [];
-
-        for (const category of categories) {
-            const list = SkinCache.getAllSkinsByCategory(category) || [];
-            for (const skin of list) {
-                if (!skin || skin.id == null || !skin.name) continue;
-                if (skin.id === 0 || skin.name === "Default") continue;
-                result.push({
-                    id: skin.id,
-                    numericId: skin.id,
-                    name: skin.name,
-                    url: `assets/skins/${category}/${skin.name}.webp`
-                });
-            }
-        }
-
-        // Deduplicate by name.
-        const seen = new Set();
-        return result.filter(s => {
-            if (seen.has(s.name)) return false;
-            seen.add(s.name);
-            return true;
-        });
-    }
-
     async loadSupabaseSkins() {
         try {
-            const skins = await fetchSkins();
+            const fetchedSkins = await fetchSkins();
+            const skins = this.sanitizeSupabaseSkins(fetchedSkins);
             if (skins.length > 0) {
                 // Save to cache
                 SkinCache.setSupabaseSkins(skins);
@@ -2502,29 +2735,24 @@ export default class UIManager {
                 this.updateUseButton();
                 this.populateSkinLibrary();
                 this.applyStartupRandomSkin();
-            } else if (this.availableSkins.length <= 1) {
-                const fallbackSkins = this.getFallbackCatalogSkins();
-                if (fallbackSkins.length > 0) {
-                    this.availableSkins = this.buildAvailableSkins(fallbackSkins);
-                    this.currentSkinIndex = Math.min(this.currentSkinIndex, this.availableSkins.length - 1);
-                    this.updateSkinCircle();
-                    this.updateUseButton();
-                    this.applyStartupRandomSkin();
-                } else {
-                    console.warn('No Supabase skins found - using cached or default');
-                }
+            } else {
+                console.warn('No valid Supabase skins found - using default skin only');
+                this.availableSkins = this.buildAvailableSkins([]);
+                this.currentSkinIndex = 0;
+                this.updateSkinCircle();
+                this.updateUseButton();
+                this.populateSkinLibrary();
+                this.applyStartupRandomSkin();
             }
         } catch (error) {
             console.error('Error loading Supabase skins:', error);
-            if (this.availableSkins.length <= 1) {
-                const fallbackSkins = this.getFallbackCatalogSkins();
-                if (fallbackSkins.length > 0) {
-                    this.availableSkins = this.buildAvailableSkins(fallbackSkins);
-                    this.currentSkinIndex = 0;
-                    this.updateSkinCircle();
-                    this.updateUseButton();
-                    this.applyStartupRandomSkin();
-                }
+            if (!Array.isArray(this.availableSkins) || this.availableSkins.length === 0) {
+                this.availableSkins = this.buildAvailableSkins([]);
+                this.currentSkinIndex = 0;
+                this.updateSkinCircle();
+                this.updateUseButton();
+                this.populateSkinLibrary();
+                this.applyStartupRandomSkin();
             }
         }
     }
@@ -2565,10 +2793,6 @@ export default class UIManager {
                     content: "game-over-content", // ! Look this up
                     killedBy: "killed-by-container", // ! Look this up
                     continueButton: "continue-button",
-                },
-                inactivityWarning: {
-                    container: "inactivity-warning-container",
-                    timer: "inactivity-timer",
                 },
                 toolbar: "toolbar-container",
                 unitControls: {
@@ -2703,6 +2927,8 @@ export default class UIManager {
 
         // Add event listeners for chat input focus and blur
         if (this.DOM.chat.input) {
+            const inputMax = Math.max(1, Math.floor(Number(this.chatMessageMaxRunes) || 120));
+            this.DOM.chat.input.maxLength = inputMax;
             this.DOM.chat.input.addEventListener("focus", () => {
                 this.core.camera.enableControls(false);
                 this.isChatInputFocused = true;
@@ -2713,6 +2939,7 @@ export default class UIManager {
                 setTimeout(() => this.hidePlayerSuggestions(), 100); // Delay to allow click on suggestion
             });
             this.DOM.chat.input.addEventListener("input", (e) => {
+                this.applyChatInputLengthLimit(e.target);
                 const value = e.target.value;
                 const atIndex = value.lastIndexOf('@');
                 if (atIndex !== -1) {
@@ -3081,7 +3308,7 @@ export default class UIManager {
             }
 
             // Basic nickname validation
-            if (nickname.length < 3) {
+            if (this.getUnicodeCharacterCount(nickname) < 3) {
                 alert(this.t("error.nicknameShort"));
                 return;
             }
@@ -3290,13 +3517,17 @@ export default class UIManager {
         }
     }
 
+    getUnicodeCharacterCount (value = "") {
+        return Array.from(String(value || "")).length;
+    }
+
     normalizeNicknameForAccount (value = "") {
         const sanitized = String(value || "")
             .replace(/[\u0000-\u001F\u007F]/g, "")
             .trim()
-            .replace(/\s+/g, " ")
-            .slice(0, 20);
-        return sanitized;
+            .replace(/\s+/g, " ");
+        if (!sanitized) return "";
+        return Array.from(sanitized).slice(0, 20).join("");
     }
 
     resolveOAuthNicknameFromUser (user) {
@@ -3311,7 +3542,7 @@ export default class UIManager {
         ];
         for (const candidate of candidates) {
             const normalized = this.normalizeNicknameForAccount(candidate);
-            if (normalized.length >= 3) return normalized;
+            if (this.getUnicodeCharacterCount(normalized) >= 3) return normalized;
         }
         return "";
     }
@@ -3353,7 +3584,7 @@ export default class UIManager {
             targetNickname = this.normalizeNicknameForAccount(custom);
         }
 
-        if (targetNickname.length < 3) {
+        if (this.getUnicodeCharacterCount(targetNickname) < 3) {
             alert(this.t("error.nicknameShort"));
             return null;
         }
@@ -3407,7 +3638,7 @@ export default class UIManager {
             let selectedNickname = null;
 
             // Do not ask nickname again if account already has one.
-            if (existingNickname.length >= 3 || isOwnerAccount) {
+            if (this.getUnicodeCharacterCount(existingNickname) >= 3 || isOwnerAccount) {
                 selectedNickname = null;
             } else {
                 selectedNickname = await this.promptOAuthNicknameChoice(providerLabel);
@@ -5485,7 +5716,16 @@ export default class UIManager {
         usernameSpan.classList.add("name");
         usernameSpan.textContent = safeUsername;
         usernameSpan.style.color = color;
-        if (this.core?.networkManager?.isOwnerDisplayName?.(safeUsername)) {
+        const currentPlayerName = String(this.core?.gameManager?.player?.name || "");
+        const isSelfByPlayer = Boolean(player && player.isClient);
+        const isSelfByName = Boolean(currentPlayerName) && safeUsername === currentPlayerName;
+        const isSelfByOwnerName = Boolean(this.core?.networkManager?.isOwnerDisplayName?.(safeUsername));
+        const isSelfMessage = isSelfByPlayer || isSelfByName || isSelfByOwnerName;
+        if (isSelfMessage) {
+            messageDiv.classList.add("self-message");
+            usernameSpan.classList.add("self-name");
+            usernameSpan.style.color = "#ffffff";
+        } else if (this.core?.networkManager?.isOwnerDisplayName?.(safeUsername)) {
             messageDiv.classList.add("owner-message");
             usernameSpan.classList.add("owner-name");
         }
@@ -6116,6 +6356,7 @@ export default class UIManager {
         if (!this.DOM.chat.button || !this.DOM.chat.input) return;
 
         this.DOM.chat.button.addEventListener("click", () => {
+            this.applyChatInputLengthLimit(this.DOM.chat.input);
             const message = this.DOM.chat.input.value.trim();
             if (!message) return;
 
@@ -6261,6 +6502,15 @@ export default class UIManager {
     }
 
     async showPrePlaySkinPrompt () {
+        // If only Default is available, retry Supabase fetch before opening prompt.
+        if (!Array.isArray(this.availableSkins) || this.availableSkins.length <= 1) {
+            try {
+                await this.loadSupabaseSkins();
+            } catch (error) {
+                console.warn("Supabase skin reload before prompt failed:", error);
+            }
+        }
+
         if (!Array.isArray(this.availableSkins) || this.availableSkins.length === 0) {
             return true;
         }
@@ -6286,6 +6536,7 @@ export default class UIManager {
                     card.className = "preplay-skin-card";
                     if (index === selectedIndex) card.classList.add("selected");
                     card.title = skin.name || "Skin";
+                    card.setAttribute("aria-label", skin.name || "Skin");
 
                     if (skin.url) {
                         const img = document.createElement("img");
@@ -6299,15 +6550,10 @@ export default class UIManager {
                         card.appendChild(ph);
                     }
 
-                    const label = document.createElement("span");
-                    label.textContent = skin.name || "Skin";
-                    card.appendChild(label);
-
                     card.addEventListener("click", async () => {
                         selectedIndex = index;
                         this.currentSkinIndex = index;
                         await this.selectCurrentSkin({ persistRemote: true, refreshLibrary: false });
-                        selectedName.textContent = this.availableSkins[this.currentSkinIndex]?.name || "Default";
                         renderCards();
                     });
 
@@ -6327,12 +6573,6 @@ export default class UIManager {
             const subtitle = document.createElement("div");
             subtitle.className = "preplay-skin-subtitle";
             subtitle.textContent = "Select a skin before joining, or use Random.";
-
-            const selectedLine = document.createElement("div");
-            selectedLine.className = "preplay-skin-current";
-            selectedLine.innerHTML = `Selected: <span></span>`;
-            const selectedName = selectedLine.querySelector("span");
-            selectedName.textContent = this.availableSkins[selectedIndex]?.name || "Default";
 
             const grid = document.createElement("div");
             grid.className = "preplay-skin-grid";
@@ -6376,7 +6616,6 @@ export default class UIManager {
             modal.appendChild(title);
             modal.appendChild(subtitle);
             modal.appendChild(actions);
-            modal.appendChild(selectedLine);
             modal.appendChild(grid);
 
             overlay.appendChild(modal);
@@ -7346,7 +7585,7 @@ export default class UIManager {
             const complete = profileCreatedAt > this.tutorialStartedAt;
             const status = complete
                 ? tt("Concluido: Defend salvo com sucesso.", "Completed: Defend saved successfully.", "Completado: Defend guardado correctamente.")
-                : tt("Clique em Defend e finalize os prompts de configuracao.", "Click Defend and finish the setup prompts.", "Haz clic en Defend y completa los prompts de configuracion.");
+                : tt("Clique em Defend para salvar; personalize teclas no Keybind Manager.", "Click Defend to save; customize keys in Keybind Manager.", "Haz clic en Defend para guardar; personaliza teclas en Keybind Manager.");
             return { complete, status };
         }
         case "save_base": {
@@ -8166,44 +8405,11 @@ export default class UIManager {
     updateResources () {
         const { power } = this.core.gameManager.resources;
         const effectiveRate = Number(power.generationRate || 0);
-        const assistEnabled = Boolean(this.core?.unitManager?.commanderAssistEnabled);
-        const hasCommander = Boolean(this.core?.gameManager?.hasCommander);
-        const assistBuffPercent = 30;
-
-        let gainLabel = `+${effectiveRate}/s`;
-        if (assistEnabled && hasCommander && effectiveRate > 0) {
-            const baseRate = this.estimateBaseGenerationRateFromBuff(effectiveRate, assistBuffPercent);
-            if (baseRate !== null) {
-                const buffRate = Math.max(0, effectiveRate - baseRate);
-                gainLabel = `+${effectiveRate}/s <span style="opacity:.85">| buff +${assistBuffPercent}% (+${buffRate}/s)</span>`;
-            } else {
-                gainLabel = `+${effectiveRate}/s <span style="opacity:.85">| buff +${assistBuffPercent}%</span>`;
-            }
-        }
-
+        const gainLabel = `+${effectiveRate}/s`;
         this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max} (${gainLabel})</span>`;
 
 
         this._updateCost(); // Update the upgrade panel
-    }
-
-    estimateBaseGenerationRateFromBuff (effectiveRate, buffPercent) {
-        const safeEffective = Number(effectiveRate);
-        const safeBuff = Number(buffPercent);
-        if (!Number.isFinite(safeEffective) || safeEffective < 0) return null;
-        if (!Number.isFinite(safeBuff) || safeBuff <= 0) return safeEffective;
-
-        for (let base = 0; base <= safeEffective; base++) {
-            const bonus = Math.floor((base * safeBuff + 99) / 100);
-            if (base + bonus === safeEffective) {
-                return base;
-            }
-        }
-
-        // Fallback for edge cases where effective rate includes additional modifiers
-        // and doesn't map exactly to base + ceil(base * buff%).
-        const rawBase = Math.floor((safeEffective * 100) / (100 + safeBuff));
-        return Math.max(0, Math.min(safeEffective, rawBase));
     }
 
     showSpawnProtectionTimer () {
@@ -8241,6 +8447,61 @@ export default class UIManager {
         this.DOM.settings.panel.style.display = show ? "flex" : "none";
     }
 
+    getUtf8ByteLengthForRune (runeChar) {
+        const codePoint = String(runeChar || "").codePointAt(0);
+        if (!Number.isFinite(codePoint)) return 0;
+        if (codePoint <= 0x7F) return 1;
+        if (codePoint <= 0x7FF) return 2;
+        if (codePoint <= 0xFFFF) return 3;
+        return 4;
+    }
+
+    normalizeChatInputValue (rawValue) {
+        const maxRunes = Math.max(1, Math.floor(Number(this.chatMessageMaxRunes) || 120));
+        const maxBytes = Math.max(1, Math.floor(Number(this.chatMessageMaxBytes) || 180));
+        const normalized = String(rawValue ?? "").replace(/[\r\n]+/g, " ");
+        const runes = Array.from(normalized);
+        const acceptedRunes = [];
+        let currentBytes = 0;
+        let trimmed = false;
+
+        for (let i = 0; i < runes.length; i += 1) {
+            if (acceptedRunes.length >= maxRunes) {
+                trimmed = true;
+                break;
+            }
+            const rune = runes[i];
+            const runeBytes = this.getUtf8ByteLengthForRune(rune);
+            if ((currentBytes + runeBytes) > maxBytes) {
+                trimmed = true;
+                break;
+            }
+            acceptedRunes.push(rune);
+            currentBytes += runeBytes;
+        }
+
+        const value = acceptedRunes.join("");
+        if (value !== normalized) trimmed = true;
+        return {
+            value,
+            trimmed,
+            runeCount: acceptedRunes.length,
+            byteCount: currentBytes,
+            maxRunes,
+            maxBytes
+        };
+    }
+
+    applyChatInputLengthLimit (inputElement = this.DOM?.chat?.input) {
+        const input = inputElement;
+        if (!input) return false;
+        const { value, trimmed } = this.normalizeChatInputValue(input.value);
+        if (input.value !== value) {
+            input.value = value;
+        }
+        return trimmed;
+    }
+
     showMiniMap (show) {
         this.DOM.game.miniMap.style.display = show ? "flex" : "none";
     }
@@ -8275,7 +8536,6 @@ export default class UIManager {
     }
 
     gameOver (killer, score) {
-        this.hideInactivityWarning();
         this.core.camera.setPosition(killer.position, true);
         this.core.camera.setZoom(0.75);
 
@@ -8286,7 +8546,6 @@ export default class UIManager {
     }
 
     kicked (reason, score) {
-        this.hideInactivityWarning();
         this.core.camera.setZoom(0.75);
 
         let killedBy = reason;
@@ -8480,7 +8739,95 @@ export default class UIManager {
         this.DOM.chat.suggestions.innerHTML = "";
     }
 
-    showX1ChallengePrompt(challengerName, onAccept, onDecline) {
+    normalizeX1DuelMode(mode) {
+        return Number(mode) === X1DuelModes.TRADITIONAL_BASE
+            ? X1DuelModes.TRADITIONAL_BASE
+            : X1DuelModes.CURRENT_BASE;
+    }
+
+    createX1ModeSelector(defaultMode = X1DuelModes.CURRENT_BASE, options = {}) {
+        let selectedMode = this.normalizeX1DuelMode(defaultMode);
+
+        const wrap = document.createElement("div");
+        wrap.style.marginTop = options?.compact ? "8px" : "10px";
+
+        const label = document.createElement("div");
+        label.textContent = String(options?.label || "Base mode");
+        label.style.fontSize = "11px";
+        label.style.fontWeight = "800";
+        label.style.letterSpacing = "0.2px";
+        label.style.textTransform = "uppercase";
+        label.style.color = "rgba(215, 237, 255, 0.9)";
+        wrap.appendChild(label);
+
+        const group = document.createElement("div");
+        group.style.display = "flex";
+        group.style.gap = "8px";
+        group.style.marginTop = "6px";
+
+        const makeOptionButton = (mode, text) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = text;
+            button.style.flex = "1";
+            button.style.padding = "8px 10px";
+            button.style.borderRadius = "8px";
+            button.style.fontSize = "12px";
+            button.style.fontWeight = "800";
+            button.style.cursor = "pointer";
+            button.style.transition = "all 0.12s ease";
+            button.addEventListener("click", () => {
+                selectedMode = mode;
+                refresh();
+            });
+            return button;
+        };
+
+        const currentButton = makeOptionButton(X1DuelModes.CURRENT_BASE, "Current base");
+        const traditionalButton = makeOptionButton(X1DuelModes.TRADITIONAL_BASE, "Traditional base");
+        group.appendChild(currentButton);
+        group.appendChild(traditionalButton);
+        wrap.appendChild(group);
+
+        if (typeof options?.hint === "string" && options.hint.trim().length > 0) {
+            const hint = document.createElement("div");
+            hint.textContent = options.hint;
+            hint.style.marginTop = "6px";
+            hint.style.fontSize = "11px";
+            hint.style.fontWeight = "600";
+            hint.style.color = "rgba(224, 240, 255, 0.8)";
+            wrap.appendChild(hint);
+        }
+
+        const refresh = () => {
+            const currentActive = selectedMode === X1DuelModes.CURRENT_BASE;
+            currentButton.style.border = currentActive
+                ? "1px solid rgba(128, 255, 175, 0.85)"
+                : "1px solid rgba(124, 181, 255, 0.55)";
+            currentButton.style.background = currentActive
+                ? "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))"
+                : "rgba(34, 74, 128, 0.35)";
+            currentButton.style.color = currentActive ? "#ecfff2" : "#d7ecff";
+
+            const traditionalActive = selectedMode === X1DuelModes.TRADITIONAL_BASE;
+            traditionalButton.style.border = traditionalActive
+                ? "1px solid rgba(128, 255, 175, 0.85)"
+                : "1px solid rgba(124, 181, 255, 0.55)";
+            traditionalButton.style.background = traditionalActive
+                ? "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))"
+                : "rgba(34, 74, 128, 0.35)";
+            traditionalButton.style.color = traditionalActive ? "#ecfff2" : "#d7ecff";
+        };
+
+        refresh();
+
+        return {
+            container: wrap,
+            getSelectedMode: () => selectedMode
+        };
+    }
+
+    showX1ChallengePrompt(challengerName, challengerMode = X1DuelModes.CURRENT_BASE, onAccept, onDecline) {
         this.hideX1SendPrompt();
         this.hideX1ChallengePrompt();
 
@@ -8513,6 +8860,14 @@ export default class UIManager {
         subtitle.style.fontSize = "13px";
         subtitle.style.fontWeight = "600";
         subtitle.style.color = "#ffffff";
+
+        const challengerModeLabel = this.normalizeX1DuelMode(challengerMode) === X1DuelModes.TRADITIONAL_BASE
+            ? "Traditional base"
+            : "Current base";
+        const modeSelector = this.createX1ModeSelector(challengerMode, {
+            label: "Choose base mode for this X1",
+            hint: `${challengerName} selected: ${challengerModeLabel}.`
+        });
 
         const actions = document.createElement("div");
         actions.style.marginTop = "10px";
@@ -8551,13 +8906,14 @@ export default class UIManager {
 
         acceptButton.addEventListener("click", () => {
             this.hideX1ChallengePrompt();
-            if (typeof onAccept === "function") onAccept();
+            if (typeof onAccept === "function") onAccept(modeSelector.getSelectedMode());
         });
 
         actions.appendChild(declineButton);
         actions.appendChild(acceptButton);
         panel.appendChild(title);
         panel.appendChild(subtitle);
+        panel.appendChild(modeSelector.container);
         panel.appendChild(actions);
 
         document.body.appendChild(panel);
@@ -8617,6 +8973,11 @@ export default class UIManager {
         subtitle.style.fontWeight = "600";
         subtitle.style.color = "#ffffff";
 
+        const modeSelector = this.createX1ModeSelector(X1DuelModes.CURRENT_BASE, {
+            label: "Choose base mode for this X1",
+            hint: "Traditional mode applies the classic ExternAtk setup and upgrades for both players."
+        });
+
         const actions = document.createElement("div");
         actions.style.marginTop = "10px";
         actions.style.display = "flex";
@@ -8654,13 +9015,14 @@ export default class UIManager {
 
         confirmButton.addEventListener("click", () => {
             this.hideX1SendPrompt();
-            if (typeof onConfirm === "function") onConfirm();
+            if (typeof onConfirm === "function") onConfirm(modeSelector.getSelectedMode());
         });
 
         actions.appendChild(cancelButton);
         actions.appendChild(confirmButton);
         panel.appendChild(title);
         panel.appendChild(subtitle);
+        panel.appendChild(modeSelector.container);
         panel.appendChild(actions);
 
         document.body.appendChild(panel);
@@ -8685,7 +9047,106 @@ export default class UIManager {
         this.x1SendPromptElement = null;
     }
 
-    showEnemyCoreActions(targetName, onChallengeX1, onNotifyLeaveBase, onCancel) {
+    showX1RoundWinPrompt(requesterName, onAccept, onDecline) {
+        this.hideX1RoundWinPrompt();
+        this.hideEnemyCoreActions();
+
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.top = "8px";
+        panel.style.left = "8px";
+        panel.style.zIndex = "20996";
+        panel.style.width = "min(320px, calc(100vw - 18px))";
+        panel.style.pointerEvents = "all";
+        panel.style.background = "linear-gradient(180deg, rgba(18,26,56,0.96), rgba(10,15,33,0.96))";
+        panel.style.border = "1px solid rgba(129, 214, 255, 0.55)";
+        panel.style.borderRadius = "10px";
+        panel.style.padding = "10px";
+        panel.style.boxShadow = "0 8px 20px rgba(0,0,0,0.36), 0 0 14px rgba(96,193,255,0.2)";
+        panel.style.color = "#e8f6ff";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "X1 Round Win Request";
+        title.style.fontSize = "14px";
+        title.style.fontWeight = "900";
+        title.style.color = "#9fe8ff";
+
+        const subtitle = document.createElement("div");
+        subtitle.textContent = `${requesterName || "Player"} requested a round win.`;
+        subtitle.style.marginTop = "5px";
+        subtitle.style.fontSize = "13px";
+        subtitle.style.fontWeight = "600";
+        subtitle.style.color = "#ffffff";
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "10px";
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.justifyContent = "flex-end";
+
+        const declineButton = document.createElement("button");
+        declineButton.type = "button";
+        declineButton.textContent = "Decline";
+        declineButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+        declineButton.style.background = "rgba(120, 36, 36, 0.25)";
+        declineButton.style.color = "#ffd6d6";
+        declineButton.style.fontSize = "12px";
+        declineButton.style.fontWeight = "700";
+        declineButton.style.padding = "7px 11px";
+        declineButton.style.borderRadius = "8px";
+        declineButton.style.cursor = "pointer";
+
+        const acceptButton = document.createElement("button");
+        acceptButton.type = "button";
+        acceptButton.textContent = "Accept";
+        acceptButton.style.border = "1px solid rgba(110, 255, 180, 0.7)";
+        acceptButton.style.background = "rgba(38, 136, 80, 0.35)";
+        acceptButton.style.color = "#dbffe9";
+        acceptButton.style.fontSize = "12px";
+        acceptButton.style.fontWeight = "800";
+        acceptButton.style.padding = "7px 11px";
+        acceptButton.style.borderRadius = "8px";
+        acceptButton.style.cursor = "pointer";
+
+        declineButton.addEventListener("click", () => {
+            this.hideX1RoundWinPrompt();
+            if (typeof onDecline === "function") onDecline();
+        });
+        acceptButton.addEventListener("click", () => {
+            this.hideX1RoundWinPrompt();
+            if (typeof onAccept === "function") onAccept();
+        });
+
+        actions.appendChild(declineButton);
+        actions.appendChild(acceptButton);
+        panel.appendChild(title);
+        panel.appendChild(subtitle);
+        panel.appendChild(actions);
+        document.body.appendChild(panel);
+        this.x1RoundWinPromptElement = panel;
+
+        if (this.x1RoundWinPromptTimeout) clearTimeout(this.x1RoundWinPromptTimeout);
+        this.x1RoundWinPromptTimeout = setTimeout(() => {
+            if (this.x1RoundWinPromptElement) {
+                this.hideX1RoundWinPrompt();
+                if (typeof onDecline === "function") onDecline();
+            }
+        }, 12000);
+    }
+
+    hideX1RoundWinPrompt() {
+        if (this.x1RoundWinPromptTimeout) {
+            clearTimeout(this.x1RoundWinPromptTimeout);
+            this.x1RoundWinPromptTimeout = null;
+        }
+        if (this.x1RoundWinPromptElement && this.x1RoundWinPromptElement.parentNode) {
+            this.x1RoundWinPromptElement.parentNode.removeChild(this.x1RoundWinPromptElement);
+        }
+        this.x1RoundWinPromptElement = null;
+    }
+
+    showEnemyCoreActions(targetName, onChallengeX1, onGiveX1RoundWin, onNotifyLeaveBase, onCancel) {
         this.hideX1ChallengePrompt();
         this.hideX1SendPrompt();
         this.hideEnemyCoreActions();
@@ -8802,6 +9263,13 @@ export default class UIManager {
                 "Challenge to X1",
                 "Send a protected X1 challenge to this player.",
                 onChallengeX1
+            ));
+        }
+        if (typeof onGiveX1RoundWin === "function") {
+            actions.appendChild(createActionButton(
+                "Request X1 Win",
+                "Ask this duel opponent to accept one round win for you.",
+                onGiveX1RoundWin
             ));
         }
         if (typeof onNotifyLeaveBase === "function") {
@@ -9008,10 +9476,6 @@ export default class UIManager {
             const metaName = String(publicMeta?.[layoutKey]?.name || "").trim();
             push("base-public", layoutKey, publicMap[layoutKey], metaName ? `Public Base: ${metaName}` : fallbackLabel);
         });
-
-        const buildingManager = this.core?.buildingManager;
-        push("defense", "placement", buildingManager?.defensePlacementKey, "Defense Placement");
-        push("defense", "remount", buildingManager?.defenseRemountKey, "Defense Remount");
 
         return entries;
     }
@@ -10594,45 +11058,190 @@ export default class UIManager {
         this.x1StatusElement = null;
     }
 
-    showInactivityWarning() {
-        const warning = this.DOM?.game?.inactivityWarning;
-        if (!warning?.container || !warning?.timer) return;
+    getX1RoundScorePairKey(playerAID, playerBID) {
+        const a = Number(playerAID || 0);
+        const b = Number(playerBID || 0);
+        if (!a || !b) return "";
+        return a < b ? `${a}:${b}` : `${b}:${a}`;
+    }
 
-        // Server may resend warning events; keep the same countdown running.
-        if (warning.container.style.display === 'flex' && this.inactivityTimerInterval) {
+    createX1RoundScorePanel(pairKey) {
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.left = "50%";
+        panel.style.top = "50%";
+        panel.style.transform = "translate(-50%, -50%)";
+        panel.style.zIndex = "20011";
+        panel.style.padding = "8px 12px";
+        panel.style.borderRadius = "10px";
+        panel.style.border = "1px solid rgba(120, 240, 190, 0.62)";
+        panel.style.background = "linear-gradient(135deg, rgba(10, 25, 20, 0.9), rgba(10, 43, 34, 0.9))";
+        panel.style.color = "#e8ffef";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        panel.style.boxShadow = "0 6px 20px rgba(0,0,0,0.4), 0 0 14px rgba(80,255,167,0.15)";
+        panel.style.pointerEvents = "none";
+        panel.style.textAlign = "center";
+        panel.dataset.x1RoundScorePair = pairKey;
+
+        const title = document.createElement("div");
+        title.style.fontSize = "11px";
+        title.style.fontWeight = "800";
+        title.style.opacity = "0.9";
+        title.textContent = "X1 Round Score";
+
+        const score = document.createElement("div");
+        score.className = "x1-round-score-value";
+        score.style.marginTop = "2px";
+        score.style.fontSize = "15px";
+        score.style.fontWeight = "900";
+        score.style.letterSpacing = "0.2px";
+
+        panel.appendChild(title);
+        panel.appendChild(score);
+        document.body.appendChild(panel);
+        this.x1RoundScoreElementsByPair.set(pairKey, panel);
+        this.x1RoundScoreElement = panel;
+        return panel;
+    }
+
+    resolveX1RoundScoreArena(scoreData) {
+        const gameManager = this.core?.gameManager;
+        if (!scoreData || !gameManager) return null;
+        const arenas = Array.isArray(gameManager.globalDuelArenas) ? gameManager.globalDuelArenas : [];
+        const aID = Number(scoreData.playerAID || 0);
+        const bID = Number(scoreData.playerBID || 0);
+        if (!aID || !bID) return null;
+
+        const fromGlobal = arenas.find((arena) => {
+            if (!arena) return false;
+            return (
+                (arena.playerAID === aID && arena.playerBID === bID) ||
+                (arena.playerAID === bID && arena.playerBID === aID)
+            );
+        }) || null;
+        if (fromGlobal) return fromGlobal;
+
+        const localID = Number(gameManager.getCurrentPlayerId?.() || 0);
+        const localOpponentID = Number(gameManager.duelOpponentID || 0);
+        const localArena = gameManager.duelArena || null;
+        const isLocalPair = localArena && localID && (
+            (localID === aID && localOpponentID === bID) ||
+            (localID === bID && localOpponentID === aID)
+        );
+        return isLocalPair ? localArena : null;
+    }
+
+    updateX1RoundScorePanelPosition(pairKey) {
+        if (!pairKey) return;
+        const panel = this.x1RoundScoreElementsByPair.get(pairKey);
+        const scoreData = this.x1RoundScoreDataByPair.get(pairKey);
+        if (!panel || !scoreData) return;
+
+        const arena = this.resolveX1RoundScoreArena(scoreData);
+        const camera = this.core?.camera;
+        const canvas = this.core?.canvas;
+        if (!arena || !camera || !canvas) {
+            panel.style.display = "none";
             return;
         }
 
-        if (this.inactivityTimerInterval) {
-            clearInterval(this.inactivityTimerInterval);
-            this.inactivityTimerInterval = null;
+        const anchorX = ((Number(arena.minX) || 0) + (Number(arena.maxX) || 0)) / 2;
+        const anchorY = (Number(arena.maxY) || 0) + 64;
+        const zoom = Number(camera.zoom) || 1;
+        const cameraWorldX = (Number(camera.x) || 0) * 2;
+        const cameraWorldY = (Number(camera.y) || 0) * 2;
+        const screenX = (anchorX - cameraWorldX) * zoom + canvas.width / 2;
+        const screenY = (anchorY - cameraWorldY) * zoom + canvas.height / 2;
+
+        const margin = 120;
+        const outOfView = (
+            screenX < -margin ||
+            screenX > canvas.width + margin ||
+            screenY < -margin ||
+            screenY > canvas.height + margin
+        );
+        if (outOfView) {
+            panel.style.display = "none";
+            return;
         }
 
-        warning.container.style.display = 'flex';
-        let timeLeft = this.inactivityTimeout;
+        panel.style.display = "block";
+        panel.style.left = `${screenX}px`;
+        panel.style.top = `${screenY}px`;
+        panel.style.transform = "translate(-50%, -50%)";
+    }
 
-        const updateTimer = () => {
-            const minutes = Math.floor(timeLeft / 60);
-            const seconds = Math.max(0, timeLeft % 60);
-            warning.timer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-            if (timeLeft <= 0) {
-                clearInterval(this.inactivityTimerInterval);
-                this.inactivityTimerInterval = null;
-                return;
+    updateAllX1RoundScorePanelPositions() {
+        this.x1RoundScoreDataByPair.forEach((_, pairKey) => {
+            this.updateX1RoundScorePanelPosition(pairKey);
+        });
+    }
+
+    startX1RoundScorePanelLoop() {
+        if (this.x1RoundScoreAnimationFrame) return;
+        const tick = () => {
+            this.x1RoundScoreAnimationFrame = null;
+            this.updateAllX1RoundScorePanelPositions();
+            if (this.x1RoundScoreDataByPair.size > 0) {
+                this.x1RoundScoreAnimationFrame = window.requestAnimationFrame(tick);
             }
-            timeLeft--;
         };
+        this.x1RoundScoreAnimationFrame = window.requestAnimationFrame(tick);
+    }
 
-        updateTimer();
-        this.inactivityTimerInterval = setInterval(updateTimer, 1000);
+    showX1RoundScore(payload = null) {
+        if (!payload || typeof payload !== "object") return;
+        const pairKey = this.getX1RoundScorePairKey(payload.playerAID, payload.playerBID);
+        if (!pairKey) return;
+
+        const aWins = Math.max(0, Number(payload.playerAWins || 0));
+        const bWins = Math.max(0, Number(payload.playerBWins || 0));
+        const aName = String(payload.playerAName || "Player A").trim() || "Player A";
+        const bName = String(payload.playerBName || "Player B").trim() || "Player B";
+        const scoreData = {
+            playerAID: Number(payload.playerAID || 0),
+            playerBID: Number(payload.playerBID || 0),
+            playerAWins: aWins,
+            playerBWins: bWins,
+            playerAName: aName,
+            playerBName: bName
+        };
+        this.x1RoundScoreDataByPair.set(pairKey, scoreData);
+
+        const panel = this.x1RoundScoreElementsByPair.get(pairKey) || this.createX1RoundScorePanel(pairKey);
+        const scoreElement = panel.querySelector(".x1-round-score-value");
+        if (scoreElement) {
+            scoreElement.textContent = `${aName} ${aWins} - ${bWins} ${bName}`;
+        }
+
+        this.updateX1RoundScorePanelPosition(pairKey);
+        this.startX1RoundScorePanelLoop();
+    }
+
+    hideX1RoundScore() {
+        this.x1RoundScoreDataByPair.clear();
+        this.x1RoundScoreElementsByPair.forEach((panel) => {
+            if (panel && panel.parentNode) {
+                panel.parentNode.removeChild(panel);
+            }
+        });
+        this.x1RoundScoreElementsByPair.clear();
+        if (this.x1RoundScoreAnimationFrame) {
+            window.cancelAnimationFrame(this.x1RoundScoreAnimationFrame);
+            this.x1RoundScoreAnimationFrame = null;
+        }
+        if (this.x1RoundScoreElement && this.x1RoundScoreElement.parentNode) {
+            this.x1RoundScoreElement.parentNode.removeChild(this.x1RoundScoreElement);
+        }
+        this.x1RoundScoreElement = null;
+    }
+
+    showInactivityWarning() {
+        // AFK warning was removed from the client UI.
     }
 
     hideInactivityWarning() {
-        this.DOM.game.inactivityWarning.container.style.display = 'none';
-        if (this.inactivityTimerInterval) {
-            clearInterval(this.inactivityTimerInterval);
-            this.inactivityTimerInterval = null;
-        }
+        // AFK warning was removed from the client UI.
     }
 }
 

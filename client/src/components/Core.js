@@ -184,6 +184,7 @@ export default class Core {
         this.viewport = new Viewport();
         this.camera = new Camera();
         this._mapViewState = null; // used to store camera state when toggling map view
+        this.mouseWheelZoomSensitivity = 0.0015;
     }
 
     initializeToolbar () {
@@ -251,7 +252,7 @@ export default class Core {
         this.eventManager.updateMousePosition(event);
 
         // Smooth multiplicative zoom factor (exponential) for continuous zoom
-        const sensitivity = 0.0015; // tweak to taste
+        const sensitivity = Math.max(0.0001, Math.min(0.01, Number(this.mouseWheelZoomSensitivity) || 0.0015));
         const factor = Math.exp(-event.deltaY * sensitivity);
 
         // Adjust camera so the point under cursor stays stable
@@ -294,5 +295,76 @@ export default class Core {
             this.camera.targetPosition.y = this._mapViewState.targetPosition.y;
             this._mapViewState = null;
         }
+    }
+
+    focusAllPlayersOverview () {
+        const camera = this.camera;
+        const gameManager = this.gameManager;
+        const canvas = this.canvas;
+        if (!camera || !gameManager || !canvas) return false;
+
+        const positions = [];
+        const selfPos = gameManager.player?.position;
+        if (selfPos && Number.isFinite(selfPos.x) && Number.isFinite(selfPos.y)) {
+            positions.push(selfPos);
+        }
+        for (const player of (gameManager.players || [])) {
+            const pos = player?.position;
+            if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
+            positions.push(pos);
+        }
+        if (positions.length === 0) return false;
+
+        let minX = positions[0].x;
+        let maxX = positions[0].x;
+        let minY = positions[0].y;
+        let maxY = positions[0].y;
+        for (let i = 1; i < positions.length; i += 1) {
+            const pos = positions[i];
+            minX = Math.min(minX, pos.x);
+            maxX = Math.max(maxX, pos.x);
+            minY = Math.min(minY, pos.y);
+            maxY = Math.max(maxY, pos.y);
+        }
+
+        const padding = 360;
+        const worldWidth = Math.max(200, (maxX - minX) + padding * 2);
+        const worldHeight = Math.max(200, (maxY - minY) + padding * 2);
+        const fitZoomX = canvas.width / worldWidth;
+        const fitZoomY = canvas.height / worldHeight;
+
+        const minZoom = Number.isFinite(camera.minZoom) ? camera.minZoom : 0.02;
+        const maxZoom = Number.isFinite(camera.maxZoom) ? camera.maxZoom : 50;
+        const targetZoom = Math.max(minZoom, Math.min(maxZoom, Math.min(fitZoomX, fitZoomY)));
+
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        camera.targetPosition.x = centerX / 2;
+        camera.targetPosition.y = centerY / 2;
+        camera.targetZoom = targetZoom;
+        this.buildingManager?.updateBuildingPosition?.();
+        return true;
+    }
+
+    centerCameraOnBase (options = {}) {
+        const player = this.gameManager?.player;
+        const camera = this.camera;
+        if (!player || !player.position || !camera) return false;
+
+        const smooth = options?.smooth === true;
+        camera.setPosition(player.position, smooth);
+
+        if (options?.applyHudZoom !== false) {
+            const uiZoom = Number(this.uiManager?.getCameraControlValue?.("zoom", camera.targetZoom ?? camera.zoom));
+            if (Number.isFinite(uiZoom)) {
+                const minZoom = Number.isFinite(camera.minZoom) ? camera.minZoom : 0.02;
+                const maxZoom = Number.isFinite(camera.maxZoom) ? camera.maxZoom : 50;
+                const clampedZoom = Math.max(minZoom, Math.min(maxZoom, uiZoom));
+                camera.targetZoom = clampedZoom;
+            }
+        }
+
+        this.buildingManager?.updateBuildingPosition?.();
+        return true;
     }
 }

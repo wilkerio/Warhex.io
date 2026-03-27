@@ -1,4 +1,4 @@
-import { BuildingTypes, MessageTypes, PLAYER_NAME_MAX_BYTES } from "./constants.js";
+import { BuildingTypes, MessageTypes, PLAYER_NAME_MAX_BYTES, X1DuelModes } from "./constants.js";
 
 
 // Helper function to read a fixed-length string 
@@ -194,6 +194,9 @@ function decodePayload (messageType, payload) {
         [MessageTypes.X1_CHALLENGE_RESULT]: decodeX1ChallengeResult,
         [MessageTypes.X1_DUEL_ARENA_UPDATE]: decodeX1DuelArenaUpdate,
         [MessageTypes.X1_POWER_INFO]: decodeX1PowerInfo,
+        [MessageTypes.X1_ROUND_SCORE_UPDATE]: decodeX1RoundScoreUpdate,
+        [MessageTypes.X1_ROUND_WIN_REQUEST_RECEIVED]: decodeX1RoundWinRequestReceived,
+        [MessageTypes.X1_ROUND_WIN_REQUEST_RESULT]: decodeX1RoundWinRequestResult,
         [MessageTypes.WILD_PORTALS_UPDATE]: decodeWildPortalsUpdate,
         [MessageTypes.ERROR]: decodeError,
     };
@@ -397,9 +400,15 @@ function decodeX1ChallengeReceived (payload) {
     let offset = 0;
     const challengerID = dataView.getUint8(offset++);
     const nameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    offset = nameResult.offset;
+    let challengerMode = X1DuelModes.CURRENT_BASE;
+    if (dataView.byteLength >= offset + 1) {
+        challengerMode = dataView.getUint8(offset);
+    }
     return {
         challengerID,
-        challengerName: nameResult.str
+        challengerName: nameResult.str,
+        challengerMode
     };
 }
 
@@ -413,6 +422,7 @@ function decodeX1ChallengeResult (payload) {
 
     let arena = null;
     let prepSeconds = 0;
+    let duelMode = X1DuelModes.CURRENT_BASE;
     if (dataView.byteLength >= offset + 16) {
         arena = {
             minX: dataView.getFloat32(offset, false),
@@ -425,6 +435,11 @@ function decodeX1ChallengeResult (payload) {
 
     if (dataView.byteLength >= offset + 1) {
         prepSeconds = dataView.getUint8(offset);
+        offset += 1;
+    }
+
+    if (dataView.byteLength >= offset + 1) {
+        duelMode = dataView.getUint8(offset);
     }
 
     return {
@@ -432,7 +447,8 @@ function decodeX1ChallengeResult (payload) {
         playerID,
         playerName: nameResult.str,
         arena,
-        prepSeconds
+        prepSeconds,
+        duelMode
     };
 }
 
@@ -596,6 +612,57 @@ function decodeBuildingPlaced (payload) {
     }
 
     return { isPlayer, ownerID, buildingID, buildingType, rotationStep, position, unitSpawningActive };
+}
+
+function decodeX1RoundScoreUpdate (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const playerAID = dataView.getUint8(offset++);
+    const playerBID = dataView.getUint8(offset++);
+    const playerAWins = dataView.getUint32(offset, false);
+    offset += 4;
+    const playerBWins = dataView.getUint32(offset, false);
+    offset += 4;
+    const playerANameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    offset = playerANameResult.offset;
+    const playerBNameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    return {
+        playerAID,
+        playerBID,
+        playerAWins,
+        playerBWins,
+        playerAName: playerANameResult.str,
+        playerBName: playerBNameResult.str
+    };
+}
+
+function decodeX1RoundWinRequestReceived (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const requesterID = dataView.getUint8(offset++);
+    const requesterNameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    return {
+        requesterID,
+        requesterName: requesterNameResult.str
+    };
+}
+
+function decodeX1RoundWinRequestResult (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const status = dataView.getUint8(offset++);
+    const requesterID = dataView.getUint8(offset++);
+    const requesterNameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    offset = requesterNameResult.offset;
+    const targetID = dataView.getUint8(offset++);
+    const targetNameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    return {
+        status,
+        requesterID,
+        requesterName: requesterNameResult.str,
+        targetID,
+        targetName: targetNameResult.str
+    };
 }
 
 function decodeX1PowerInfo (payload) {

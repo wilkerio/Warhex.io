@@ -78,16 +78,6 @@ const LEGACY_AUTOGENS_SOCKET_LAYOUT = [
 ];
 const LEGACY_AUTOGENS_ANGLE_OFFSET = 0;
 const LEGACY_AUTOGENS_RADIUS_SCALE = 1.0;
-const DEFENSE_REMOUNT_ALLOWED_UPGRADES = {
-    [BuildingTypes.WALL]: new Set([
-        BuildingVariantTypes.WALL.MICRO_GENERATOR
-    ]),
-    [BuildingTypes.ARMORY]: new Set([
-        BuildingVariantTypes.ARMORY.POWER_ARMOR,
-        BuildingVariantTypes.ARMORY.BOOSTER_ENGINES
-    ])
-};
-const DEFENSE_REMOUNT_MAX_UPGRADE_COST = 700;
 const DEFENSE_REMOUNT_UPGRADE_COOLDOWN_MS = 650;
 const DEFENSE_REMOUNT_UPGRADE_TRACK_TTL_MS = 10000;
 const DEFENSE_ATTACK_SECTOR_CACHE_MS = 220;
@@ -117,8 +107,6 @@ export class BuildingManager {
         this.baseLoadTimer = null;
         this.baseLoadRunning = false;
         this.defenseProfile = null;
-        this.defensePlacementKey = "v";
-        this.defenseRemountKey = "b";
         this.defensePlacementActive = false;
         this.defensePlacementTimer = null;
         this.defenseRemountActive = false;
@@ -140,13 +128,7 @@ export class BuildingManager {
         this.defenseRemountBurstSize = 30;
         this.defensePlacementIntervalMs = 120;
         this.defenseRemountUpgradeRequestAt = new Map();
-        this.commanderAssistAutoDefenseEnabled = false;
-        this.commanderAssistAutoDefenseLastTickAt = 0;
-        this.commanderAssistAutoDefenseLastRemountAt = 0;
-        this.commanderAssistAutoDefenseTickIntervalMs = 150;
-        this.commanderAssistAutoDefenseRemountIntervalMs = 260;
-        this.commanderAssistAutoDefenseIdleRemountIntervalMs = 1250;
-
+        this.lastDefenseHotkeyPromptAt = 0;
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
         this.core.inputManager.registerRightClickHandler((mousePosition) => this.handleRightClick(mousePosition));
@@ -626,18 +608,9 @@ export class BuildingManager {
                             }
 
                             this.core.gameManager.subtractResources(totalCost);
-                            this.core.gameManager.applyUnitUpgrade(data.unitType, data.unitVariant);
 
                             const neutralBaseID = isNeutralBase ? closestBase.id : null;
                             this.core.networkManager.upgradeBuildings(targetIDs, data.buildingVariant, neutralBaseID);
-
-                            targetBuildings.forEach(building => {
-                                if (building.type === BuildingTypes.ARMORY) {
-                                    building.variant = data.buildingVariant;
-                                    if (!building.purchasedUpgrades) building.purchasedUpgrades = new Set();
-                                    building.purchasedUpgrades.add(data.buildingVariant);
-                                }
-                            });
 
                             // Keep the panel open and refresh available upgrades.
                             this.core.uiManager.showUpgrades({
@@ -669,15 +642,6 @@ export class BuildingManager {
                         const neutralBaseID = isNeutralBase ? closestBase.id : null;
 
                         this.core.networkManager.upgradeBuildings(targetIDs, data.buildingVariant, neutralBaseID);
-
-                        // Keep selection/panel open so next evolution appears immediately.
-                        targetBuildings.forEach((selectedBuilding) => {
-                            if (selectedBuilding?.setUpgrade) {
-                                selectedBuilding.setUpgrade(data.buildingVariant);
-                            } else {
-                                selectedBuilding.variant = data.buildingVariant;
-                            }
-                        });
 
                         this.core.uiManager.showUpgrades({
                             buildings: this.selectedBuildings,
@@ -747,11 +711,32 @@ export class BuildingManager {
                 if (enemy) {
                     const localPlayer = this.core.gameManager.player;
                     const localPlayerID = localPlayer?.id;
+                    const localArenas = Array.isArray(this.core.gameManager.globalDuelArenas)
+                        ? this.core.gameManager.globalDuelArenas
+                        : [];
+                    const hasArenaPairWithEnemy = Boolean(
+                        localPlayerID &&
+                        localArenas.some((arena) => (
+                            (arena.playerAID === localPlayerID && arena.playerBID === enemy.id) ||
+                            (arena.playerBID === localPlayerID && arena.playerAID === enemy.id)
+                        ))
+                    );
+                    const inDuelWithEnemy = Boolean(
+                        this.core.gameManager.duelOpponentID === enemy.id || hasArenaPairWithEnemy
+                    );
                     const onNotifyLeaveBase = enemy.hasSpawnProtection ? () => {
                         this.core.networkManager.watchPlayerLeaveBase(enemy.id, enemy.name || "Player");
                     } : null;
+                    const onGiveX1RoundWin = inDuelWithEnemy ? () => {
+                        this.core.networkManager.sendX1ConcedeRound(enemy.id);
+                        this.core.uiManager.addChatMessage(
+                            "System",
+                            `Round win request sent to ${enemy.name || "Player"}.`,
+                            "#60c1ff"
+                        );
+                    } : null;
 
-                    const onChallengeX1 = enemy.hasSpawnProtection ? null : () => {
+                    const onChallengeX1 = (enemy.hasSpawnProtection || inDuelWithEnemy) ? null : () => {
                         if (localPlayer?.hasSpawnProtection) {
                             this.core.uiManager.addChatMessage(
                                 "System",
@@ -861,15 +846,16 @@ export class BuildingManager {
                             return;
                         }
 
-                        this.core.uiManager.showX1SendPrompt(enemy.name || "Player", () => {
+                        this.core.uiManager.showX1SendPrompt(enemy.name || "Player", (selectedMode) => {
                             this.lastX1ChallengeSentAt = Date.now();
-                            this.core.networkManager.sendX1Challenge(enemy.id);
+                            this.core.networkManager.sendX1Challenge(enemy.id, selectedMode);
                         });
                     };
 
                     this.core.uiManager.showEnemyCoreActions(
                         enemy.name || "Player",
                         onChallengeX1,
+                        onGiveX1RoundWin,
                         onNotifyLeaveBase
                     );
                     return;
@@ -1435,28 +1421,71 @@ export class BuildingManager {
         return Math.max(0, Math.floor(numeric));
     }
 
-    getDefenseRemountAllowedUpgradeVariant (entry) {
+    getDefenseRemountAllowedUpgradeVariant (entry, remountProfile = null) {
         if (!entry || !Number.isFinite(Number(entry.type))) return null;
         const buildingType = Number(entry.type);
-        if (buildingType === BuildingTypes.BARRACKS) return null;
+        if (buildingType !== BuildingTypes.WALL && buildingType !== BuildingTypes.ARMORY) return null;
 
-        const targetVariant = this.getDefenseEntryTargetVariant(entry);
-        if (targetVariant <= 0) return null;
+        const profile = (remountProfile && typeof remountProfile === "object")
+            ? remountProfile
+            : this.getDefenseRemountProfile();
+        const profileTargets = (profile.upgradeTargets && typeof profile.upgradeTargets === "object")
+            ? profile.upgradeTargets
+            : {};
+        const targetSettingRaw = profileTargets[String(Math.floor(buildingType))];
+        const targetSetting = this.core?.uiManager?.normalizeDefenseRemountUpgradeTarget?.(targetSettingRaw)
+            || (targetSettingRaw ? String(targetSettingRaw).trim().toLowerCase() : "saved");
 
-        const allowedVariants = DEFENSE_REMOUNT_ALLOWED_UPGRADES[buildingType];
-        if (!(allowedVariants instanceof Set) || !allowedVariants.has(targetVariant)) {
-            return null;
+        if (targetSetting === "none") return null;
+
+        let targetVariant = this.getDefenseEntryTargetVariant(entry);
+        if (targetSetting === "saved") {
+            if (buildingType === BuildingTypes.WALL) {
+                targetVariant = BuildingVariantTypes.WALL.MICRO_GENERATOR;
+            } else if (buildingType === BuildingTypes.ARMORY) {
+                targetVariant = BuildingVariantTypes.ARMORY.POWER_ARMOR;
+            }
         }
+        const variantMatch = /^variant:(\d+)$/.exec(targetSetting);
+        if (variantMatch) {
+            targetVariant = Math.floor(Number(variantMatch[1]));
+        } else if (targetSetting !== "saved" && Number.isFinite(Number(targetSetting))) {
+            targetVariant = Math.floor(Number(targetSetting));
+        }
+        if (targetVariant <= 0) return null;
 
         const targetDetails = getBuildingDetails(buildingType, targetVariant);
         if (!targetDetails) return null;
-
-        const targetCost = Number(targetDetails.cost);
-        if (!Number.isFinite(targetCost) || targetCost > DEFENSE_REMOUNT_MAX_UPGRADE_COST) {
+        if (buildingType === BuildingTypes.ARMORY && !this.isDefenseRemountArmoryUpgradeNecessary(targetVariant)) {
             return null;
         }
 
         return targetVariant;
+    }
+
+    isDefenseRemountArmoryUpgradeNecessary (targetVariant) {
+        const variant = Number(targetVariant);
+        if (!Number.isFinite(variant)) return false;
+
+        const unitUpgrades = this.core?.gameManager?.unitUpgrades || [];
+        const soldierVariant = Number(unitUpgrades?.[UnitTypes.SOLDIER] ?? UnitVariantTypes.SOLDIER.BASIC);
+        const tankVariant = Number(unitUpgrades?.[UnitTypes.TANK] ?? UnitVariantTypes.TANK.BASIC);
+
+        if (variant === BuildingVariantTypes.ARMORY.POWER_ARMOR) {
+            return soldierVariant !== UnitVariantTypes.SOLDIER.LIGHT_ARMOR;
+        }
+        if (variant === BuildingVariantTypes.ARMORY.BOOSTER_ENGINES || variant === BuildingVariantTypes.ARMORY.BOOSTER_CLOAK_COMBO) {
+            return tankVariant !== UnitVariantTypes.TANK.BOOSTER_ENGINE
+                && tankVariant !== UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON;
+        }
+        if (variant === BuildingVariantTypes.ARMORY.PANZER_CANNONS || variant === BuildingVariantTypes.ARMORY.PANZER_CLOAK_COMBO) {
+            return tankVariant !== UnitVariantTypes.TANK.CANNON
+                && tankVariant !== UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON;
+        }
+        if (variant === BuildingVariantTypes.ARMORY.PANZER_CANNONS_COMBO || variant === BuildingVariantTypes.ARMORY.PANZER_BOOSTER_CLOAK_COMBO) {
+            return tankVariant !== UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON;
+        }
+        return true;
     }
 
     canDefenseRemountUpgradeBuilding (building, targetVariant) {
@@ -1464,6 +1493,7 @@ export class BuildingManager {
         const currentVariant = Number.isFinite(Number(building.variant)) ? Number(building.variant) : 0;
         if (currentVariant === targetVariant) return false;
         if (building.type === BuildingTypes.BARRACKS) return false;
+        if (building.type === BuildingTypes.ARMORY && !this.isDefenseRemountArmoryUpgradeNecessary(targetVariant)) return false;
 
         const purchasedVariants = building.purchasedUpgrades instanceof Set
             ? Array.from(building.purchasedUpgrades)
@@ -1495,27 +1525,6 @@ export class BuildingManager {
             });
         });
         return bases;
-    }
-
-    applyPredictedArmoryUpgrade (targetVariant) {
-        const variant = Number(targetVariant);
-        if (!Number.isFinite(variant)) return;
-        if (variant === BuildingVariantTypes.ARMORY.POWER_ARMOR) {
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.LIGHT_ARMOR);
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BASIC);
-        } else if (variant === BuildingVariantTypes.ARMORY.BOOSTER_ENGINES || variant === BuildingVariantTypes.ARMORY.BOOSTER_CLOAK_COMBO) {
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BOOSTER_ENGINE);
-        } else if (variant === BuildingVariantTypes.ARMORY.PANZER_CANNONS || variant === BuildingVariantTypes.ARMORY.PANZER_CLOAK_COMBO) {
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.CANNON);
-        } else if (variant === BuildingVariantTypes.ARMORY.PANZER_CANNONS_COMBO || variant === BuildingVariantTypes.ARMORY.PANZER_BOOSTER_CLOAK_COMBO) {
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BOOSTER_ENGINE_CANNON);
-        } else {
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.SOLDIER, UnitVariantTypes.SOLDIER.BASIC);
-            this.core.gameManager.applyUnitUpgrade(UnitTypes.TANK, UnitVariantTypes.TANK.BASIC);
-        }
     }
 
     upgradeAllOwnedBuildingsToVariant (buildingType, targetVariant, options = {}) {
@@ -1573,22 +1582,7 @@ export class BuildingManager {
 
         const totalCost = Math.max(0, Math.round(targets.length * perBuildingCost));
         this.core.gameManager.subtractResources(totalCost);
-        targets.forEach(({ building }) => {
-            if (typeof building?.setUpgrade === "function") {
-                building.setUpgrade(safeVariant);
-            } else {
-                building.variant = safeVariant;
-            }
-            if (safeType === BuildingTypes.ARMORY) {
-                if (!(building.purchasedUpgrades instanceof Set)) {
-                    building.purchasedUpgrades = new Set();
-                }
-                building.purchasedUpgrades.add(safeVariant);
-            }
-        });
-        if (safeType === BuildingTypes.ARMORY) {
-            this.applyPredictedArmoryUpgrade(safeVariant);
-        }
+        // Upgrade visuals/stats are applied only on server confirmation to avoid local desync.
 
         const label = String(options?.triggerLabel || detail?.name || "upgrade");
         const plural = targets.length > 1 ? "buildings" : "building";
@@ -1734,11 +1728,78 @@ export class BuildingManager {
     }
 
     announceDefenseHotkeys () {
+        const defenseKey = this.getDefensePlacementKey();
+        const remountKey = this.getDefenseRemountKey();
+        const defenseLabel = defenseKey ? `[${defenseKey.toUpperCase()}]` : "[UNSET]";
+        const remountLabel = remountKey ? `[${remountKey.toUpperCase()}]` : "[UNSET]";
         this.core.uiManager.addChatMessage(
             "System",
-            "Defense: use the Defend button to save base and choose defense/remount keys.",
+            `Defense: hold ${defenseLabel} to place walls and ${remountLabel} to remount.`,
             "#60c1ff"
         );
+    }
+
+    getDefensePlacementKey () {
+        return this.core?.uiManager?.getHudKeybind?.("defensePlacement", "") || "";
+    }
+
+    getDefenseRemountKey () {
+        return this.core?.uiManager?.getHudKeybind?.("defenseRemount", "") || "";
+    }
+
+    getDefenseRemountProfile () {
+        const fromUI = this.core?.uiManager?.getDefenseRemountConfig?.();
+        if (fromUI && typeof fromUI === "object") {
+            return fromUI;
+        }
+        return {
+            sellWallsInSlots: true,
+            sellConflictingInSlots: true,
+            upgradeTargets: {}
+        };
+    }
+
+    promptDefenseHotkeysIfMissing () {
+        const ui = this.core?.uiManager;
+        if (!ui || typeof window === "undefined" || typeof window.prompt !== "function") {
+            return;
+        }
+
+        let defenseKey = this.getDefensePlacementKey();
+        let remountKey = this.getDefenseRemountKey();
+        if (defenseKey && remountKey) {
+            return;
+        }
+
+        const now = Date.now();
+        if ((now - this.lastDefenseHotkeyPromptAt) < 8000) {
+            return;
+        }
+        this.lastDefenseHotkeyPromptAt = now;
+
+        const askKeybind = (actionKey, label) => {
+            const typed = window.prompt(
+                `Defend: choose key for ${label} (example: g or mouse4). Leave empty to skip for now.`,
+                ""
+            );
+            if (typed === null) return false;
+            const normalized = ui.normalizeKeybindValue?.(typed) || "";
+            if (!normalized) return false;
+            const result = ui.setHudKeybindValue?.(actionKey, normalized, { warnOnConflict: true });
+            if (result?.ok) {
+                ui.addChatMessage?.("System", `${label} key set to [${normalized.toUpperCase()}].`, "#60c1ff");
+                return true;
+            }
+            return false;
+        };
+
+        if (!defenseKey) {
+            askKeybind("defensePlacement", "Defense Placement");
+            defenseKey = this.getDefensePlacementKey();
+        }
+        if (!remountKey) {
+            askKeybind("defenseRemount", "Defense Remount");
+        }
     }
 
     buildDefenseProfileEntriesFromCurrentBase (player = this.core.gameManager.player) {
@@ -1756,111 +1817,6 @@ export class BuildingManager {
                     y: Number(building.position.y)
                 }
             }));
-    }
-
-    ensureDefenseProfileForCommanderAssist (options = {}) {
-        const { silent = true, forceRefresh = false } = options;
-        if (!forceRefresh && this.defenseProfile && Array.isArray(this.defenseProfile.entries) && this.defenseProfile.entries.length > 0) {
-            return true;
-        }
-
-        const player = this.core.gameManager.player;
-        if (!player) return false;
-
-        const entries = this.buildDefenseProfileEntriesFromCurrentBase(player);
-        if (!entries.length) {
-            if (!silent) {
-                this.core.uiManager?.addChatMessage?.("System", "No buildings to save for defend.", "#ffcc66");
-            }
-            return false;
-        }
-
-        this.defenseProfile = {
-            createdAt: Date.now(),
-            entries
-        };
-        if (this.defenseRemountUpgradeRequestAt instanceof Map) {
-            this.defenseRemountUpgradeRequestAt.clear();
-        }
-        if (!silent) {
-            this.core.uiManager?.addChatMessage?.("System", "Defend base saved for Commander Assist.", "#60c1ff");
-        }
-        return true;
-    }
-
-    setCommanderAssistAutoDefenseEnabled (enabled, options = {}) {
-        const shouldEnable = Boolean(enabled);
-        this.commanderAssistAutoDefenseEnabled = shouldEnable;
-        this.commanderAssistAutoDefenseLastTickAt = 0;
-        this.commanderAssistAutoDefenseLastRemountAt = 0;
-
-        if (!shouldEnable) {
-            return false;
-        }
-
-        return this.ensureDefenseProfileForCommanderAssist({
-            silent: options?.silent !== false,
-            forceRefresh: Boolean(options?.forceRefresh)
-        });
-    }
-
-    promptCommanderAssistRemountKey () {
-        const suggestedRemount = this.defenseRemountKey || ",";
-        const rawRemount = window.prompt(
-            "Commander Assist (*): escolha a tecla de REMOUNT (segure para reconstruir slots salvos).",
-            suggestedRemount
-        );
-        if (rawRemount === null) {
-            this.core.uiManager?.notifySystemInfo?.(`Remount mantido em [${String(suggestedRemount).toUpperCase()}].`);
-            return false;
-        }
-
-        const remountKey = this.core.uiManager?.normalizeKeybindValue?.(rawRemount) || String(rawRemount).trim().toLowerCase();
-        if (!remountKey) {
-            this.core.uiManager?.notifySystemWarning?.("Invalid remount key.");
-            return false;
-        }
-
-        const remountReservedReason = this.core.uiManager?.getReservedGameplayKeybindNotice?.(remountKey);
-        if (remountReservedReason) {
-            this.core.uiManager?.notifySystemWarning?.(remountReservedReason);
-            return false;
-        }
-        if (remountKey === this.defensePlacementKey) {
-            this.core.uiManager?.notifySystemWarning?.("Defense and remount keys must be different.");
-            return false;
-        }
-
-        const remountConflict = this.core.uiManager?.findConfiguredKeyConflict?.(remountKey, {
-            excludeScope: "defense",
-            excludeId: "remount"
-        });
-        if (remountConflict) {
-            this.core.uiManager?.showKeyConflictNotice?.(remountKey, remountConflict);
-            return false;
-        }
-
-        this.defenseRemountKey = remountKey;
-        this.core.uiManager?.notifySystemInfo?.(`Commander Assist remount key: [${remountKey.toUpperCase()}].`);
-        return true;
-    }
-
-    updateCommanderAssistAutoDefense (now = Date.now()) {
-        if (!this.commanderAssistAutoDefenseEnabled) return 0;
-        if ((now - this.commanderAssistAutoDefenseLastTickAt) < this.commanderAssistAutoDefenseTickIntervalMs) return 0;
-        this.commanderAssistAutoDefenseLastTickAt = now;
-
-        const player = this.core.gameManager.player;
-        if (!player) return 0;
-        if (!this.ensureDefenseProfileForCommanderAssist({ silent: true })) return 0;
-
-        const attackSector = this.buildDefenseAttackSector(player);
-        const hasActiveThreat = Boolean(attackSector?.active);
-        const placed = this.placeDefenseWallBurst({
-            force: hasActiveThreat,
-            attackSector
-        });
-        return placed;
     }
 
     stopConflictingAutoActions () {
@@ -1886,69 +1842,6 @@ export class BuildingManager {
             this.core.uiManager.addChatMessage("System", "No buildings to save for defend.", "#ffcc66");
             return;
         }
-
-        window.alert("You saved defend base.");
-
-        const suggestedDefense = this.defensePlacementKey;
-        const rawDefense = window.prompt("Choose DEFENSE key (single key). Hold this key to place walls.", suggestedDefense);
-        if (rawDefense === null) {
-            this.core.uiManager.addChatMessage("System", "Defend setup canceled.", "#ffcc66");
-            return;
-        }
-
-        const defenseKey = this.core.uiManager?.normalizeKeybindValue?.(rawDefense) || String(rawDefense).trim().toLowerCase();
-        if (!defenseKey) {
-            this.core.uiManager.notifySystemWarning("Invalid defense key.");
-            return;
-        }
-        const defenseReservedReason = this.core.uiManager?.getReservedGameplayKeybindNotice?.(defenseKey);
-        if (defenseReservedReason) {
-            this.core.uiManager.notifySystemWarning(defenseReservedReason);
-            return;
-        }
-        const defenseConflict = this.core.uiManager?.findConfiguredKeyConflict?.(defenseKey, {
-            excludeScope: "defense",
-            excludeId: "placement"
-        });
-        if (defenseConflict) {
-            this.core.uiManager?.showKeyConflictNotice?.(defenseKey, defenseConflict);
-            return;
-        }
-
-        const suggestedRemount = this.defenseRemountKey;
-        const rawRemount = window.prompt("Choose REMOUNT key (single key). Hold this key to rebuild saved slots.", suggestedRemount);
-        if (rawRemount === null) {
-            this.core.uiManager.addChatMessage("System", "Defend setup canceled.", "#ffcc66");
-            return;
-        }
-
-        const remountKey = this.core.uiManager?.normalizeKeybindValue?.(rawRemount) || String(rawRemount).trim().toLowerCase();
-        if (!remountKey) {
-            this.core.uiManager.notifySystemWarning("Invalid remount key.");
-            return;
-        }
-        const remountReservedReason = this.core.uiManager?.getReservedGameplayKeybindNotice?.(remountKey);
-        if (remountReservedReason) {
-            this.core.uiManager.notifySystemWarning(remountReservedReason);
-            return;
-        }
-
-        if (defenseKey === remountKey) {
-            this.core.uiManager.notifySystemWarning("Defense and remount keys must be different.");
-            return;
-        }
-
-        const remountConflict = this.core.uiManager?.findConfiguredKeyConflict?.(remountKey, {
-            excludeScope: "defense",
-            excludeId: "remount"
-        });
-        if (remountConflict) {
-            this.core.uiManager?.showKeyConflictNotice?.(remountKey, remountConflict);
-            return;
-        }
-
-        this.defensePlacementKey = defenseKey;
-        this.defenseRemountKey = remountKey;
         if (this.defenseRemountUpgradeRequestAt instanceof Map) {
             this.defenseRemountUpgradeRequestAt.clear();
         }
@@ -1957,16 +1850,34 @@ export class BuildingManager {
             entries
         };
 
+        let defenseKey = this.getDefensePlacementKey();
+        let remountKey = this.getDefenseRemountKey();
+        if (!defenseKey || !remountKey) {
+            this.promptDefenseHotkeysIfMissing();
+            defenseKey = this.getDefensePlacementKey();
+            remountKey = this.getDefenseRemountKey();
+        }
+
         this.core.uiManager.addChatMessage(
             "System",
             `Defend base saved.`,
             "#60c1ff"
         );
-        this.core.uiManager.addChatMessage(
-            "System",
-            `Hold [${defenseKey.toUpperCase()}] for defense walls. Hold [${remountKey.toUpperCase()}] to remount.`,
-            "#60c1ff"
-        );
+        if (!defenseKey && !remountKey) {
+            this.core.uiManager.addChatMessage(
+                "System",
+                "Set Defense Placement and Defense Remount keys in Keybind Manager.",
+                "#ffcc66"
+            );
+            return;
+        }
+        const defenseLabel = defenseKey ? `[${defenseKey.toUpperCase()}]` : "[UNSET]";
+        const remountLabel = remountKey ? `[${remountKey.toUpperCase()}]` : "[UNSET]";
+        this.core.uiManager.addChatMessage("System", `Hold ${defenseLabel} for defense walls.`, "#60c1ff");
+        this.core.uiManager.addChatMessage("System", `Hold ${remountLabel} to remount saved slots.`, "#60c1ff");
+        if (defenseKey && remountKey && defenseKey === remountKey) {
+            this.core.uiManager.notifySystemWarning("Defense Placement and Defense Remount are using the same key.");
+        }
     }
 
     activateRecoverMode () {
@@ -2025,7 +1936,10 @@ export class BuildingManager {
     handleDefenseHotkeyDown (key) {
         if (!this.defenseProfile || !key) return;
         if (this.core.uiManager.isChatInputFocused) return;
-        if (key === this.defensePlacementKey) {
+        if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
+        const defensePlacementKey = this.getDefensePlacementKey();
+        const defenseRemountKey = this.getDefenseRemountKey();
+        if (defensePlacementKey && key === defensePlacementKey) {
             this.bumpDefensePlacementPressure();
             if (this.defensePlacementActive) {
                 this.placeDefenseWallBurst();
@@ -2038,7 +1952,7 @@ export class BuildingManager {
             return;
         }
 
-        if (key === this.defenseRemountKey) {
+        if (defenseRemountKey && key === defenseRemountKey) {
             if (this.defenseRemountActive) return;
             this.stopDefensePlacement();
             this.defenseRemountActive = true;
@@ -2076,11 +1990,13 @@ export class BuildingManager {
 
     handleDefenseHotkeyUp (key) {
         if (!key) return;
-        if (key === this.defensePlacementKey) {
+        const defensePlacementKey = this.getDefensePlacementKey();
+        const defenseRemountKey = this.getDefenseRemountKey();
+        if (defensePlacementKey && key === defensePlacementKey) {
             this.stopDefensePlacement();
             return;
         }
-        if (key === this.defenseRemountKey) {
+        if (defenseRemountKey && key === defenseRemountKey) {
             this.stopDefenseRemount();
         }
     }
@@ -2476,9 +2392,12 @@ export class BuildingManager {
         if (!this.defenseProfile || !Array.isArray(this.defenseProfile.entries)) return 0;
         const player = this.core.gameManager.player;
         if (!player) return 0;
+        const remountProfile = this.getDefenseRemountProfile();
 
         const slotToleranceSq = 18 * 18;
         const wallMatchToleranceSq = 40 * 40;
+        const sellWallsInSlots = remountProfile.sellWallsInSlots !== false;
+        const sellConflictingInSlots = remountProfile.sellConflictingInSlots !== false;
         this.syncDefensePlacedWallsWithCurrentState(player, wallMatchToleranceSq);
         const currentBuildings = (player.buildings || []).filter(b => b && !b.removeFlag);
         const getEntryPosition = (entry) => this.resolveDefenseEntryPosition(entry, player);
@@ -2516,23 +2435,46 @@ export class BuildingManager {
                 return dx * dx + dy * dy <= slotToleranceSq;
             });
         };
+        const findConflictingBuildingsInSlot = (entry) => {
+            const entryPosition = getEntryPosition(entry);
+            if (!entryPosition) return [];
+            return currentBuildings.filter((b) => {
+                if (!b || b.removeFlag || !Number.isInteger(b.id)) return false;
+                if (b.type === BuildingTypes.WALL) return false;
+                if (b.type === entry.type) return false;
+                const dx = b.position.x - entryPosition.x;
+                const dy = b.position.y - entryPosition.y;
+                return dx * dx + dy * dy <= slotToleranceSq;
+            });
+        };
 
         // First pass: remove all matching walls in one batch.
         const slotsWithWalls = [];
         const wallIDsToRemove = new Set();
+        const conflictIDsToRemove = new Set();
         for (const entry of this.defenseProfile.entries) {
             const entryPosition = getEntryPosition(entry);
             if (!entryPosition) continue;
             if (findOriginalBuildingInSlot(entry)) continue;
-            if (hasOtherBuildingInSlot(entry)) continue;
-            const matchingWalls = findWallsInSavedSlot(entry);
-            if (matchingWalls.length === 0) continue;
-            slotsWithWalls.push(entryPosition);
-            for (const wall of matchingWalls) {
-                wallIDsToRemove.add(wall.id);
+            const conflictingBuildings = findConflictingBuildingsInSlot(entry);
+            if (conflictingBuildings.length > 0) {
+                if (!sellConflictingInSlots) continue;
+                conflictingBuildings.forEach((building) => {
+                    conflictIDsToRemove.add(building.id);
+                });
+            }
+            if (sellWallsInSlots) {
+                const matchingWalls = findWallsInSavedSlot(entry);
+                if (matchingWalls.length > 0) {
+                    slotsWithWalls.push(entryPosition);
+                    for (const wall of matchingWalls) {
+                        wallIDsToRemove.add(wall.id);
+                    }
+                }
             }
         }
-        if (wallIDsToRemove.size > 0) {
+        const idsToRemove = [...wallIDsToRemove, ...conflictIDsToRemove];
+        if (idsToRemove.length > 0) {
             this.defensePlacedWalls = this.defensePlacedWalls.filter(saved => {
                 return !slotsWithWalls.some(position => {
                     const dx = saved.x - position.x;
@@ -2540,13 +2482,12 @@ export class BuildingManager {
                     return dx * dx + dy * dy <= wallMatchToleranceSq;
                 });
             });
-            this.core.networkManager.removeBuildings([...wallIDsToRemove]);
-            if (wallIDsToRemove.size > 0) {
-                for (let i = currentBuildings.length - 1; i >= 0; i--) {
-                    const building = currentBuildings[i];
-                    if (wallIDsToRemove.has(building.id)) {
-                        currentBuildings.splice(i, 1);
-                    }
+            this.core.networkManager.removeBuildings(idsToRemove);
+            for (let i = currentBuildings.length - 1; i >= 0; i--) {
+                const building = currentBuildings[i];
+                if (!building || !Number.isInteger(building.id)) continue;
+                if (wallIDsToRemove.has(building.id) || conflictIDsToRemove.has(building.id)) {
+                    currentBuildings.splice(i, 1);
                 }
             }
         }
@@ -2591,7 +2532,7 @@ export class BuildingManager {
         const now = Date.now();
         this.cleanupDefenseRemountUpgradeTracker(now);
         for (const entry of this.defenseProfile.entries) {
-            const targetVariant = this.getDefenseRemountAllowedUpgradeVariant(entry);
+            const targetVariant = this.getDefenseRemountAllowedUpgradeVariant(entry, remountProfile);
             if (!Number.isFinite(Number(targetVariant))) continue;
 
             const building = findOriginalBuildingInSlot(entry);
