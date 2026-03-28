@@ -35,6 +35,11 @@ var (
 	sessionLockByConn  = make(map[*websocket.Conn]sessionLockState)
 	sessionLockEnabled = envBoolDefaultTrue("ENABLE_DB_SESSION_LOCK")
 	sessionLockTTL     = resolveDBSessionLockTTL()
+	// Strict checks are backend-only and can be tuned per environment.
+	sessionLockStrictDevice      = envBoolDefaultTrue("SESSION_LOCK_STRICT_DEVICE")
+	sessionLockStrictFingerprint = envBoolDefaultTrue("SESSION_LOCK_STRICT_FINGERPRINT")
+	sessionLockStrictIPPrefix    = envBoolDefaultFalse("SESSION_LOCK_STRICT_IP_PREFIX")
+	sessionLockStrictUANet       = envBoolDefaultFalse("SESSION_LOCK_STRICT_UA_NETWORK")
 )
 
 func resolveDBSessionLockTTL() time.Duration {
@@ -103,7 +108,14 @@ func initSessionLockStore() {
 	}
 
 	sessionLockDB = db
-	log.Printf("db session lock enabled (ttl=%s)", sessionLockTTL)
+	log.Printf(
+		"db session lock enabled (ttl=%s, strict_device=%t, strict_fingerprint=%t, strict_ip_prefix=%t, strict_ua_network=%t)",
+		sessionLockTTL,
+		sessionLockStrictDevice,
+		sessionLockStrictFingerprint,
+		sessionLockStrictIPPrefix,
+		sessionLockStrictUANet,
+	)
 	startSessionLockCleanupLoop()
 }
 
@@ -123,6 +135,8 @@ func ensureSessionLockSchema(db *sql.DB) error {
 			discord_id text NOT NULL DEFAULT '',
 			device_id text NOT NULL DEFAULT '',
 			client_ip text NOT NULL DEFAULT '',
+			ip_prefix text NOT NULL DEFAULT '',
+			user_agent_hash text NOT NULL DEFAULT '',
 			fingerprint bigint NOT NULL DEFAULT 0,
 			created_at timestamptz NOT NULL DEFAULT now(),
 			updated_at timestamptz NOT NULL DEFAULT now(),
@@ -134,8 +148,32 @@ func ensureSessionLockSchema(db *sql.DB) error {
 		ON public.active_session_locks (expires_at)
 		`,
 		`
+		CREATE INDEX IF NOT EXISTS active_session_locks_device_idx
+		ON public.active_session_locks (device_id)
+		`,
+		`
+		CREATE INDEX IF NOT EXISTS active_session_locks_fingerprint_idx
+		ON public.active_session_locks (fingerprint)
+		`,
+		`
+		CREATE INDEX IF NOT EXISTS active_session_locks_ip_prefix_idx
+		ON public.active_session_locks (ip_prefix)
+		`,
+		`
+		CREATE INDEX IF NOT EXISTS active_session_locks_ua_idx
+		ON public.active_session_locks (user_agent_hash)
+		`,
+		`
 		ALTER TABLE public.active_session_locks
 		ADD COLUMN IF NOT EXISTS device_id text NOT NULL DEFAULT ''
+		`,
+		`
+		ALTER TABLE public.active_session_locks
+		ADD COLUMN IF NOT EXISTS ip_prefix text NOT NULL DEFAULT ''
+		`,
+		`
+		ALTER TABLE public.active_session_locks
+		ADD COLUMN IF NOT EXISTS user_agent_hash text NOT NULL DEFAULT ''
 		`,
 	}
 	for _, stmt := range statements {
@@ -188,11 +226,29 @@ func normalizeClientIP(raw string) string {
 	return strings.TrimSpace(value)
 }
 
-func buildSessionLockIdentity(userData UserData, fingerprint uint32) (lockKey, progressID, discordID, deviceID, clientIP string, fingerprint64 int64) {
+func deriveIPPrefix(clientIP string) string {
+	ip := net.ParseIP(strings.TrimSpace(clientIP))
+	if ip == nil {
+		return ""
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return fmt.Sprintf("%d.%d.%d", v4[0], v4[1], v4[2]) // /24
+	}
+	v6 := ip.To16()
+	if v6 == nil {
+		return ""
+	}
+	// /64-ish textual prefix (first 4 hextets)
+	return strings.ToLower(fmt.Sprintf("%02x%02x:%02x%02x:%02x%02x:%02x%02x", v6[0], v6[1], v6[2], v6[3], v6[4], v6[5], v6[6], v6[7]))
+}
+
+func buildSessionLockIdentity(userData UserData, fingerprint uint32) (lockKey, progressID, discordID, deviceID, clientIP, ipPrefix, userAgentHash string, fingerprint64 int64) {
 	progressID = strings.TrimSpace(userData.ProgressUserID())
 	discordID = strings.TrimSpace(userData.Discord.ID)
 	deviceID = strings.TrimSpace(userData.DeviceID)
 	clientIP = normalizeClientIP(userData.ClientIP)
+	ipPrefix = deriveIPPrefix(clientIP)
+	userAgentHash = strings.TrimSpace(userData.UserAgentHash)
 	fingerprint64 = int64(fingerprint)
 
 	switch {
@@ -245,12 +301,54 @@ func popSessionLockState(conn *websocket.Conn) (sessionLockState, bool) {
 	return state, ok
 }
 
+func hasStrictSignalConflict(ctx context.Context, lockKey, sessionToken, deviceID string, fingerprint64 int64, ipPrefix, userAgentHash string) (bool, error) {
+	if sessionLockDB == nil {
+		return false, nil
+	}
+	shouldCheckDevice := sessionLockStrictDevice && strings.TrimSpace(deviceID) != ""
+	shouldCheckFingerprint := sessionLockStrictFingerprint && fingerprint64 != 0
+	shouldCheckIPPrefix := sessionLockStrictIPPrefix && strings.TrimSpace(ipPrefix) != ""
+	shouldCheckUANet := sessionLockStrictUANet && strings.TrimSpace(ipPrefix) != "" && strings.TrimSpace(userAgentHash) != ""
+	if !shouldCheckDevice && !shouldCheckFingerprint && !shouldCheckIPPrefix && !shouldCheckUANet {
+		return false, nil
+	}
+
+	var dummy int
+	err := sessionLockDB.QueryRowContext(ctx, `
+		SELECT 1
+		FROM public.active_session_locks
+		WHERE expires_at > now()
+		  AND NOT (lock_key = $1 AND session_token = $2)
+		  AND (
+			($3 AND device_id = $4)
+			OR ($5 AND fingerprint = $6)
+			OR ($7 AND ip_prefix = $8)
+			OR ($9 AND ip_prefix = $8 AND user_agent_hash = $10)
+		  )
+		LIMIT 1
+	`,
+		lockKey,
+		sessionToken,
+		shouldCheckDevice, deviceID,
+		shouldCheckFingerprint, fingerprint64,
+		shouldCheckIPPrefix, ipPrefix,
+		shouldCheckUANet, userAgentHash,
+	).Scan(&dummy)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func acquireDBSessionLockForConn(conn *websocket.Conn, userData UserData, fingerprint uint32) bool {
 	if sessionLockDB == nil || conn == nil {
 		return true
 	}
 
-	lockKey, progressID, discordID, deviceID, clientIP, fingerprint64 := buildSessionLockIdentity(userData, fingerprint)
+	lockKey, progressID, discordID, deviceID, clientIP, ipPrefix, userAgentHash, fingerprint64 := buildSessionLockIdentity(userData, fingerprint)
 	if lockKey == "" {
 		return true
 	}
@@ -264,25 +362,35 @@ func acquireDBSessionLockForConn(conn *websocket.Conn, userData UserData, finger
 	ctx, cancel := context.WithTimeout(context.Background(), sessionLockDBTimeout)
 	defer cancel()
 
+	strictConflict, err := hasStrictSignalConflict(ctx, lockKey, sessionToken, deviceID, fingerprint64, ipPrefix, userAgentHash)
+	if err != nil {
+		log.Printf("db session strict-check failed (allowing join): %v", err)
+	} else if strictConflict {
+		return false
+	}
+
 	result, err := sessionLockDB.ExecContext(ctx, `
-		INSERT INTO public.active_session_locks (
-			lock_key, session_token, progress_user_id, discord_id, device_id, client_ip, fingerprint, created_at, updated_at, expires_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now(), $8)
-		ON CONFLICT (lock_key) DO UPDATE
-		SET
-			session_token = EXCLUDED.session_token,
-			progress_user_id = EXCLUDED.progress_user_id,
-			discord_id = EXCLUDED.discord_id,
-			device_id = EXCLUDED.device_id,
-			client_ip = EXCLUDED.client_ip,
-			fingerprint = EXCLUDED.fingerprint,
-			updated_at = now(),
-			expires_at = EXCLUDED.expires_at
-		WHERE
-			public.active_session_locks.expires_at <= now()
-			OR public.active_session_locks.session_token = EXCLUDED.session_token
-	`, lockKey, sessionToken, progressID, discordID, deviceID, clientIP, fingerprint64, expiresAt)
+			INSERT INTO public.active_session_locks (
+				lock_key, session_token, progress_user_id, discord_id, device_id, client_ip, ip_prefix, user_agent_hash, fingerprint, created_at, updated_at, expires_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now(), $10)
+			ON CONFLICT (lock_key) DO UPDATE
+			SET
+				session_token = EXCLUDED.session_token,
+				progress_user_id = EXCLUDED.progress_user_id,
+				discord_id = EXCLUDED.discord_id,
+				device_id = EXCLUDED.device_id,
+				client_ip = EXCLUDED.client_ip,
+				ip_prefix = EXCLUDED.ip_prefix,
+				user_agent_hash = EXCLUDED.user_agent_hash,
+				fingerprint = EXCLUDED.fingerprint,
+				updated_at = now(),
+				expires_at = EXCLUDED.expires_at
+			WHERE
+				public.active_session_locks.expires_at <= now()
+				OR public.active_session_locks.session_token = EXCLUDED.session_token
+				OR public.active_session_locks.lock_key = EXCLUDED.lock_key
+		`, lockKey, sessionToken, progressID, discordID, deviceID, clientIP, ipPrefix, userAgentHash, fingerprint64, expiresAt)
 	if err != nil {
 		log.Printf("db session lock acquire failed (allowing join): %v", err)
 		return true

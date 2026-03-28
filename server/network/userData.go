@@ -17,13 +17,14 @@ import (
 
 // UserData represents the data associated with a user.
 type UserData struct {
-	ClientIP    string
-	Fingerprint *uint32
-	DeviceID    string
-	ID          string         `json:"id"`
-	Role        string         `json:"role"`
-	Discord     DiscordDetails `json:"discord"`
-	Skins       SkinDetails    `json:"skins"`
+	ClientIP      string
+	Fingerprint   *uint32
+	DeviceID      string
+	UserAgentHash string
+	ID            string         `json:"id"`
+	Role          string         `json:"role"`
+	Discord       DiscordDetails `json:"discord"`
+	Skins         SkinDetails    `json:"skins"`
 }
 
 type DiscordDetails struct {

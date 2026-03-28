@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -300,11 +301,27 @@ func ensureDeviceIDCookie(w http.ResponseWriter, r *http.Request) string {
 	return deviceID
 }
 
+func buildUserAgentHash(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	userAgent := strings.TrimSpace(strings.ToLower(r.UserAgent()))
+	acceptLanguage := strings.TrimSpace(strings.ToLower(r.Header.Get("Accept-Language")))
+	if userAgent == "" && acceptLanguage == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(userAgent + "||" + acceptLanguage))
+	// 64-bit prefix keeps payload short while still useful as a backend signal.
+	return hex.EncodeToString(sum[:8])
+}
+
 func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	deviceID := ensureDeviceIDCookie(w, r)
+	userAgentHash := buildUserAgentHash(r)
 	var userData network.UserData
 	userData.ClientIP = getClientIP(r)
 	userData.DeviceID = deviceID
+	userData.UserAgentHash = userAgentHash
 
 	refreshTokenCookie, err := r.Cookie("refreshToken")
 	if err != nil {
@@ -354,6 +371,7 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	userData.ClientIP = getClientIP(r)
 	userData.DeviceID = deviceID
+	userData.UserAgentHash = userAgentHash
 
 	network.WsEndpoint(w, r, userData)
 }
