@@ -90,6 +90,7 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 
 	switch messageType {
 	case MessageTypeHeartbeat:
+		touchDBSessionLockForConn(conn)
 		break
 	case MessageTypeJoin:
 		handleJoinMessage(conn, payload)
@@ -191,6 +192,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 
 	permission := MapRoleToPermission(userData.Role)
 	enforceMultiboxCheck := !DISABLE_MULTIBOX_CHECK
+	joinCompleted := false
 
 	if enforceMultiboxCheck {
 		// Reconnect quality-of-life:
@@ -247,6 +249,15 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 		sendError(conn)
 		return
 	}
+	if !acquireDBSessionLockForConn(conn, userData, fingerprint) {
+		sendSessionLockedError(conn)
+		return
+	}
+	defer func() {
+		if !joinCompleted {
+			releaseDBSessionLockForConn(conn)
+		}
+	}()
 
 	cleanName := filterProfanity(string(name))
 	cleanName = strings.TrimSpace(cleanName)
@@ -335,6 +346,7 @@ func handleJoinMessage(conn *websocket.Conn, payload []byte) {
 	if changed {
 		broadcastLeaderboardUpdateToAllExcept(&changes, player.ID)
 	}
+	joinCompleted = true
 }
 
 const resyncCooldown = 10 * time.Second
@@ -1480,6 +1492,7 @@ func handleClientActivity(conn *websocket.Conn, payload []byte) {
 	}
 
 	player.SetLastActivity()
+	touchDBSessionLockForConn(conn)
 	player.LastActivityWarningSent = time.Now()
 	SendPlayerActive(player)
 }

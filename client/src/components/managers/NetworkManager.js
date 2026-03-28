@@ -53,6 +53,9 @@ const INJECTED_SCRIPT_MARKERS = [
     "injected-web.js",
     "injected.js",
 ];
+const MULTITAB_GUARD_STORAGE_KEY = "warhex_active_tab_guard_v1";
+const MULTITAB_GUARD_HEARTBEAT_MS = 2200;
+const MULTITAB_GUARD_MAX_AGE_MS = 7000;
 const UPGRADE_VERIFY_DELAY_MS = 420;
 const UPGRADE_VERIFY_MAX_RETRIES = 2;
 const UPGRADE_VERIFY_RESYNC_COOLDOWN_MS = 11000;
@@ -109,6 +112,14 @@ export default class NetworkManager {
         this.extensionWatchdogTimer = null;
         this.unauthorizedExtensionDetected = false;
         this.enforceStrictClientSecurity = resolveStrictClientSecurityGuards();
+        this.pendingJoinBlockDialogs = [];
+        this.pendingJoinBlockDialogKeys = new Set();
+        this.multiTabBlocked = false;
+        this.multiTabBlockedReason = "";
+        this.localTabGuardID = `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+        this.localTabGuardOwnsLock = false;
+        this.localTabGuardHeartbeatTimer = null;
+        this.localTabGuardStorageHandler = null;
         this.pendingBuildingUpgrades = new Map();
         this.pendingUpgradeVerifyTimer = null;
         this.lastUpgradeAutoResyncAt = 0;
@@ -124,6 +135,176 @@ export default class NetworkManager {
         this.setupClientSecurityGuards();
         this.setupUserScriptErrorTrap();
         this.setupUnauthorizedExtensionWatchdog();
+        this.setupLocalMultiTabJoinGuard();
+    }
+
+    queueOrShowJoinBlockDialog(title, line1, line2, line3, confirmLabel, line4 = "") {
+        const key = `${title}::${line1}`;
+        if (this.pendingJoinBlockDialogKeys.has(key)) {
+            return;
+        }
+        const showDialog = this.core?.uiManager?.showMenuDialog;
+        if (typeof showDialog === "function") {
+            showDialog.call(this.core.uiManager, title, line1, line2, line3, confirmLabel, line4);
+            this.core?.setGameplayActive?.(false);
+            return;
+        }
+        this.pendingJoinBlockDialogKeys.add(key);
+        this.pendingJoinBlockDialogs.push({ title, line1, line2, line3, confirmLabel, line4, key });
+    }
+
+    flushPendingJoinBlockDialogs() {
+        const showDialog = this.core?.uiManager?.showMenuDialog;
+        if (typeof showDialog !== "function" || this.pendingJoinBlockDialogs.length === 0) {
+            return;
+        }
+        const queue = [...this.pendingJoinBlockDialogs];
+        this.pendingJoinBlockDialogs.length = 0;
+        this.pendingJoinBlockDialogKeys.clear();
+        for (const dialog of queue) {
+            showDialog.call(
+                this.core.uiManager,
+                dialog.title,
+                dialog.line1,
+                dialog.line2,
+                dialog.line3,
+                dialog.confirmLabel,
+                dialog.line4
+            );
+        }
+        this.core?.setGameplayActive?.(false);
+    }
+
+    runStartupJoinBlockChecks() {
+        this.flushPendingJoinBlockDialogs();
+        if (this.multiTabBlocked) {
+            this.showMultiTabJoinBlock();
+            return true;
+        }
+        if (this.enforceStrictClientSecurity && this.securityViolationReported) {
+            this.showSecurityViolationDialog(this.securityViolationReason || SECURITY_ALERT_REASON.DEVTOOLS_SHORTCUT);
+            return true;
+        }
+        if (this.enforceStrictClientSecurity && this.unauthorizedExtensionDetected) {
+            this.showUnauthorizedExtensionBlock({
+                blocked: true,
+                detectedExtensions: ["UserScript/Extension runtime"],
+                userScriptSources: [],
+            });
+            return true;
+        }
+        if (this.enforceStrictClientSecurity) {
+            const scan = this.scanJoinEnvironmentForUnauthorizedExtensions();
+            if (scan.blocked) {
+                this.handleUnauthorizedExtensionDetected(scan);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    readLocalTabGuardState() {
+        try {
+            const raw = localStorage.getItem(MULTITAB_GUARD_STORAGE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== "object") return null;
+            const tabId = String(parsed.tabId || "");
+            const updatedAt = Number(parsed.updatedAt || 0);
+            if (!tabId || !Number.isFinite(updatedAt)) return null;
+            return { tabId, updatedAt };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    isLocalTabGuardFresh(state) {
+        if (!state) return false;
+        return (Date.now() - Number(state.updatedAt || 0)) <= MULTITAB_GUARD_MAX_AGE_MS;
+    }
+
+    writeLocalTabGuardState() {
+        if (!this.localTabGuardOwnsLock) return;
+        try {
+            localStorage.setItem(MULTITAB_GUARD_STORAGE_KEY, JSON.stringify({
+                tabId: this.localTabGuardID,
+                updatedAt: Date.now(),
+            }));
+        } catch (error) {}
+    }
+
+    teardownLocalMultiTabJoinGuard() {
+        if (this.localTabGuardHeartbeatTimer) {
+            clearInterval(this.localTabGuardHeartbeatTimer);
+            this.localTabGuardHeartbeatTimer = null;
+        }
+        if (this.localTabGuardStorageHandler && typeof window !== "undefined") {
+            window.removeEventListener("storage", this.localTabGuardStorageHandler);
+            this.localTabGuardStorageHandler = null;
+        }
+        if (!this.localTabGuardOwnsLock) return;
+        this.localTabGuardOwnsLock = false;
+        try {
+            const current = this.readLocalTabGuardState();
+            if (current?.tabId === this.localTabGuardID) {
+                localStorage.removeItem(MULTITAB_GUARD_STORAGE_KEY);
+            }
+        } catch (error) {}
+    }
+
+    markMultiTabBlocked(reason = "") {
+        if (this.multiTabBlocked) return;
+        this.multiTabBlocked = true;
+        this.multiTabBlockedReason = String(reason || "");
+        this.teardownLocalMultiTabJoinGuard();
+        this.showMultiTabJoinBlock();
+    }
+
+    showMultiTabJoinBlock() {
+        this.queueOrShowJoinBlockDialog(
+            "Multiple Tabs Detected",
+            "Game start blocked. Another Warhex tab is active in this browser.",
+            "Close the extra tab/window before joining.",
+            "This avoids multi-tab/multibox conflicts and unexpected disconnects.",
+            "Understood",
+            "After closing the other tab, reload this page and try again."
+        );
+        this.core?.setGameplayActive?.(false);
+    }
+
+    setupLocalMultiTabJoinGuard() {
+        if (typeof window === "undefined") return;
+        let storageAvailable = true;
+        try {
+            localStorage.setItem("__warhex_tab_guard_test__", "1");
+            localStorage.removeItem("__warhex_tab_guard_test__");
+        } catch (error) {
+            storageAvailable = false;
+        }
+        if (!storageAvailable) return;
+
+        const existing = this.readLocalTabGuardState();
+        if (existing && existing.tabId !== this.localTabGuardID && this.isLocalTabGuardFresh(existing)) {
+            this.markMultiTabBlocked("existing_active_tab");
+            return;
+        }
+
+        this.localTabGuardOwnsLock = true;
+        this.writeLocalTabGuardState();
+        this.localTabGuardHeartbeatTimer = window.setInterval(() => {
+            this.writeLocalTabGuardState();
+        }, MULTITAB_GUARD_HEARTBEAT_MS);
+
+        this.localTabGuardStorageHandler = (event) => {
+            if (event?.key !== MULTITAB_GUARD_STORAGE_KEY) return;
+            if (this.multiTabBlocked) return;
+            const state = this.readLocalTabGuardState();
+            if (state && state.tabId !== this.localTabGuardID && this.isLocalTabGuardFresh(state)) {
+                this.markMultiTabBlocked("storage_update");
+            }
+        };
+        window.addEventListener("storage", this.localTabGuardStorageHandler);
+        window.addEventListener("beforeunload", () => this.teardownLocalMultiTabJoinGuard(), { once: true });
     }
 
     containsUnauthorizedExtensionMarkers(value) {
@@ -1305,6 +1486,17 @@ export default class NetworkManager {
             this.showUnauthorizedExtensionBlock();
             return;
         }
+        if (payload?.code === ErrorCodes.SESSION_LOCKED) {
+            this.queueOrShowJoinBlockDialog(
+                "Session Locked",
+                "Game start blocked. Another active session was detected for this identity/device.",
+                "Close the other Warhex tab/window (including private/incognito) and try again.",
+                "This lock is enforced by the backend to reduce multibox/multi-tab abuse.",
+                "Understood",
+                "If it still happens, wait a few seconds and retry."
+            );
+            return;
+        }
 
         this.core.uiManager.showMenuDialog(
             "Connection Issue",
@@ -2316,7 +2508,7 @@ export default class NetworkManager {
 
     showSecurityViolationDialog(reasonCode) {
         const reasonText = this.securityReasonLabel(reasonCode);
-        this.core?.uiManager?.showMenuDialog(
+        this.queueOrShowJoinBlockDialog(
             "Security Violation",
             `${reasonText}. Session blocked.`,
             "DevTools/inspect shortcuts are not allowed in this match.",
@@ -2588,7 +2780,7 @@ export default class NetworkManager {
             ? `Source sample: <b>${String(source).slice(0, 110)}</b>`
             : "Turn it off, reload the page, and try again.";
 
-        this.core?.uiManager?.showMenuDialog(
+        this.queueOrShowJoinBlockDialog(
             "Unauthorized Extension Detected",
             `Game start blocked. Detected: ${detectedText}.`,
             "Disable any script/CSS editing extension before joining.",
@@ -2601,6 +2793,11 @@ export default class NetworkManager {
 
     // Join the game by sending a join message to the server
     joinGame (playerName, equippedSkin) {
+        if (this.multiTabBlocked) {
+            this.showMultiTabJoinBlock();
+            return false;
+        }
+
         if (this.enforceStrictClientSecurity && this.unauthorizedExtensionDetected) {
             this.showUnauthorizedExtensionBlock({
                 blocked: true,

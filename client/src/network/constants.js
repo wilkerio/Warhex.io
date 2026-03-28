@@ -110,7 +110,8 @@ export const X1DuelModes = {
 export const ErrorCodes = {
     SERVER_FULL: 0,
     RELOCATE_COOLDOWN: 1,
-    UNAUTHORIZED_EXTENSION: 2
+    UNAUTHORIZED_EXTENSION: 2,
+    SESSION_LOCKED: 3
 };
 
 export const BuildingPlacementFailReasons = {

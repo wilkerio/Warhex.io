@@ -49,6 +49,7 @@ func initWsConnectionLimiter() *rate.Limiter {
 
 func init() {
 	workerPool = NewWorkerPool(4)
+	initSessionLockStore()
 	// Start listening for events from the game package
 	go listenForEvents()
 }
@@ -180,6 +181,7 @@ func handleEvent(event game.Event) {
 		}
 
 		ClearFingerprintForConn(player.Conn)
+		releaseDBSessionLockForConn(player.Conn)
 
 		removePlayerMessageState(player.ID)
 	case game.Kick:
@@ -220,6 +222,7 @@ func handleEvent(event game.Event) {
 		}
 
 		ClearFingerprintForConn(player.Conn)
+		releaseDBSessionLockForConn(player.Conn)
 
 		removePlayerMessageState(player.ID)
 	case game.PlayerInactiveWarning:
@@ -341,6 +344,8 @@ func removePlayerByConnection(conn *websocket.Conn) {
 			}
 		}
 	}
+
+	releaseDBSessionLockForConn(conn)
 
 	if userOk {
 		RemoveUserConnection(conn)

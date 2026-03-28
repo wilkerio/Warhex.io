@@ -3,6 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,6 +18,7 @@ import (
 	"server/network"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,6 +26,10 @@ var PORT string
 var bindAddress string
 var authAPIBaseURL string
 var allowedOrigins map[string]struct{}
+var deviceIDSigningSecret []byte
+var deviceIDSecretOnce sync.Once
+
+const deviceCookieName = "warhex_device_id"
 
 func parseCSV(value string) []string {
 	parts := strings.Split(value, ",")
@@ -197,9 +206,105 @@ func getClientIP(r *http.Request) string {
 	return clientIP
 }
 
+func resolveDeviceIDSigningSecret() []byte {
+	deviceIDSecretOnce.Do(func() {
+		raw := strings.TrimSpace(os.Getenv("DEVICE_ID_SIGNING_SECRET"))
+		if raw == "" {
+			raw = strings.TrimSpace(os.Getenv("AUTH_API_SECRET"))
+		}
+		if raw == "" {
+			buf := make([]byte, 32)
+			if _, err := rand.Read(buf); err == nil {
+				deviceIDSigningSecret = []byte(base64.RawURLEncoding.EncodeToString(buf))
+				log.Println("DEVICE_ID_SIGNING_SECRET missing; using ephemeral in-memory secret for this process")
+				return
+			}
+			raw = fmt.Sprintf("fallback_%d", time.Now().UnixNano())
+			log.Println("DEVICE_ID_SIGNING_SECRET missing and random seed failed; using weak fallback secret")
+		}
+		deviceIDSigningSecret = []byte(raw)
+	})
+	return deviceIDSigningSecret
+}
+
+func signDeviceID(deviceID string, secret []byte) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(deviceID))
+	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return deviceID + "." + signature
+}
+
+func verifySignedDeviceID(value string, secret []byte) (string, bool) {
+	parts := strings.SplitN(strings.TrimSpace(value), ".", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	deviceID := strings.TrimSpace(parts[0])
+	signature := strings.TrimSpace(parts[1])
+	if len(deviceID) < 16 || len(signature) < 16 {
+		return "", false
+	}
+	if _, err := base64.RawURLEncoding.DecodeString(signature); err != nil {
+		return "", false
+	}
+	expected := signDeviceID(deviceID, secret)
+	expectedSig := strings.SplitN(expected, ".", 2)[1]
+	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
+		return "", false
+	}
+	return deviceID, true
+}
+
+func generateDeviceID() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("dev_%d", time.Now().UnixNano())
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func isSecureRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	return proto == "https"
+}
+
+func ensureDeviceIDCookie(w http.ResponseWriter, r *http.Request) string {
+	secret := resolveDeviceIDSigningSecret()
+	if len(secret) == 0 {
+		return ""
+	}
+
+	if existingCookie, err := r.Cookie(deviceCookieName); err == nil {
+		if deviceID, ok := verifySignedDeviceID(existingCookie.Value, secret); ok {
+			return deviceID
+		}
+	}
+
+	deviceID := generateDeviceID()
+	signedValue := signDeviceID(deviceID, secret)
+	http.SetCookie(w, &http.Cookie{
+		Name:     deviceCookieName,
+		Value:    signedValue,
+		Path:     "/",
+		MaxAge:   60 * 60 * 24 * 365 * 2,
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+	return deviceID
+}
+
 func wsEndpoint(w http.ResponseWriter, r *http.Request) {
+	deviceID := ensureDeviceIDCookie(w, r)
 	var userData network.UserData
 	userData.ClientIP = getClientIP(r)
+	userData.DeviceID = deviceID
 
 	refreshTokenCookie, err := r.Cookie("refreshToken")
 	if err != nil {
@@ -247,6 +352,8 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to parse user data", http.StatusInternalServerError)
 		return
 	}
+	userData.ClientIP = getClientIP(r)
+	userData.DeviceID = deviceID
 
 	network.WsEndpoint(w, r, userData)
 }

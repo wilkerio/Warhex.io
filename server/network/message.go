@@ -5,6 +5,7 @@ const (
 	ErrorCodeServerFull       byte = 0
 	ErrorCodeRelocateCooldown byte = 1
 	ErrorCodeUnauthorizedExt  byte = 2
+	ErrorCodeSessionLocked    byte = 3
 )
 
 const (

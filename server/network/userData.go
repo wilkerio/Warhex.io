@@ -19,6 +19,7 @@ import (
 type UserData struct {
 	ClientIP    string
 	Fingerprint *uint32
+	DeviceID    string
 	ID          string         `json:"id"`
 	Role        string         `json:"role"`
 	Discord     DiscordDetails `json:"discord"`

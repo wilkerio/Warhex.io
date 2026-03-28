@@ -1146,6 +1146,18 @@ func sendUnauthorizedExtensionError(conn *websocket.Conn) {
 	sendToClient(conn, EncodeMessage(message), nil)
 }
 
+func sendSessionLockedError(conn *websocket.Conn) {
+	message := Message{
+		Type: MessageTypeError,
+	}
+
+	buffer := new(bytes.Buffer)
+	buffer.WriteByte(ErrorCodeSessionLocked)
+	message.Payload = buffer.Bytes()
+
+	sendToClient(conn, EncodeMessage(message), nil)
+}
+
 func SendServerVersion(conn *websocket.Conn, version byte) {
 	message := Message{
 		Type: MessageTypeServerVersion,

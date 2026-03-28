@@ -121,6 +121,7 @@ export default class UIManager {
         this.addPlayButtonListener();
         this.addContinueButtonListener();
         this.addMenuDialogButtonListener();
+        this.core?.networkManager?.runStartupJoinBlockChecks?.();
         this.addTutorialButtonListener();
         this.addSkinNavigationListeners(); // New: skin navigation
         this.addSkinUseButtonListener(); // New: Use button
