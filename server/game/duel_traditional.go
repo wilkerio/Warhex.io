@@ -43,9 +43,75 @@ func applyTraditionalX1SetupForPlayer(player *Player) {
 	ensureBarracksVariantWithRetry(player, GREATER_BARRACKS)
 	ensureTraditionalBarracksActivation(player)
 	upgradePlayerBuildingsToVariant(player, ARMORY, BuildingVariant(1))
+	spawnTraditionalOpeningSoldiers(player)
 	player.Base.Health.Reset()
 	TriggerBaseHealthUpdateEvent(player.Base)
 	fillPlayerPowerTo(player, PLAYER_MAX_POWER)
+}
+
+func spawnTraditionalOpeningSoldiers(player *Player) {
+	if player == nil || player.IsMarkedForRemoval() {
+		return
+	}
+
+	requiredPopulation, ok := GetUnitRequiredPopulation(SOLDIER)
+	if !ok || requiredPopulation == 0 {
+		return
+	}
+
+	barracks := collectPlayerBuildingsByType(player, BARRACKS)
+	if len(barracks) == 0 {
+		return
+	}
+
+	for {
+		if !hasTraditionalUnitIDBudget(player) {
+			return
+		}
+
+		spawnedAny := false
+		for _, building := range barracks {
+			if building == nil || building.IsMarkedForRemoval() {
+				continue
+			}
+			if !hasTraditionalUnitIDBudget(player) {
+				return
+			}
+
+			spawning := player.GetUnitSpawningForBarrack(building)
+			if spawning == nil || !spawning.Activated || spawning.UnitType != SOLDIER {
+				continue
+			}
+			if !player.Population.IncrementUsed(requiredPopulation) {
+				return
+			}
+
+			unit, spawned := player.AddUnit(spawning.UnitType, spawning.UnitVariant, building)
+			if !spawned || unit == nil {
+				player.Population.DecrementUsed(requiredPopulation)
+				continue
+			}
+
+			player.AddUnitBulletSpawning(unit)
+			TriggerUnitSpawnEvent(unit, building)
+			spawnedAny = true
+		}
+
+		if !spawnedAny {
+			return
+		}
+	}
+}
+
+func hasTraditionalUnitIDBudget(player *Player) bool {
+	if player == nil || player.AvailableUnitIDs == nil {
+		return false
+	}
+
+	// Keep one slot reserved so commander spawn for X1 round setup never fails.
+	player.AvailableUnitIDs.Lock()
+	defer player.AvailableUnitIDs.Unlock()
+	return len(player.AvailableUnitIDs.IDs) > 1
 }
 
 func applyLegacyExternaLayout(player *Player) {
