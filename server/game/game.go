@@ -1671,9 +1671,9 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 			}
 			if !isBaseAlive {
 				if !player.IsMarkedForRemoval() {
-					scoreIncrement := (player.Score / 100) * 50
+					scoreIncrement := player.Score / 2
 					powerIncrement := math.Min((float64(player.Score)/100)*10, 6000)
-					otherPlayer.IncrementScore(scoreIncrement)
+					otherPlayer.IncrementScoreAllowDuel(scoreIncrement)
 					otherPlayer.IncrementKills(1)
 					ApplyOwnerKillReward(otherPlayer)
 					otherPlayer.Resources.Power.Increment(uint16(powerIncrement))
@@ -1939,11 +1939,11 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 
 				if !otherPlayerIsAlive {
 					// Calculate the score and power increment
-					scoreIncrement := (otherPlayer.Score / 100) * 50
+					scoreIncrement := otherPlayer.Score / 2
 					powerIncrement := math.Min((float64(otherPlayer.Score)/100)*10, 6000)
 
 					// Apply the increments
-					player.IncrementScore(scoreIncrement)
+					player.IncrementScoreAllowDuel(scoreIncrement)
 					player.IncrementKills(1)
 					ApplyOwnerKillReward(player)
 					player.Resources.Power.Increment(uint16(powerIncrement))
@@ -2162,16 +2162,15 @@ func applyExplosionDamage(unit *Unit) {
 				TriggerBaseHealthUpdateEvent(player.Base)
 				if !isAlive {
 					player.MarkForRemoval()
-					unit.Player.IncrementScore((player.Score / 100) * 50)
 					unit.Player.IncrementKills(1)
 					ApplyOwnerKillReward(unit.Player)
 
 					// Calculate the score and power increment
-					scoreIncrement := (player.Score / 100) * 50
+					scoreIncrement := player.Score / 2
 					powerIncrement := math.Min((float64(player.Score)/100)*10, 6000)
 
 					// Apply the increments
-					unit.Player.IncrementScore(scoreIncrement)
+					unit.Player.IncrementScoreAllowDuel(scoreIncrement)
 					unit.Player.Resources.Power.Increment(uint16(powerIncrement))
 
 					TriggerPlayerKilledEvent(player, unit.Player)
@@ -2447,6 +2446,20 @@ func getUnitDestroyPowerReward(unit *Unit) uint16 {
 	}
 }
 
+func getBuildingDestroyPowerReward(building *Building) uint16 {
+	if building == nil {
+		return 0
+	}
+
+	cost, ok := GetBuildingCost(building.Type, building.Variant)
+	if !ok || cost == 0 {
+		return 0
+	}
+
+	// Reward 50% of the destroyed building cost.
+	return cost / 2
+}
+
 func grantDestroyRewardForUnit(killer *Player, unit *Unit) {
 	if killer == nil || unit == nil || unit.Player == nil || killer.ID == unit.Player.ID {
 		return
@@ -2461,9 +2474,20 @@ func grantDestroyRewardForUnit(killer *Player, unit *Unit) {
 }
 
 func grantDestroyRewardForBuilding(killer *Player, building *Building) {
-	// Building destruction no longer grants a % power refund/reward.
-	_ = killer
-	_ = building
+	if killer == nil || building == nil || building.Owner == nil {
+		return
+	}
+
+	if killer.ID == building.Owner.GetID() {
+		return
+	}
+
+	reward := getBuildingDestroyPowerReward(building)
+	if reward == 0 {
+		return
+	}
+
+	killer.Resources.Power.Increment(reward)
 }
 
 func handleUnitDestroyed(unit *Unit, killer *Player) {

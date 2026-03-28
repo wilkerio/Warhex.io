@@ -362,21 +362,36 @@ func (p *Player) WasBaseDamagedWithin(window time.Duration) bool {
 	return time.Since(last) < window
 }
 
-func (p *Player) IncrementScore(value uint32) {
-	p.RLock()
-	inDuel := p.InDuel
-	p.RUnlock()
-	if inDuel {
-		// Do not award rank score while player is in protected X1.
+func (p *Player) incrementScore(value uint32, allowInDuel bool) {
+	if value == 0 {
 		return
 	}
+
+	if !allowInDuel {
+		p.RLock()
+		inDuel := p.InDuel
+		p.RUnlock()
+		if inDuel {
+			// Do not award rank score while player is in protected X1.
+			return
+		}
+	}
+
 	p.Lock()
-	p.Score += uint32(value)
+	p.Score += value
 	p.Unlock()
 	changes, changed := State.Leaderboard.Update(State.Players)
 	if changed {
 		TriggerLeaderboardUpdateEvent(&changes)
 	}
+}
+
+func (p *Player) IncrementScore(value uint32) {
+	p.incrementScore(value, false)
+}
+
+func (p *Player) IncrementScoreAllowDuel(value uint32) {
+	p.incrementScore(value, true)
 }
 
 func (p *Player) IncrementKills(value uint32) {
