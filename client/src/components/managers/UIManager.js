@@ -11144,8 +11144,8 @@ export default class UIManager {
         if (waiting) {
             title.textContent = requesterName
                 ? `${requesterName} pediu contagem`
-                : "Aguardando aceitação...";
-            button.textContent = "Aguardando Accept...";
+                : "Aguardando confirmacao...";
+            button.textContent = "Aguardando aceitacao...";
             button.disabled = true;
             button.style.cursor = "default";
             button.style.border = "1px solid rgba(255, 128, 128, 0.74)";
@@ -11194,13 +11194,13 @@ export default class UIManager {
         const title = document.createElement("div");
         title.style.fontSize = "15px";
         title.style.fontWeight = "900";
-        title.textContent = `${requesterName || "Seu oponente"} quer iniciar contagem`;
+        title.textContent = `${requesterName || "Seu oponente"} solicitou a contagem`;
 
         const subtitle = document.createElement("div");
         subtitle.style.marginTop = "4px";
         subtitle.style.fontSize = "13px";
         subtitle.style.color = "#ffd3d3";
-        subtitle.textContent = "Aceitar inicia o 5...4...3...2...1...GO para os dois.";
+        subtitle.textContent = "Voce deseja aceitar agora?";
 
         const actions = document.createElement("div");
         actions.style.marginTop = "10px";

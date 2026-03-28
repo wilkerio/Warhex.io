@@ -64,6 +64,7 @@ const X1_COUNTDOWN_STATUS_SENT = 0;
 const X1_COUNTDOWN_STATUS_ACCEPTED = 1;
 const X1_COUNTDOWN_STATUS_DECLINED = 2;
 const X1_COUNTDOWN_STATUS_UNAVAILABLE = 3;
+const X1_COUNTDOWN_PENDING_TIMEOUT_MS = 12000;
 
 function hasKnownEditingExtensionToken(text) {
     return KNOWN_GAME_EDITING_EXTENSIONS.some((ext) => ext.tokens.some((token) => text.includes(token)));
@@ -129,6 +130,7 @@ export default class NetworkManager {
         this.pendingUpgradeVerifyTimer = null;
         this.lastUpgradeAutoResyncAt = 0;
         this.pendingX1CountdownTargetID = 0;
+        this.pendingX1CountdownTimeout = null;
 
         // Use async initialization for login status
         // this.initialize();
@@ -1930,6 +1932,7 @@ export default class NetworkManager {
     handlePlayerLeft (payload) {
         const { playerID } = payload;
         if (Number(this.pendingX1CountdownTargetID || 0) === Number(playerID || 0)) {
+            this.clearPendingX1CountdownTimeout();
             this.pendingX1CountdownTargetID = 0;
             this.core.uiManager.hideX1CountdownRequestPrompt?.();
             this.core.uiManager.setX1CountdownControlWaiting?.(false);
@@ -3177,28 +3180,39 @@ export default class NetworkManager {
     }
 
     clearX1CountdownUiState() {
+        this.clearPendingX1CountdownTimeout();
         this.pendingX1CountdownTargetID = 0;
         this.core.uiManager.hideX1CountdownRequestPrompt?.();
         this.core.uiManager.hideX1CountdownOverlay?.();
         this.core.uiManager.hideX1CountdownControl?.();
     }
 
-    refreshX1CountdownControl(opponentID = null, opponentName = "") {
-        const gameManager = this.core?.gameManager;
-        const localID = Number(gameManager?.getCurrentPlayerId?.() || 0);
-        const duelOpponentID = Number(opponentID || gameManager?.duelOpponentID || 0);
-        if (!localID || !duelOpponentID || duelOpponentID === localID) {
-            this.core.uiManager.hideX1CountdownControl?.();
-            return;
+    clearPendingX1CountdownTimeout() {
+        if (this.pendingX1CountdownTimeout) {
+            clearTimeout(this.pendingX1CountdownTimeout);
+            this.pendingX1CountdownTimeout = null;
         }
-        const opponent = gameManager?.getPlayerById?.(duelOpponentID);
-        const label = opponentName || opponent?.name || "Opponent";
-        this.core.uiManager.showX1CountdownControl?.(
-            label,
-            () => this.sendX1StartCountdownRequest(duelOpponentID)
-        );
-        const waitingForThisOpponent = Number(this.pendingX1CountdownTargetID || 0) === duelOpponentID;
-        this.core.uiManager.setX1CountdownControlWaiting?.(waitingForThisOpponent, label);
+    }
+
+    armPendingX1CountdownTimeout(targetPlayerID) {
+        const targetID = Number(targetPlayerID || 0);
+        if (!targetID) return;
+        this.clearPendingX1CountdownTimeout();
+        this.pendingX1CountdownTimeout = setTimeout(() => {
+            if (Number(this.pendingX1CountdownTargetID || 0) !== targetID) return;
+            this.pendingX1CountdownTargetID = 0;
+            this.core.uiManager.setX1CountdownControlWaiting?.(false);
+            this.core.uiManager.addChatMessage(
+                "System",
+                "Sem resposta para iniciar contagem. Tente novamente.",
+                "#ffcc66"
+            );
+            this.refreshX1CountdownControl(targetID);
+        }, X1_COUNTDOWN_PENDING_TIMEOUT_MS);
+    }
+
+    refreshX1CountdownControl(opponentID = null, opponentName = "") {
+        this.core.uiManager.hideX1CountdownControl?.();
     }
 
     sendX1Challenge(targetPlayerID, duelMode = X1DuelModes.CURRENT_BASE) {
@@ -3222,12 +3236,8 @@ export default class NetworkManager {
     }
 
     sendX1StartCountdownRequest(targetPlayerID) {
-        const safeTargetID = Number(targetPlayerID || 0);
-        if (!safeTargetID) return;
-        this.pendingX1CountdownTargetID = safeTargetID;
-        this.core.uiManager.setX1CountdownControlWaiting?.(true);
-        const message = Message.createX1StartCountdownMessage(safeTargetID);
-        this.sendMessage(message);
+        this.clearX1CountdownUiState();
+        this.core.uiManager.addChatMessage("System", "Iniciar contagem foi removido.", "#ffcc66");
     }
 
     sendX1StartCountdownResponse(requesterPlayerID, accepted) {
@@ -3260,7 +3270,9 @@ export default class NetworkManager {
                 this.core.uiManager.addChatMessage("System", `X1 challenge sent to ${opponent}.`, "#60c1ff");
                 break;
             case 1:
+                this.clearPendingX1CountdownTimeout();
                 this.pendingX1CountdownTargetID = 0;
+                this.core.uiManager.hideX1CountdownControl?.();
                 this.core.uiManager.addChatMessage(
                     "System",
                     `X1 accepted by ${opponent}. Protected arena active${prepSeconds ? ` (${prepSeconds}s setup)` : ""} (${modeLabel}).`,
@@ -3274,7 +3286,6 @@ export default class NetworkManager {
                     }
                 }
                 this.core.uiManager.showX1DuelStatus(opponent, prepSeconds || 0);
-                this.refreshX1CountdownControl(playerID, opponent);
                 break;
             case 2:
                 this.clearX1CountdownUiState();
@@ -3315,8 +3326,7 @@ export default class NetworkManager {
         this.core.gameManager.upsertGlobalDuelArena(playerAID, playerBID, arena);
         const localID = Number(this.core.gameManager.getCurrentPlayerId?.() || 0);
         if (localID && (localID === Number(playerAID) || localID === Number(playerBID))) {
-            const opponentID = localID === Number(playerAID) ? Number(playerBID) : Number(playerAID);
-            this.refreshX1CountdownControl(opponentID);
+            this.core.uiManager.hideX1CountdownControl?.();
         }
     }
 
@@ -3387,61 +3397,16 @@ export default class NetworkManager {
     handleX1StartCountdownPrompt(payload) {
         const requesterID = Number(payload?.requesterID || 0);
         if (!requesterID) return;
-        const requesterName = payload?.requesterName || "Opponent";
-        this.core.uiManager.showX1CountdownRequestPrompt?.(
-            requesterName,
-            () => this.sendX1StartCountdownResponse(requesterID, true),
-            () => this.sendX1StartCountdownResponse(requesterID, false)
-        );
+        this.sendX1StartCountdownResponse(requesterID, false);
     }
 
     handleX1StartCountdownResult(payload) {
-        const status = Number(payload?.status ?? -1);
-        const requesterID = Number(payload?.requesterID || 0);
-        const targetID = Number(payload?.targetID || 0);
-        const requesterName = payload?.requesterName || "Player";
-        const targetName = payload?.targetName || "Player";
-        const countdownSeconds = Math.max(1, Number(payload?.countdownSeconds || 5));
-        const localID = Number(this.core?.gameManager?.getCurrentPlayerId?.() || 0);
-        const isRequester = localID && requesterID && localID === requesterID;
-        const isTarget = localID && targetID && localID === targetID;
-
-        switch (status) {
-            case X1_COUNTDOWN_STATUS_SENT:
-                if (isRequester || !localID) {
-                    this.core.uiManager.addChatMessage("System", `Countdown request sent to ${targetName}.`, "#60c1ff");
-                }
-                break;
-            case X1_COUNTDOWN_STATUS_ACCEPTED: {
-                this.pendingX1CountdownTargetID = 0;
-                this.core.uiManager.hideX1CountdownRequestPrompt?.();
-                this.core.uiManager.setX1CountdownControlWaiting?.(false);
-                this.core.uiManager.addChatMessage("System", `Countdown accepted. Match starts in ${countdownSeconds}s.`, "#7CFC00");
-                this.core.uiManager.showX1CountdownOverlay?.(countdownSeconds);
-                const opponentID = isRequester ? targetID : requesterID;
-                const opponentName = isRequester ? targetName : requesterName;
-                this.refreshX1CountdownControl(opponentID, opponentName);
-                break;
-            }
-            case X1_COUNTDOWN_STATUS_DECLINED:
-                this.pendingX1CountdownTargetID = 0;
-                this.core.uiManager.hideX1CountdownRequestPrompt?.();
-                this.core.uiManager.setX1CountdownControlWaiting?.(false);
-                if (isRequester) {
-                    this.core.uiManager.addChatMessage("System", `${targetName} declined the countdown.`, "#ffcc66");
-                } else if (isTarget) {
-                    this.core.uiManager.addChatMessage("System", `You declined ${requesterName}'s countdown request.`, "#ffcc66");
-                }
-                break;
-            case X1_COUNTDOWN_STATUS_UNAVAILABLE:
-                this.pendingX1CountdownTargetID = 0;
-                this.core.uiManager.hideX1CountdownRequestPrompt?.();
-                this.core.uiManager.setX1CountdownControlWaiting?.(false);
-                this.core.uiManager.addChatMessage("System", "Countdown unavailable right now.", "#ff7b7b");
-                break;
-            default:
-                break;
-        }
+        this.clearPendingX1CountdownTimeout();
+        this.pendingX1CountdownTargetID = 0;
+        this.core.uiManager.hideX1CountdownRequestPrompt?.();
+        this.core.uiManager.hideX1CountdownOverlay?.();
+        this.core.uiManager.hideX1CountdownControl?.();
+        this.core.uiManager.setX1CountdownControlWaiting?.(false);
     }
 
     sendResyncRequest () {

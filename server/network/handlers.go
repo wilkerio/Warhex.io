@@ -2495,40 +2495,7 @@ func handleClientX1StartCountdown(conn *websocket.Conn, payload []byte) {
 	game.State.RLock()
 	target := game.State.Players[targetID]
 	game.State.RUnlock()
-	if target == nil || target.IsMarkedForRemoval() {
-		sendX1StartCountdownResult(requester, requester, nil, x1StartCountdownResultUnavailable, 0)
-		return
-	}
-
-	requester.RLock()
-	requesterInDuel := requester.InDuel
-	requesterOpponentID := requester.DuelOpponentID
-	requester.RUnlock()
-	target.RLock()
-	targetInDuel := target.InDuel
-	targetOpponentID := target.DuelOpponentID
-	target.RUnlock()
-
-	if !requesterInDuel || !targetInDuel || requesterOpponentID != target.ID || targetOpponentID != requester.ID {
-		sendX1StartCountdownResult(requester, requester, target, x1StartCountdownResultUnavailable, 0)
-		return
-	}
-
-	x1RoundScoreMx.Lock()
-	if hasPendingX1StartCountdownRequestUnsafe(requester.ID) || hasPendingX1StartCountdownRequestUnsafe(target.ID) {
-		x1RoundScoreMx.Unlock()
-		sendX1StartCountdownResult(requester, requester, target, x1StartCountdownResultUnavailable, 0)
-		return
-	}
-	x1StartCountdownReq[target.ID] = x1StartCountdownRequest{
-		requesterID: requester.ID,
-		targetID:    target.ID,
-		createdAt:   time.Now(),
-	}
-	x1RoundScoreMx.Unlock()
-
-	sendX1StartCountdownPrompt(target, requester)
-	sendX1StartCountdownResult(requester, requester, target, x1StartCountdownResultSent, 0)
+	sendX1StartCountdownResult(requester, requester, target, x1StartCountdownResultUnavailable, 0)
 }
 
 func handleClientX1StartCountdownReply(conn *websocket.Conn, payload []byte) {
@@ -2543,48 +2510,13 @@ func handleClientX1StartCountdownReply(conn *websocket.Conn, payload []byte) {
 	targetPlayer.SetLastActivity()
 
 	requesterID := game.ID(payload[0])
-	accepted := payload[1] == 1
-
-	x1RoundScoreMx.Lock()
-	request, exists := x1StartCountdownReq[targetPlayer.ID]
-	if !exists || request.requesterID != requesterID {
-		x1RoundScoreMx.Unlock()
-		sendX1StartCountdownResult(targetPlayer, nil, nil, x1StartCountdownResultUnavailable, 0)
-		return
-	}
-	delete(x1StartCountdownReq, targetPlayer.ID)
-	x1RoundScoreMx.Unlock()
-
 	game.State.RLock()
 	requester := game.State.Players[requesterID]
 	game.State.RUnlock()
-	if requester == nil || requester.IsMarkedForRemoval() {
-		sendX1StartCountdownResult(targetPlayer, nil, nil, x1StartCountdownResultUnavailable, 0)
-		return
-	}
-
-	targetPlayer.RLock()
-	targetInDuel := targetPlayer.InDuel
-	targetOpponentID := targetPlayer.DuelOpponentID
-	targetPlayer.RUnlock()
-	requester.RLock()
-	requesterInDuel := requester.InDuel
-	requesterOpponentID := requester.DuelOpponentID
-	requester.RUnlock()
-	if !targetInDuel || !requesterInDuel || targetOpponentID != requester.ID || requesterOpponentID != targetPlayer.ID {
-		sendX1StartCountdownResult(targetPlayer, requester, targetPlayer, x1StartCountdownResultUnavailable, 0)
+	sendX1StartCountdownResult(targetPlayer, requester, targetPlayer, x1StartCountdownResultUnavailable, 0)
+	if requester != nil && !requester.IsMarkedForRemoval() {
 		sendX1StartCountdownResult(requester, requester, targetPlayer, x1StartCountdownResultUnavailable, 0)
-		return
 	}
-
-	if !accepted {
-		sendX1StartCountdownResult(targetPlayer, requester, targetPlayer, x1StartCountdownResultDeclined, 0)
-		sendX1StartCountdownResult(requester, requester, targetPlayer, x1StartCountdownResultDeclined, 0)
-		return
-	}
-
-	sendX1StartCountdownResult(targetPlayer, requester, targetPlayer, x1StartCountdownResultAccepted, x1StartCountdownSeconds)
-	sendX1StartCountdownResult(requester, requester, targetPlayer, x1StartCountdownResultAccepted, x1StartCountdownSeconds)
 }
 
 func handleClientWatchLeaveBase(conn *websocket.Conn, payload []byte) {

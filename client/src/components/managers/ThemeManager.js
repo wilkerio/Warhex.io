@@ -37,6 +37,61 @@ export default class ThemeManager {
                 bulletColor: "#A8A8A8",
                 redColor: "rgba(255, 0, 0, 0.1)",
                 targetColor: "#b4b4b4",
+            },
+            infinity: {
+                background: "#000",
+                lineColor: "#ffffff1a",
+                protectionColor: "#ffffff2a",
+                selectionColor: "rgba(255, 255, 255, 0.12)",
+                selectionStroke: "rgba(255, 255, 255, 0.28)",
+                darkColor: "#666",
+                outlineWidth: 5,
+                lanePad: 20,
+                textColor: "#808080",
+                backgroundColor: "#000",
+                outerColor: "#262626ff",
+                indicatorColor: "#ffffff",
+                turretColor: "#ffffff",
+                bulletColor: "#ffffff",
+                redColor: "#ffffff",
+                targetColor: "#ffffff",
+                playerColors: "#f9ff6055 #ff606055 #82ff6055 #607eff55 #60eaff55 #ff60ee55 #e360ff55 #ffaf6055 #a3ff6055 #ff609c55 #60ff8255 #cc60ff55 #c6595955 #404b7f55 #f2d95755 #c5525255 #c5525255 #498e5655 #c4515155 #c3545455 #c8575755 #c8595955 #5b74b655 #cd686855 #5c81bd55 #5bb14655 #d8c96355 #c5525255 #404b7f55 #c5525255 #c5525255 #c5525255 #c5525255 #404b7f55 #498e5655 #498e5655 #dbd24555 #ca514e55 #43427e55".split(" "),
+                playerSkins: 0,
+                currentSkin: 0,
+                unitRotSpd: 0.5,
+                cameraKeys: null,
+                cameraSpd: 0.85,
+                camSpdM: 0.85,
+                camX: 0,
+                camXS: 0,
+                camY: 0,
+                camYS: 0,
+            },
+            world: {
+                background: "#000000",
+                lineColor: "#ffffff14",
+                protectionColor: "#ffffff24",
+                selectionColor: "rgba(255, 255, 255, 0.12)",
+                selectionStroke: "rgba(255, 255, 255, 0.2)",
+                darkColor: "#fff",
+                outlineWidth: 2.5,
+                lanePad: 10,
+                backgroundColor: "#000000",
+                outerColor: "#262626",
+                indicatorColor: "#ffffff",
+                turretColor: "#000000",
+                bulletColor: "#ffffff99",
+                redColor: "#ffffff",
+                targetColor: "#ffffff",
+                playerColors: "#f9ff6040 #ff606040 #82ff6040 #607eff40 #60eaff40 #ff60ee40 #e360ff40 #ffaf6040 #a3ff6040 #ff609c40 #60ff8240 #cc60ff40 #c6595940 #404b7f40 #f2d95740 #c5525240 #c5525240 #498e5640 #c4515140 #c3545440 #c8575740 #c8595940 #5b74b640 #cd686840 #5c81bd40 #5bb14640 #d8c96340 #c5525240 #404b7f40 #c5525240 #c5525240 #c5525240 #c5525240 #404b7f40 #498e5640 #498e5640 #dbd24540 #ca514e40 #43427e30".split(" "),
+                unitRotSpd: 0.5,
+                cameraSpd: 1.75,
+                camSpdM: 1.75,
+                camX: 0,
+                camXS: 0,
+                camY: 0,
+                camYS: 0,
+                currentSkin: 0,
             }
         };
 
@@ -77,6 +132,12 @@ export default class ThemeManager {
         const metricsElement = document.getElementById('game-metrics');
 
         if (!changelogElement || !metricsElement) return;
+        const themeTextColor = ThemeManager.currentThemeProperties?.textColor;
+        if (themeTextColor) {
+            changelogElement.style.color = themeTextColor;
+            metricsElement.style.color = themeTextColor;
+            return;
+        }
         if (ThemeManager.currentTheme === 'nostalgia') {
             changelogElement.style.color = '#000000';
             metricsElement.style.color = '#000000';

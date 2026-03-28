@@ -162,7 +162,7 @@ export default class InputManager {
             }
             if (keyReturnToBase && key === keyReturnToBase) {
                 if (!this.core.uiManager.isChatInputFocused && !gameplayInputBlocked && !isFormFocused && !event.repeat) {
-                    if (this.core.centerCameraOnBase?.({ smooth: false, applyHudZoom: true })) {
+                    if (this.core.centerCameraOnBase?.({ smooth: false, applyHudZoom: false })) {
                         handledAnyAction = true;
                     }
                 }
