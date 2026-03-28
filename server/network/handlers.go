@@ -2377,6 +2377,7 @@ func handleClientX1ConcedeRound(conn *websocket.Conn, payload []byte) {
 	target := game.State.Players[targetID]
 	game.State.RUnlock()
 	if target == nil || target.IsMarkedForRemoval() {
+		sendX1RoundWinRequestResult(requester, requester, nil, x1RoundWinResultUnavailable)
 		return
 	}
 
@@ -2390,9 +2391,11 @@ func handleClientX1ConcedeRound(conn *websocket.Conn, payload []byte) {
 	target.RUnlock()
 
 	if !requesterInDuel || !targetInDuel {
+		sendX1RoundWinRequestResult(requester, requester, target, x1RoundWinResultUnavailable)
 		return
 	}
 	if requesterOpponentID != target.ID || targetOpponentID != requester.ID {
+		sendX1RoundWinRequestResult(requester, requester, target, x1RoundWinResultUnavailable)
 		return
 	}
 

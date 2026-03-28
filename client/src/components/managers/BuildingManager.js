@@ -714,6 +714,19 @@ export class BuildingManager {
                     const localArenas = Array.isArray(this.core.gameManager.globalDuelArenas)
                         ? this.core.gameManager.globalDuelArenas
                         : [];
+                    const currentDuelArena = this.core.gameManager.duelArena || null;
+                    const isPlayerInsideArena = (playerRef, arenaRef) => {
+                        if (!playerRef || !arenaRef) return false;
+                        const px = Number(playerRef?.position?.x);
+                        const py = Number(playerRef?.position?.y);
+                        if (!Number.isFinite(px) || !Number.isFinite(py)) return false;
+                        return (
+                            px >= Number(arenaRef.minX) &&
+                            px <= Number(arenaRef.maxX) &&
+                            py >= Number(arenaRef.minY) &&
+                            py <= Number(arenaRef.maxY)
+                        );
+                    };
                     const hasArenaPairWithEnemy = Boolean(
                         localPlayerID &&
                         localArenas.some((arena) => (
@@ -721,19 +734,21 @@ export class BuildingManager {
                             (arena.playerBID === localPlayerID && arena.playerAID === enemy.id)
                         ))
                     );
+                    const sharesCurrentDuelArenaByPosition = Boolean(
+                        currentDuelArena &&
+                        isPlayerInsideArena(localPlayer, currentDuelArena) &&
+                        isPlayerInsideArena(enemy, currentDuelArena)
+                    );
                     const inDuelWithEnemy = Boolean(
-                        this.core.gameManager.duelOpponentID === enemy.id || hasArenaPairWithEnemy
+                        this.core.gameManager.duelOpponentID === enemy.id ||
+                        hasArenaPairWithEnemy ||
+                        sharesCurrentDuelArenaByPosition
                     );
                     const onNotifyLeaveBase = enemy.hasSpawnProtection ? () => {
                         this.core.networkManager.watchPlayerLeaveBase(enemy.id, enemy.name || "Player");
                     } : null;
                     const onGiveX1RoundWin = inDuelWithEnemy ? () => {
                         this.core.networkManager.sendX1ConcedeRound(enemy.id);
-                        this.core.uiManager.addChatMessage(
-                            "System",
-                            `Round win request sent to ${enemy.name || "Player"}.`,
-                            "#60c1ff"
-                        );
                     } : null;
 
                     const onChallengeX1 = () => {
