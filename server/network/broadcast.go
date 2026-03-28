@@ -322,6 +322,70 @@ func sendX1RoundWinRequestResult(target *game.Player, requester *game.Player, ta
 	sendToClient(target.Conn, EncodeMessage(message), nil)
 }
 
+func sendX1StartCountdownPrompt(target *game.Player, requester *game.Player) {
+	if target == nil || target.Conn == nil || target.IsMarkedForRemoval() {
+		return
+	}
+
+	message := Message{
+		Type: MessageTypeX1StartCountdownPrompt,
+	}
+
+	buffer := new(bytes.Buffer)
+	if requester != nil {
+		buffer.WriteByte(byte(requester.ID))
+		buffer.Write(requester.Name[:])
+	} else {
+		buffer.WriteByte(byte(0))
+		var emptyName [game.PLAYER_NAME_MAX_BYTES]byte
+		buffer.Write(emptyName[:])
+	}
+
+	message.Payload = buffer.Bytes()
+	sendToClient(target.Conn, EncodeMessage(message), nil)
+}
+
+func sendX1StartCountdownResult(
+	target *game.Player,
+	requester *game.Player,
+	targetPlayer *game.Player,
+	status byte,
+	countdownSeconds byte,
+) {
+	if target == nil || target.Conn == nil || target.IsMarkedForRemoval() {
+		return
+	}
+
+	message := Message{
+		Type: MessageTypeX1StartCountdownResult,
+	}
+
+	buffer := new(bytes.Buffer)
+	buffer.WriteByte(status)
+
+	if requester != nil {
+		buffer.WriteByte(byte(requester.ID))
+		buffer.Write(requester.Name[:])
+	} else {
+		buffer.WriteByte(byte(0))
+		var emptyName [game.PLAYER_NAME_MAX_BYTES]byte
+		buffer.Write(emptyName[:])
+	}
+
+	if targetPlayer != nil {
+		buffer.WriteByte(byte(targetPlayer.ID))
+		buffer.Write(targetPlayer.Name[:])
+	} else {
+		buffer.WriteByte(byte(0))
+		var emptyName [game.PLAYER_NAME_MAX_BYTES]byte
+		buffer.Write(emptyName[:])
+	}
+
+	buffer.WriteByte(countdownSeconds)
+	message.Payload = buffer.Bytes()
+	sendToClient(target.Conn, EncodeMessage(message), nil)
+}
+
 func buildX1DuelArenaMessage(playerAID game.ID, playerBID game.ID, arena game.DuelArena) Message {
 	message := Message{
 		Type: MessageTypeX1DuelArenaUpdate,

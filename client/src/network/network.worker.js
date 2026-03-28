@@ -197,6 +197,8 @@ function decodePayload (messageType, payload) {
         [MessageTypes.X1_ROUND_SCORE_UPDATE]: decodeX1RoundScoreUpdate,
         [MessageTypes.X1_ROUND_WIN_REQUEST_RECEIVED]: decodeX1RoundWinRequestReceived,
         [MessageTypes.X1_ROUND_WIN_REQUEST_RESULT]: decodeX1RoundWinRequestResult,
+        [MessageTypes.X1_START_COUNTDOWN_PROMPT]: decodeX1StartCountdownPrompt,
+        [MessageTypes.X1_START_COUNTDOWN_RESULT]: decodeX1StartCountdownResult,
         [MessageTypes.WILD_PORTALS_UPDATE]: decodeWildPortalsUpdate,
         [MessageTypes.ERROR]: decodeError,
     };
@@ -662,6 +664,38 @@ function decodeX1RoundWinRequestResult (payload) {
         requesterName: requesterNameResult.str,
         targetID,
         targetName: targetNameResult.str
+    };
+}
+
+function decodeX1StartCountdownPrompt (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const requesterID = dataView.getUint8(offset++);
+    const requesterNameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    return {
+        requesterID,
+        requesterName: requesterNameResult.str
+    };
+}
+
+function decodeX1StartCountdownResult (payload) {
+    const dataView = new DataView(payload);
+    let offset = 0;
+    const status = dataView.getUint8(offset++);
+    const requesterID = dataView.getUint8(offset++);
+    const requesterNameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    offset = requesterNameResult.offset;
+    const targetID = dataView.getUint8(offset++);
+    const targetNameResult = readString(dataView, offset, PLAYER_NAME_MAX_BYTES);
+    offset = targetNameResult.offset;
+    const countdownSeconds = dataView.byteLength > offset ? dataView.getUint8(offset) : 0;
+    return {
+        status,
+        requesterID,
+        requesterName: requesterNameResult.str,
+        targetID,
+        targetName: targetNameResult.str,
+        countdownSeconds
     };
 }
 

@@ -33,7 +33,7 @@ var (
 	sessionLockDB      *sql.DB
 	sessionLockMu      sync.Mutex
 	sessionLockByConn  = make(map[*websocket.Conn]sessionLockState)
-	sessionLockEnabled = envBoolDefaultTrue("ENABLE_DB_SESSION_LOCK")
+	sessionLockEnabled = envBoolDefaultFalse("ENABLE_DB_SESSION_LOCK")
 	sessionLockTTL     = resolveDBSessionLockTTL()
 	// Strict checks are backend-only and can be tuned per environment.
 	sessionLockStrictDevice      = envBoolDefaultTrue("SESSION_LOCK_STRICT_DEVICE")

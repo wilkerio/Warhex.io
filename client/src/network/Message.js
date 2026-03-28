@@ -298,6 +298,19 @@ export default class Message {
         return new Message(MessageTypes.CLIENT_X1_ROUND_WIN_RESPONSE, payload);
     }
 
+    static createX1StartCountdownMessage (targetPlayerID) {
+        const payload = new Uint8Array(1);
+        payload[0] = targetPlayerID;
+        return new Message(MessageTypes.CLIENT_X1_START_COUNTDOWN, payload);
+    }
+
+    static createX1StartCountdownResponseMessage (requesterPlayerID, accepted) {
+        const payload = new Uint8Array(2);
+        payload[0] = requesterPlayerID;
+        payload[1] = accepted ? 1 : 0;
+        return new Message(MessageTypes.CLIENT_X1_START_COUNTDOWN_RESPONSE, payload);
+    }
+
     static createWatchLeaveBaseMessage (targetPlayerID) {
         const payload = new Uint8Array(1);
         payload[0] = targetPlayerID;

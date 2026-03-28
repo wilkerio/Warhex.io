@@ -138,6 +138,10 @@ func handleMessage(conn *websocket.Conn, message []byte) {
 		handleClientX1ConcedeRound(conn, payload)
 	case MessageTypeClientX1RoundWinResponse:
 		handleClientX1RoundWinResponse(conn, payload)
+	case MessageTypeClientX1StartCountdown:
+		handleClientX1StartCountdown(conn, payload)
+	case MessageTypeClientX1StartCountdownReply:
+		handleClientX1StartCountdownReply(conn, payload)
 
 	default:
 		log.Printf("Received unsupported message type: %d", messageType)
@@ -879,30 +883,18 @@ func handleDestroyBuildingsMessage(conn *websocket.Conn, payload []byte) {
 		buildingIDs = append(buildingIDs, buildingID)
 
 		base.RLock()
-		building, ok := base.Buildings[buildingID]
+		_, ok := base.Buildings[buildingID]
 		base.RUnlock()
 
 		if !ok {
-			log.Println("Failed to get building for refund: Building not found, ID:", buildingID)
+			log.Println("Failed to get building for destroy: Building not found, ID:", buildingID)
 			continue
-		}
-
-		var refund uint16
-		costs, ok := game.GetBuildingCost(building.Type, building.Variant)
-		if !ok {
-			log.Println("Costs not found for building:", building.Type)
-		} else {
-			refund = costs / 2
-			player.RefundPower(refund)
 		}
 
 		// Remove the building from the base
 		success := base.RemoveBuilding(buildingID)
 		if !success {
 			log.Println("Failed to remove building: Building not found, ID:", buildingID)
-			if ok {
-				player.SpendPower(refund)
-			}
 			continue
 		}
 	}
@@ -1309,21 +1301,7 @@ func handleBuyRelocateBase(conn *websocket.Conn, payload []byte) {
 	sendResourceUpdate(player)
 
 	// Full resync to all players so everyone sees the new base/building/unit positions.
-	game.State.RLock()
-	players := make([]*game.Player, 0, len(game.State.Players))
-	for _, p := range game.State.Players {
-		players = append(players, p)
-	}
-	game.State.RUnlock()
-
-	for _, p := range players {
-		if p.IsMarkedForRemoval() {
-			continue
-		}
-		sendGameState(p, nil)
-		sendActiveDuelArenas(p)
-		sendActiveX1RoundScores(p)
-	}
+	resyncAllPlayersGameState()
 }
 
 func handleCameraUpdate(conn *websocket.Conn, payload []byte) {
@@ -1416,6 +1394,12 @@ type x1RoundWinRequest struct {
 	createdAt   time.Time
 }
 
+type x1StartCountdownRequest struct {
+	requesterID game.ID
+	targetID    game.ID
+	createdAt   time.Time
+}
+
 type x1RoundState struct {
 	playerAID       game.ID
 	playerBID       game.ID
@@ -1437,6 +1421,7 @@ var (
 	x1RoundScores       = make(map[x1PairKey]x1RoundScore)
 	x1RoundStates       = make(map[x1PairKey]x1RoundState)
 	x1RoundWinRequests  = make(map[game.ID]x1RoundWinRequest)
+	x1StartCountdownReq = make(map[game.ID]x1StartCountdownRequest)
 	x1RoundScoreMx      sync.Mutex
 )
 
@@ -1639,6 +1624,15 @@ const (
 	x1RoundWinResultUnavailable byte = 3
 )
 
+const (
+	x1StartCountdownResultSent        byte = 0
+	x1StartCountdownResultAccepted    byte = 1
+	x1StartCountdownResultDeclined    byte = 2
+	x1StartCountdownResultUnavailable byte = 3
+)
+
+const x1StartCountdownSeconds byte = 5
+
 const x1TargetUnderAttackWindow = 5 * time.Minute
 
 func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
@@ -1707,6 +1701,101 @@ func isLeftOrRightNeighbor(challenger *game.Player, target *game.Player) bool {
 		return hasLeftNeighbor && leftNeighborID == target.ID
 	}
 	return hasRightNeighbor && rightNeighborID == target.ID
+}
+
+func addOffsetPosition(pos game.PositionInt, dx int16, dy int16) (game.PositionInt, bool) {
+	nextX := int32(pos.X) + int32(dx)
+	nextY := int32(pos.Y) + int32(dy)
+	if nextX < math.MinInt16 || nextX > math.MaxInt16 || nextY < math.MinInt16 || nextY > math.MaxInt16 {
+		return game.PositionInt{}, false
+	}
+	return game.PositionInt{X: int16(nextX), Y: int16(nextY)}, true
+}
+
+func tryRelocatePlayerAdjacentTo(anchor *game.Player, mover *game.Player) bool {
+	if anchor == nil || mover == nil || anchor.Base == nil || mover.Base == nil {
+		return false
+	}
+
+	step := int16(game.MIN_PLAYER_SPAWN_DISTANCE)
+	anchorPos := anchor.Base.GetPosition()
+	offsets := [][2]int16{
+		{step, 0},
+		{-step, 0},
+		{0, step},
+		{0, -step},
+	}
+
+	for _, offset := range offsets {
+		candidate, ok := addOffsetPosition(anchorPos, offset[0], offset[1])
+		if !ok {
+			continue
+		}
+		if !game.IsRelocationSlotAvailable(candidate, mover.ID) {
+			continue
+		}
+		if game.RelocatePlayerBaseTo(mover, &candidate) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ensurePlayersAdjacentForX1 tries to place the two players in neighboring base slots.
+// Returns true when at least one relocation was applied.
+func ensurePlayersAdjacentForX1(challenger *game.Player, target *game.Player) bool {
+	if challenger == nil || target == nil {
+		return false
+	}
+
+	if isLeftOrRightNeighbor(challenger, target) {
+		return false
+	}
+
+	relocated := false
+
+	if tryRelocatePlayerAdjacentTo(challenger, target) {
+		return true
+	}
+	if tryRelocatePlayerAdjacentTo(target, challenger) {
+		return true
+	}
+
+	if game.RelocatePlayerBaseTo(challenger, nil) {
+		relocated = true
+		if tryRelocatePlayerAdjacentTo(challenger, target) {
+			return true
+		}
+	}
+
+	if game.RelocatePlayerBaseTo(target, nil) {
+		relocated = true
+		if tryRelocatePlayerAdjacentTo(target, challenger) {
+			return true
+		}
+	}
+
+	// If no adjacent slot was found, keep any relocation that was already applied.
+	return relocated
+}
+
+func resyncAllPlayersGameState() {
+	game.State.RLock()
+	players := make([]*game.Player, 0, len(game.State.Players))
+	for _, p := range game.State.Players {
+		players = append(players, p)
+	}
+	game.State.RUnlock()
+
+	for _, p := range players {
+		if p.IsMarkedForRemoval() {
+			continue
+		}
+		sendGameState(p, nil)
+		sendActiveDuelArenas(p)
+		sendActiveX1RoundScores(p)
+	}
 }
 
 func hasPendingX1ForPlayerUnsafe(playerID game.ID) bool {
@@ -1784,6 +1873,11 @@ func clearX1RoundScoresForPlayerUnsafe(playerID game.ID) {
 			delete(x1RoundWinRequests, targetID)
 		}
 	}
+	for targetID, request := range x1StartCountdownReq {
+		if request.requesterID == playerID || request.targetID == playerID || targetID == playerID {
+			delete(x1StartCountdownReq, targetID)
+		}
+	}
 }
 
 func setX1RoundStateUnsafe(playerAID game.ID, playerBID game.ID, state x1RoundState) {
@@ -1810,6 +1904,34 @@ func hasPendingX1RoundWinRequestUnsafe(playerID game.ID) bool {
 		}
 	}
 	return false
+}
+
+func hasPendingX1StartCountdownRequestUnsafe(playerID game.ID) bool {
+	if playerID == 0 {
+		return false
+	}
+	now := time.Now()
+	for targetID, request := range x1StartCountdownReq {
+		if now.Sub(request.createdAt) > 12*time.Second {
+			delete(x1StartCountdownReq, targetID)
+			continue
+		}
+		if targetID == playerID || request.requesterID == playerID || request.targetID == playerID {
+			return true
+		}
+	}
+	return false
+}
+
+func clearX1StartCountdownRequestsForPlayersUnsafe(playerIDs ...game.ID) {
+	for targetID, request := range x1StartCountdownReq {
+		for _, playerID := range playerIDs {
+			if targetID == playerID || request.requesterID == playerID || request.targetID == playerID {
+				delete(x1StartCountdownReq, targetID)
+				break
+			}
+		}
+	}
 }
 
 func resetX1RoundForPlayers(winner *game.Player, loser *game.Player) {
@@ -2099,25 +2221,12 @@ func handleClientSendX1Challenge(conn *websocket.Conn, payload []byte) {
 		sendX1ChallengeResult(challenger, x1ResultUnavailable, nil)
 		return
 	}
-	if challenger.HasProtection() {
-		sendX1ChallengeResult(challenger, x1ResultLeaveBase, target)
-		return
-	}
-	if target.HasProtection() {
-		sendX1ChallengeResult(challenger, x1ResultUnavailable, target)
-		return
-	}
 	if isInProtectedX1(challenger) || isInProtectedX1(target) {
 		sendX1ChallengeResult(challenger, x1ResultUnavailable, target)
 		return
 	}
 	if target.WasBaseDamagedWithin(x1TargetUnderAttackWindow) {
 		sendX1ChallengeResult(challenger, x1ResultUnderAttack, target)
-		return
-	}
-
-	if !isLeftOrRightNeighbor(challenger, target) {
-		sendX1ChallengeResult(challenger, x1ResultInvalidSide, target)
 		return
 	}
 
@@ -2184,11 +2293,6 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 		sendX1ChallengeResult(targetPlayer, x1ResultUnavailable, nil)
 		return
 	}
-	if targetPlayer.HasProtection() || challenger.HasProtection() {
-		sendX1ChallengeResult(targetPlayer, x1ResultLeaveBase, challenger)
-		sendX1ChallengeResult(challenger, x1ResultLeaveBase, targetPlayer)
-		return
-	}
 	if isInProtectedX1(challenger) || isInProtectedX1(targetPlayer) {
 		sendX1ChallengeResult(targetPlayer, x1ResultUnavailable, challenger)
 		sendX1ChallengeResult(challenger, x1ResultUnavailable, targetPlayer)
@@ -2199,12 +2303,6 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 		sendX1ChallengeResult(challenger, x1ResultUnderAttack, targetPlayer)
 		return
 	}
-	if !isLeftOrRightNeighbor(challenger, targetPlayer) {
-		sendX1ChallengeResult(targetPlayer, x1ResultInvalidSide, challenger)
-		sendX1ChallengeResult(challenger, x1ResultInvalidSide, targetPlayer)
-		return
-	}
-
 	if accepted {
 		x1ChallengeMx.Lock()
 		clearPendingX1ForPlayersUnsafe(challenger.ID, targetPlayer.ID)
@@ -2215,9 +2313,11 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 				delete(x1RoundWinRequests, targetID)
 			}
 		}
+		clearX1StartCountdownRequestsForPlayersUnsafe(challenger.ID, targetPlayer.ID)
 		x1RoundScoreMx.Unlock()
 
 		finalMode := game.ResolveX1DuelMode(request.challengerMode, targetMode)
+		relocatedForDuel := ensurePlayersAdjacentForX1(challenger, targetPlayer)
 		arena := game.StartProtectedDuel(challenger, targetPlayer)
 		if finalMode == game.X1DuelModeTraditionalBase {
 			game.ApplyTraditionalX1Setup(challenger, targetPlayer)
@@ -2247,6 +2347,9 @@ func handleClientX1ChallengeReply(conn *websocket.Conn, payload []byte) {
 		sendX1ChallengeResult(targetPlayer, x1ResultAccepted, challenger, finalMode)
 		sendX1RoundScoreToPlayers(challenger, targetPlayer, score)
 		broadcastX1DuelArenaUpdate(challenger.ID, targetPlayer.ID, arena)
+		if relocatedForDuel {
+			resyncAllPlayersGameState()
+		}
 		return
 	}
 
@@ -2371,6 +2474,117 @@ func handleClientX1RoundWinResponse(conn *websocket.Conn, payload []byte) {
 	sendX1RoundScoreToPlayers(requester, targetPlayer, score)
 	sendX1RoundWinRequestResult(targetPlayer, requester, targetPlayer, x1RoundWinResultAccepted)
 	sendX1RoundWinRequestResult(requester, requester, targetPlayer, x1RoundWinResultAccepted)
+}
+
+func handleClientX1StartCountdown(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 1 {
+		return
+	}
+
+	requester, ok := game.GetPlayerByConn(conn)
+	if !ok || requester == nil || requester.IsMarkedForRemoval() {
+		return
+	}
+	requester.SetLastActivity()
+
+	targetID := game.ID(payload[0])
+	if targetID == 0 || targetID == requester.ID {
+		return
+	}
+
+	game.State.RLock()
+	target := game.State.Players[targetID]
+	game.State.RUnlock()
+	if target == nil || target.IsMarkedForRemoval() {
+		sendX1StartCountdownResult(requester, requester, nil, x1StartCountdownResultUnavailable, 0)
+		return
+	}
+
+	requester.RLock()
+	requesterInDuel := requester.InDuel
+	requesterOpponentID := requester.DuelOpponentID
+	requester.RUnlock()
+	target.RLock()
+	targetInDuel := target.InDuel
+	targetOpponentID := target.DuelOpponentID
+	target.RUnlock()
+
+	if !requesterInDuel || !targetInDuel || requesterOpponentID != target.ID || targetOpponentID != requester.ID {
+		sendX1StartCountdownResult(requester, requester, target, x1StartCountdownResultUnavailable, 0)
+		return
+	}
+
+	x1RoundScoreMx.Lock()
+	if hasPendingX1StartCountdownRequestUnsafe(requester.ID) || hasPendingX1StartCountdownRequestUnsafe(target.ID) {
+		x1RoundScoreMx.Unlock()
+		sendX1StartCountdownResult(requester, requester, target, x1StartCountdownResultUnavailable, 0)
+		return
+	}
+	x1StartCountdownReq[target.ID] = x1StartCountdownRequest{
+		requesterID: requester.ID,
+		targetID:    target.ID,
+		createdAt:   time.Now(),
+	}
+	x1RoundScoreMx.Unlock()
+
+	sendX1StartCountdownPrompt(target, requester)
+	sendX1StartCountdownResult(requester, requester, target, x1StartCountdownResultSent, 0)
+}
+
+func handleClientX1StartCountdownReply(conn *websocket.Conn, payload []byte) {
+	if len(payload) != 2 {
+		return
+	}
+
+	targetPlayer, ok := game.GetPlayerByConn(conn)
+	if !ok || targetPlayer == nil || targetPlayer.IsMarkedForRemoval() {
+		return
+	}
+	targetPlayer.SetLastActivity()
+
+	requesterID := game.ID(payload[0])
+	accepted := payload[1] == 1
+
+	x1RoundScoreMx.Lock()
+	request, exists := x1StartCountdownReq[targetPlayer.ID]
+	if !exists || request.requesterID != requesterID {
+		x1RoundScoreMx.Unlock()
+		sendX1StartCountdownResult(targetPlayer, nil, nil, x1StartCountdownResultUnavailable, 0)
+		return
+	}
+	delete(x1StartCountdownReq, targetPlayer.ID)
+	x1RoundScoreMx.Unlock()
+
+	game.State.RLock()
+	requester := game.State.Players[requesterID]
+	game.State.RUnlock()
+	if requester == nil || requester.IsMarkedForRemoval() {
+		sendX1StartCountdownResult(targetPlayer, nil, nil, x1StartCountdownResultUnavailable, 0)
+		return
+	}
+
+	targetPlayer.RLock()
+	targetInDuel := targetPlayer.InDuel
+	targetOpponentID := targetPlayer.DuelOpponentID
+	targetPlayer.RUnlock()
+	requester.RLock()
+	requesterInDuel := requester.InDuel
+	requesterOpponentID := requester.DuelOpponentID
+	requester.RUnlock()
+	if !targetInDuel || !requesterInDuel || targetOpponentID != requester.ID || requesterOpponentID != targetPlayer.ID {
+		sendX1StartCountdownResult(targetPlayer, requester, targetPlayer, x1StartCountdownResultUnavailable, 0)
+		sendX1StartCountdownResult(requester, requester, targetPlayer, x1StartCountdownResultUnavailable, 0)
+		return
+	}
+
+	if !accepted {
+		sendX1StartCountdownResult(targetPlayer, requester, targetPlayer, x1StartCountdownResultDeclined, 0)
+		sendX1StartCountdownResult(requester, requester, targetPlayer, x1StartCountdownResultDeclined, 0)
+		return
+	}
+
+	sendX1StartCountdownResult(targetPlayer, requester, targetPlayer, x1StartCountdownResultAccepted, x1StartCountdownSeconds)
+	sendX1StartCountdownResult(requester, requester, targetPlayer, x1StartCountdownResultAccepted, x1StartCountdownSeconds)
 }
 
 func handleClientWatchLeaveBase(conn *websocket.Conn, payload []byte) {

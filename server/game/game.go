@@ -438,7 +438,7 @@ func startOwnedPortalLifecycleLoop() {
 				owner.Unlock()
 			}
 
-			handleBuildingDestroyed(expired.building, expired.base)
+			handleBuildingDestroyed(expired.building, expired.base, nil)
 		}
 	}
 }
@@ -615,7 +615,7 @@ func recycleOwnerUnitForSpawn(player *Player) bool {
 		return false
 	}
 
-	handleUnitDestroyed(candidate)
+	handleUnitDestroyed(candidate, nil)
 	return true
 }
 
@@ -1420,7 +1420,7 @@ func updateUnits(player *Player, duration time.Duration, _ []*Player) {
 		if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
 			math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
 			unit.MarkForRemoval()
-			handleUnitDestroyed(unit)
+			handleUnitDestroyed(unit, nil)
 			continue
 		}
 
@@ -1429,7 +1429,7 @@ func updateUnits(player *Player, duration time.Duration, _ []*Player) {
 			if math.Abs(float64(unit.Position.X))+float64(unit.Size) >= float64(mapRadius) ||
 				math.Abs(float64(unit.Position.Y))+float64(unit.Size) >= float64(mapRadius) {
 				unit.MarkForRemoval()
-				handleUnitDestroyed(unit)
+				handleUnitDestroyed(unit, nil)
 				continue
 			}
 			updatedUnits = append(updatedUnits, unit)
@@ -1481,7 +1481,7 @@ func checkRockCollisions(units []*Unit) {
 			}
 			if isUnitCollidingWithRock(unit, &rock) {
 				unit.MarkForRemoval()
-				handleUnitDestroyed(unit)
+				handleUnitDestroyed(unit, nil)
 			}
 		}
 	}
@@ -1582,7 +1582,7 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					isAlive = unit.TakeDamage(damage)
 					if !isAlive { // Unit is destroyed
 						unit.MarkForRemoval()
-						handleUnitDestroyed(unit)
+						handleUnitDestroyed(unit, otherPlayer)
 						break // Unit destroyed no need for more bullet checks for that unit
 					} else {
 						TriggerUnitHealthUpdateEvent(unit.Player, unit)
@@ -1621,7 +1621,7 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					isAlive = building.TakeDamage(bulletHealth)
 					if !isAlive { // Unit is destroyed
 						building.MarkForRemoval()
-						handleBuildingDestroyed(building, player.Base)
+						handleBuildingDestroyed(building, player.Base, otherPlayer)
 						break // Building destroyed no need for more bullet checks for that building
 					}
 				}
@@ -1711,7 +1711,7 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 				attackerAlive := closestAttacker.TakeDamage(retaliationDamage)
 				if !attackerAlive {
 					closestAttacker.MarkForRemoval()
-					handleUnitDestroyed(closestAttacker)
+					handleUnitDestroyed(closestAttacker, player)
 				} else {
 					TriggerUnitHealthUpdateEvent(closestAttacker.Player, closestAttacker)
 				}
@@ -1790,7 +1790,7 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					isAlive = unit.TakeDamage(damage)
 					if !isAlive { // Unit is destroyed
 						unit.MarkForRemoval()
-						handleUnitDestroyed(unit)
+						handleUnitDestroyed(unit, nil)
 						break // Unit destroyed no need for more bullet checks for that unit
 					} else {
 						TriggerUnitHealthUpdateEvent(unit.Player, unit)
@@ -1850,7 +1850,7 @@ func checkBulletCollisions(player *Player, players []*Player, neutrals []*Neutra
 					isAlive = building.TakeDamage(bulletHealth)
 					if !isAlive { // Unit is destroyed
 						building.MarkForRemoval()
-						handleBuildingDestroyed(building, neutral.Base)
+						handleBuildingDestroyed(building, neutral.Base, player)
 						break // Building destroyed no need for more bullet checks for that building
 					}
 				}
@@ -1912,7 +1912,7 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 			if hasSpawnProtection {
 				if isNearBase {
 					unit.MarkForRemoval()
-					handleUnitDestroyed(unit)
+					handleUnitDestroyed(unit, otherPlayer)
 					continue
 				}
 			}
@@ -1958,7 +1958,7 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 
 				if !unitIsAlive {
 					unit.MarkForRemoval()
-					handleUnitDestroyed(unit)
+					handleUnitDestroyed(unit, otherPlayer)
 					continue
 				} else {
 					TriggerUnitHealthUpdateEvent(unit.Player, unit)
@@ -1976,12 +1976,12 @@ func checkBaseCollisions(player *Player, players []*Player, units []*Unit) {
 					if !buildingAlive {
 						player.IncrementScore(uint32(building.Health.Max))
 						building.MarkForRemoval()
-						handleBuildingDestroyed(building, otherPlayer.Base)
+						handleBuildingDestroyed(building, otherPlayer.Base, player)
 					}
 
 					if !unitAlive {
 						unit.MarkForRemoval()
-						handleUnitDestroyed(unit)
+						handleUnitDestroyed(unit, otherPlayer)
 						break // Break out if the unit is destroyed
 					}
 				}
@@ -2039,7 +2039,7 @@ func checkNeutralBaseCollisions(player *Player, neutrals []*NeutralBase, units [
 
 				if !unitIsAlive {
 					unit.MarkForRemoval()
-					handleUnitDestroyed(unit)
+					handleUnitDestroyed(unit, nil)
 					continue
 				} else {
 					TriggerUnitHealthUpdateEvent(unit.Player, unit)
@@ -2057,12 +2057,12 @@ func checkNeutralBaseCollisions(player *Player, neutrals []*NeutralBase, units [
 					if !buildingAlive {
 						player.IncrementScore(uint32(building.Health.Max))
 						building.MarkForRemoval()
-						handleBuildingDestroyed(building, neutral.Base)
+						handleBuildingDestroyed(building, neutral.Base, player)
 					}
 
 					if !unitAlive {
 						unit.MarkForRemoval()
-						handleUnitDestroyed(unit)
+						handleUnitDestroyed(unit, nil)
 						break // Break out if the unit is destroyed
 					}
 				}
@@ -2127,7 +2127,7 @@ func applyExplosionDamage(unit *Unit) {
 				if !isAlive {
 					otherUnit.MarkForRemoval()
 					unit.Player.IncrementScore(uint32(otherUnit.Health.Max) / 10)
-					handleUnitDestroyed(otherUnit)
+					handleUnitDestroyed(otherUnit, unit.Player)
 				} else {
 					TriggerUnitHealthUpdateEvent(otherUnit.Player, otherUnit)
 				}
@@ -2147,7 +2147,7 @@ func applyExplosionDamage(unit *Unit) {
 					if !isAlive {
 						otherBuilding.MarkForRemoval()
 						unit.Player.IncrementScore(uint32(otherBuilding.Health.Max))
-						handleBuildingDestroyed(otherBuilding, player.Base)
+						handleBuildingDestroyed(otherBuilding, player.Base, unit.Player)
 					}
 				}
 			}
@@ -2212,12 +2212,12 @@ func checkUnitCollisions(player *Player, players []*Player, units []*Unit) {
 					if !unit2IsAlive {
 						player.IncrementScore(uint32(otherUnit.Health.Max) / 10)
 						otherUnit.MarkForRemoval()
-						handleUnitDestroyed(otherUnit)
+						handleUnitDestroyed(otherUnit, player)
 					}
 					if !unit1IsAlive {
 						otherPlayer.IncrementScore(uint32(unit.Health.Max) / 10)
 						unit.MarkForRemoval()
-						handleUnitDestroyed(unit)
+						handleUnitDestroyed(unit, otherPlayer)
 						break // If own unit is destroyed break out
 					}
 				}
@@ -2434,7 +2434,39 @@ func handleUnitCollision(unit1, unit2 *Unit) (bool, bool) {
 	return isAliveUnit1, isAliveUnit2
 }
 
-func handleUnitDestroyed(unit *Unit) {
+func getUnitDestroyPowerReward(unit *Unit) uint16 {
+	if unit == nil {
+		return 0
+	}
+
+	switch unit.Type {
+	case SOLDIER:
+		return 2
+	default:
+		return 0
+	}
+}
+
+func grantDestroyRewardForUnit(killer *Player, unit *Unit) {
+	if killer == nil || unit == nil || unit.Player == nil || killer.ID == unit.Player.ID {
+		return
+	}
+
+	reward := getUnitDestroyPowerReward(unit)
+	if reward == 0 {
+		return
+	}
+
+	killer.Resources.Power.Increment(reward)
+}
+
+func grantDestroyRewardForBuilding(killer *Player, building *Building) {
+	// Building destruction no longer grants a % power refund/reward.
+	_ = killer
+	_ = building
+}
+
+func handleUnitDestroyed(unit *Unit, killer *Player) {
 	// ! Quick dirty implementation
 	if unit.Type == TANK && unit.Variant == CANNON_TANK || unit.Type == SIEGE_TANK && unit.Variant == CANNON_SIEGE_TANK {
 		unit.Player.RemoveUnitBulletSpawning(unit)
@@ -2443,6 +2475,7 @@ func handleUnitDestroyed(unit *Unit) {
 	unitID := unit.ID
 	ok := unit.Player.RemoveUnit(unit.ID)
 	if ok {
+		grantDestroyRewardForUnit(killer, unit)
 		requiredPopulation, ok := GetUnitRequiredPopulation(unit.Type)
 		if !ok {
 			log.Println("Could not find the required population for unit (handleUnitDestroyed)")
@@ -2455,9 +2488,10 @@ func handleUnitDestroyed(unit *Unit) {
 	}
 }
 
-func handleBuildingDestroyed(building *Building, base *Base) {
+func handleBuildingDestroyed(building *Building, base *Base, killer *Player) {
 	ok := base.RemoveBuilding(building.ID)
 	if ok {
+		grantDestroyRewardForBuilding(killer, building)
 		TriggerBuildingRemovedEvent(base, building)
 	}
 }

@@ -50,14 +50,19 @@ export default class UIManager {
         this.prePlaySkinPromptElement = null;
         this.discordJoinPromptElement = null;
         this.x1StatusElement = null;
+        this.x1CountdownControlElement = null;
+        this.x1CountdownPromptElement = null;
+        this.x1CountdownOverlayElement = null;
         this.x1RoundScoreElement = null;
         this.x1RoundScoreElementsByPair = new Map();
         this.x1RoundScoreDataByPair = new Map();
         this.x1RoundScoreAnimationFrame = null;
         this.x1StatusInterval = null;
+        this.x1CountdownOverlayInterval = null;
         this.x1PromptTimeout = null;
         this.x1SendPromptTimeout = null;
         this.x1RoundWinPromptTimeout = null;
+        this.x1CountdownPromptTimeout = null;
         this._pinAutoBuildMenuOpen = false;
         this._lastGlobalRankLoginState = null;
         this.hudConfig = this.getDefaultHudConfig();
@@ -11057,6 +11062,271 @@ export default class UIManager {
             this.x1StatusElement.parentNode.removeChild(this.x1StatusElement);
         }
         this.x1StatusElement = null;
+    }
+
+    ensureX1CountdownStyles() {
+        if (document.getElementById("warhex-x1-countdown-style")) return;
+        const style = document.createElement("style");
+        style.id = "warhex-x1-countdown-style";
+        style.textContent = `
+            @keyframes warhexX1Pulse {
+                0% { transform: scale(1); box-shadow: 0 0 0 rgba(255, 90, 90, 0.0); }
+                50% { transform: scale(1.06); box-shadow: 0 0 18px rgba(255, 110, 110, 0.45); }
+                100% { transform: scale(1); box-shadow: 0 0 0 rgba(255, 90, 90, 0.0); }
+            }
+            @keyframes warhexX1CountdownPop {
+                0% { transform: translate(-50%, -50%) scale(0.55); opacity: 0; }
+                25% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+                75% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+                100% { transform: translate(-50%, -50%) scale(0.92); opacity: 0.95; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    showX1CountdownControl(opponentName, onRequestCountdown) {
+        this.ensureX1CountdownStyles();
+        this.hideX1CountdownControl();
+
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.left = "50%";
+        panel.style.top = "70px";
+        panel.style.transform = "translateX(-50%)";
+        panel.style.zIndex = "20012";
+        panel.style.padding = "10px 12px";
+        panel.style.borderRadius = "10px";
+        panel.style.border = "1px solid rgba(150, 220, 255, 0.62)";
+        panel.style.background = "linear-gradient(135deg, rgba(8, 20, 38, 0.92), rgba(8, 36, 58, 0.92))";
+        panel.style.boxShadow = "0 8px 20px rgba(0,0,0,0.42), 0 0 14px rgba(90,180,255,0.2)";
+        panel.style.pointerEvents = "all";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        panel.style.textAlign = "center";
+
+        const title = document.createElement("div");
+        title.style.fontSize = "11px";
+        title.style.fontWeight = "700";
+        title.style.color = "#bfeeff";
+        title.style.marginBottom = "6px";
+        title.textContent = `X1 vs ${opponentName || "Opponent"}`;
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "Iniciar Contagem";
+        button.style.border = "1px solid rgba(128, 255, 186, 0.76)";
+        button.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.58), rgba(41, 225, 132, 0.4))";
+        button.style.color = "#e8ffef";
+        button.style.fontSize = "12px";
+        button.style.fontWeight = "900";
+        button.style.padding = "8px 13px";
+        button.style.borderRadius = "8px";
+        button.style.cursor = "pointer";
+        button.style.letterSpacing = "0.2px";
+        button.addEventListener("click", () => {
+            if (typeof onRequestCountdown === "function") onRequestCountdown();
+        });
+
+        panel.appendChild(title);
+        panel.appendChild(button);
+        panel._x1CountdownOpponentName = opponentName || "Opponent";
+        panel._x1CountdownButton = button;
+        panel._x1CountdownTitle = title;
+        document.body.appendChild(panel);
+        this.x1CountdownControlElement = panel;
+    }
+
+    setX1CountdownControlWaiting(waiting, requesterName = "") {
+        const panel = this.x1CountdownControlElement;
+        const button = panel?._x1CountdownButton;
+        const title = panel?._x1CountdownTitle;
+        if (!panel || !button || !title) return;
+
+        if (waiting) {
+            title.textContent = requesterName
+                ? `${requesterName} pediu contagem`
+                : "Aguardando aceitação...";
+            button.textContent = "Aguardando Accept...";
+            button.disabled = true;
+            button.style.cursor = "default";
+            button.style.border = "1px solid rgba(255, 128, 128, 0.74)";
+            button.style.background = "linear-gradient(135deg, rgba(172, 52, 52, 0.62), rgba(236, 86, 86, 0.42))";
+            button.style.animation = "warhexX1Pulse 0.95s ease-in-out infinite";
+            return;
+        }
+
+        title.textContent = `X1 vs ${panel._x1CountdownOpponentName || "Opponent"}`;
+        button.textContent = "Iniciar Contagem";
+        button.disabled = false;
+        button.style.cursor = "pointer";
+        button.style.border = "1px solid rgba(128, 255, 186, 0.76)";
+        button.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.58), rgba(41, 225, 132, 0.4))";
+        button.style.animation = "none";
+    }
+
+    hideX1CountdownControl() {
+        if (this.x1CountdownControlElement && this.x1CountdownControlElement.parentNode) {
+            this.x1CountdownControlElement.parentNode.removeChild(this.x1CountdownControlElement);
+        }
+        this.x1CountdownControlElement = null;
+    }
+
+    showX1CountdownRequestPrompt(requesterName, onAccept, onDecline) {
+        this.ensureX1CountdownStyles();
+        this.hideX1CountdownRequestPrompt();
+
+        const panel = document.createElement("div");
+        panel.style.position = "fixed";
+        panel.style.top = "18px";
+        panel.style.left = "50%";
+        panel.style.transform = "translateX(-50%)";
+        panel.style.width = "min(440px, calc(100vw - 20px))";
+        panel.style.zIndex = "21001";
+        panel.style.pointerEvents = "all";
+        panel.style.background = "linear-gradient(145deg, rgba(46, 12, 12, 0.96), rgba(86, 24, 24, 0.96))";
+        panel.style.border = "2px solid rgba(255, 132, 132, 0.8)";
+        panel.style.borderRadius = "12px";
+        panel.style.padding = "12px 14px";
+        panel.style.color = "#ffecec";
+        panel.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        panel.style.boxShadow = "0 12px 28px rgba(0,0,0,0.5), 0 0 18px rgba(255,110,110,0.25)";
+        panel.style.animation = "warhexX1Pulse 0.85s ease-in-out infinite";
+
+        const title = document.createElement("div");
+        title.style.fontSize = "15px";
+        title.style.fontWeight = "900";
+        title.textContent = `${requesterName || "Seu oponente"} quer iniciar contagem`;
+
+        const subtitle = document.createElement("div");
+        subtitle.style.marginTop = "4px";
+        subtitle.style.fontSize = "13px";
+        subtitle.style.color = "#ffd3d3";
+        subtitle.textContent = "Aceitar inicia o 5...4...3...2...1...GO para os dois.";
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "10px";
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.justifyContent = "flex-end";
+
+        const declineButton = document.createElement("button");
+        declineButton.type = "button";
+        declineButton.textContent = "Decline";
+        declineButton.style.border = "1px solid rgba(255, 130, 130, 0.65)";
+        declineButton.style.background = "rgba(120, 36, 36, 0.25)";
+        declineButton.style.color = "#ffd6d6";
+        declineButton.style.fontSize = "12px";
+        declineButton.style.fontWeight = "700";
+        declineButton.style.padding = "8px 12px";
+        declineButton.style.borderRadius = "8px";
+        declineButton.style.cursor = "pointer";
+
+        const acceptButton = document.createElement("button");
+        acceptButton.type = "button";
+        acceptButton.textContent = "Accept";
+        acceptButton.style.border = "1px solid rgba(120, 255, 165, 0.75)";
+        acceptButton.style.background = "linear-gradient(135deg, rgba(33, 180, 118, 0.55), rgba(41, 225, 132, 0.35))";
+        acceptButton.style.color = "#e8ffef";
+        acceptButton.style.fontSize = "12px";
+        acceptButton.style.fontWeight = "800";
+        acceptButton.style.padding = "8px 14px";
+        acceptButton.style.borderRadius = "8px";
+        acceptButton.style.cursor = "pointer";
+
+        declineButton.addEventListener("click", () => {
+            this.hideX1CountdownRequestPrompt();
+            if (typeof onDecline === "function") onDecline();
+        });
+        acceptButton.addEventListener("click", () => {
+            this.hideX1CountdownRequestPrompt();
+            if (typeof onAccept === "function") onAccept();
+        });
+
+        actions.appendChild(declineButton);
+        actions.appendChild(acceptButton);
+        panel.appendChild(title);
+        panel.appendChild(subtitle);
+        panel.appendChild(actions);
+        document.body.appendChild(panel);
+        this.x1CountdownPromptElement = panel;
+
+        if (this.x1CountdownPromptTimeout) clearTimeout(this.x1CountdownPromptTimeout);
+        this.x1CountdownPromptTimeout = setTimeout(() => {
+            if (!this.x1CountdownPromptElement) return;
+            this.hideX1CountdownRequestPrompt();
+            if (typeof onDecline === "function") onDecline();
+        }, 10000);
+    }
+
+    hideX1CountdownRequestPrompt() {
+        if (this.x1CountdownPromptTimeout) {
+            clearTimeout(this.x1CountdownPromptTimeout);
+            this.x1CountdownPromptTimeout = null;
+        }
+        if (this.x1CountdownPromptElement && this.x1CountdownPromptElement.parentNode) {
+            this.x1CountdownPromptElement.parentNode.removeChild(this.x1CountdownPromptElement);
+        }
+        this.x1CountdownPromptElement = null;
+    }
+
+    showX1CountdownOverlay(seconds = 5) {
+        this.ensureX1CountdownStyles();
+        this.hideX1CountdownOverlay();
+
+        const safeSeconds = Math.max(1, Math.min(10, Math.floor(Number(seconds) || 5)));
+
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.left = "0";
+        overlay.style.top = "0";
+        overlay.style.width = "100vw";
+        overlay.style.height = "100vh";
+        overlay.style.zIndex = "22000";
+        overlay.style.pointerEvents = "none";
+        overlay.style.background = "radial-gradient(circle at center, rgba(18,22,42,0.18), rgba(0,0,0,0.58))";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+
+        const text = document.createElement("div");
+        text.style.fontFamily = "'Ubuntu', 'Trebuchet MS', sans-serif";
+        text.style.fontWeight = "900";
+        text.style.fontSize = "min(28vw, 220px)";
+        text.style.letterSpacing = "2px";
+        text.style.color = "#ffffff";
+        text.style.textShadow = "0 0 22px rgba(255,255,255,0.35), 0 0 38px rgba(120,200,255,0.35)";
+        text.style.animation = "warhexX1CountdownPop 1s ease-out infinite";
+        text.textContent = `${safeSeconds}`;
+
+        overlay.appendChild(text);
+        document.body.appendChild(overlay);
+        this.x1CountdownOverlayElement = overlay;
+
+        let current = safeSeconds;
+        this.x1CountdownOverlayInterval = setInterval(() => {
+            current -= 1;
+            if (current > 0) {
+                text.textContent = `${current}`;
+                return;
+            }
+            if (current === 0) {
+                text.textContent = "GO!";
+                text.style.color = "#7CFC00";
+                text.style.textShadow = "0 0 22px rgba(124,252,0,0.5), 0 0 38px rgba(124,252,0,0.45)";
+                return;
+            }
+            this.hideX1CountdownOverlay();
+        }, 1000);
+    }
+
+    hideX1CountdownOverlay() {
+        if (this.x1CountdownOverlayInterval) {
+            clearInterval(this.x1CountdownOverlayInterval);
+            this.x1CountdownOverlayInterval = null;
+        }
+        if (this.x1CountdownOverlayElement && this.x1CountdownOverlayElement.parentNode) {
+            this.x1CountdownOverlayElement.parentNode.removeChild(this.x1CountdownOverlayElement);
+        }
+        this.x1CountdownOverlayElement = null;
     }
 
     getX1RoundScorePairKey(playerAID, playerBID) {

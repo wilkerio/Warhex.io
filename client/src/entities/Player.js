@@ -264,12 +264,15 @@ export default class Player extends Renderable {
     }
 
     upgradeBuildings (buildingIDs, buildingVariant) {
+        const upgradedBuildingIDs = [];
         buildingIDs.forEach(buildingID => {
             const index = this.buildings.findIndex(building => building.id === buildingID);
             if (index !== -1) {
                 this.buildings[index].setUpgrade(buildingVariant);
+                upgradedBuildingIDs.push(buildingID);
             }
         });
+        return upgradedBuildingIDs;
     }
 
     removeBuilding (buildingID, callback = () => { }) {

@@ -78,6 +78,10 @@ const (
 	MessageTypeClientX1RoundWinResponse    byte = 60
 	MessageTypeX1RoundWinRequestReceived   byte = 61
 	MessageTypeX1RoundWinRequestResult     byte = 62
+	MessageTypeClientX1StartCountdown      byte = 63
+	MessageTypeX1StartCountdownPrompt      byte = 64
+	MessageTypeClientX1StartCountdownReply byte = 65
+	MessageTypeX1StartCountdownResult      byte = 66
 	MessageTypeHeartbeat                   byte = 69
 	MessageTypeServerVersion               byte = 98
 	MessageTypeRebootAlertMessage          byte = 99

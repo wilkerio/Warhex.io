@@ -736,16 +736,7 @@ export class BuildingManager {
                         );
                     } : null;
 
-                    const onChallengeX1 = (enemy.hasSpawnProtection || inDuelWithEnemy) ? null : () => {
-                        if (localPlayer?.hasSpawnProtection) {
-                            this.core.uiManager.addChatMessage(
-                                "System",
-                                "Leave your base protection area before sending an X1 challenge.",
-                                "#ffcc66"
-                            );
-                            return;
-                        }
-
+                    const onChallengeX1 = () => {
                         if (this.core.unitManager.hasSelectedUnits()) {
                             this.core.uiManager.addChatMessage(
                                 "System",
@@ -782,60 +773,6 @@ export class BuildingManager {
                             this.core.uiManager.addChatMessage(
                                 "System",
                                 "You are already in a protected X1 duel.",
-                                "#ffcc66"
-                            );
-                            return;
-                        }
-
-                        const dx = enemy.position.x - localPlayer.position.x;
-                        const dy = Math.abs(enemy.position.y - localPlayer.position.y);
-                        const axisTolerance = 250;
-                        const isLeftOrRight = dy <= axisTolerance && Math.abs(dx) > axisTolerance;
-
-                        if (!isLeftOrRight) {
-                            this.core.uiManager.addChatMessage(
-                                "System",
-                                "X1 works only with your immediate left/right neighbor.",
-                                "#ffcc66"
-                            );
-                            return;
-                        }
-
-                        let leftNeighbor = null;
-                        let rightNeighbor = null;
-                        let leftDist = Number.POSITIVE_INFINITY;
-                        let rightDist = Number.POSITIVE_INFINITY;
-
-                        this.core.gameManager.players.forEach((other) => {
-                            if (!other || other.id === localPlayer.id) return;
-                            const otherX = Number(other?.position?.x);
-                            const otherY = Number(other?.position?.y);
-                            if (!Number.isFinite(otherX) || !Number.isFinite(otherY)) return;
-                            if (Math.abs(otherY - localPlayer.position.y) > axisTolerance) return;
-
-                            if (otherX < localPlayer.position.x) {
-                                const dist = localPlayer.position.x - otherX;
-                                if (dist < leftDist) {
-                                    leftDist = dist;
-                                    leftNeighbor = other;
-                                }
-                                return;
-                            }
-
-                            if (otherX > localPlayer.position.x) {
-                                const dist = otherX - localPlayer.position.x;
-                                if (dist < rightDist) {
-                                    rightDist = dist;
-                                    rightNeighbor = other;
-                                }
-                            }
-                        });
-
-                        const expectedNeighbor = dx < 0 ? leftNeighbor : rightNeighbor;
-                        if (!expectedNeighbor || expectedNeighbor.id !== enemy.id) {
-                            this.core.uiManager.addChatMessage(
-                                "System",
-                                "X1 works only with your immediate left/right neighbor.",
                                 "#ffcc66"
                             );
                             return;
