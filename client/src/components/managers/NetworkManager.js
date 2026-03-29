@@ -131,6 +131,8 @@ export default class NetworkManager {
         this.lastUpgradeAutoResyncAt = 0;
         this.pendingX1CountdownTargetID = 0;
         this.pendingX1CountdownTimeout = null;
+        this.x1PowerPollIntervalMs = 1000;
+        this.x1PowerPollTimer = null;
 
         // Use async initialization for login status
         // this.initialize();
@@ -140,6 +142,7 @@ export default class NetworkManager {
 
         // Monitor bandwidth every second
         this.monitorBandwidth();
+        this.startX1PowerPolling();
         this.setupClientSecurityGuards();
         this.setupUserScriptErrorTrap();
         this.setupUnauthorizedExtensionWatchdog();
@@ -1294,6 +1297,34 @@ export default class NetworkManager {
             // Update UI with metrics
             this.core.uiManager.updateMetrics();
         }, 1000); // every 1 second
+    }
+
+    startX1PowerPolling () {
+        if (this.x1PowerPollTimer) {
+            clearInterval(this.x1PowerPollTimer);
+            this.x1PowerPollTimer = null;
+        }
+
+        this.x1PowerPollTimer = setInterval(() => {
+            this.pollX1PowerInfo();
+        }, this.x1PowerPollIntervalMs);
+    }
+
+    pollX1PowerInfo () {
+        const gameManager = this.core?.gameManager;
+        const localPlayerID = Number(gameManager?.getCurrentPlayerId?.() || 0);
+        if (!localPlayerID) return;
+
+        const duelOpponentID = Number(gameManager?.duelOpponentID || 0);
+        if (!duelOpponentID) {
+            if (gameManager?.x1PowerInfo) {
+                gameManager.setX1PowerInfo(null);
+            }
+            return;
+        }
+
+        const message = Message.createRequestX1PowerMessage();
+        this.sendMessage(message);
     }
 
     connect () {
@@ -3333,9 +3364,28 @@ export default class NetworkManager {
     handleX1PowerInfo(payload) {
         const gameManager = this.core?.gameManager;
         gameManager?.setX1PowerInfo?.(payload);
+        const opponentID = Number(payload?.opponentID || 0);
+        if (Number(payload?.status || 0) === 1 && opponentID > 0 && !Number(gameManager?.duelOpponentID || 0)) {
+            gameManager.duelOpponentID = opponentID;
+        }
     }
 
     handleX1RoundScoreUpdate(payload) {
+        const gameManager = this.core?.gameManager;
+        const localID = Number(gameManager?.getCurrentPlayerId?.() || 0);
+        const playerAID = Number(payload?.playerAID || 0);
+        const playerBID = Number(payload?.playerBID || 0);
+        if (localID > 0) {
+            let derivedOpponentID = 0;
+            if (localID === playerAID && playerBID > 0) {
+                derivedOpponentID = playerBID;
+            } else if (localID === playerBID && playerAID > 0) {
+                derivedOpponentID = playerAID;
+            }
+            if (derivedOpponentID > 0) {
+                gameManager.duelOpponentID = derivedOpponentID;
+            }
+        }
         this.core.uiManager.showX1RoundScore(payload);
     }
 

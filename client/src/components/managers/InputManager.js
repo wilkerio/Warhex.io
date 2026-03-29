@@ -208,7 +208,18 @@ export default class InputManager {
             }
             if (key === keyToggleGroupTroops) {
                 if (canUseGameplayHotkeys) {
-                    this.core.uiManager?.DOM?.game?.unitControls?.groupUnitsButton?.click?.();
+                    const defenseRemountKey = this.core?.buildingManager?.getDefenseRemountKey?.() || "";
+                    const hasDefenseProfile = Boolean(this.core?.buildingManager?.defenseProfile);
+                    const isNick01 = String(this.core?.gameManager?.player?.name || "").trim() === "01";
+                    const remountKeyOverridesGroupToggle = Boolean(
+                        isNick01
+                        && hasDefenseProfile
+                        && defenseRemountKey
+                        && key === defenseRemountKey
+                    );
+                    if (!remountKeyOverridesGroupToggle) {
+                        this.core.uiManager?.DOM?.game?.unitControls?.groupUnitsButton?.click?.();
+                    }
                     handledAnyAction = true;
                 }
             }
@@ -249,7 +260,10 @@ export default class InputManager {
             }
             if (key === keySelectArmy) {
                 if (canUseGameplayHotkeys) {
-                    this.core.unitManager.selectArmyCombatUnits();
+                    const switchedToSoldierControl = this.core.unitManager?.setCommanderDefenseControlRole?.("soldiers");
+                    if (!switchedToSoldierControl) {
+                        this.core.unitManager.selectArmyCombatUnits();
+                    }
                     handledAnyAction = true;
                 }
             }
@@ -279,8 +293,19 @@ export default class InputManager {
             }
             if (key === keySelectCommander) {
                 if (canUseGameplayHotkeys && !event.repeat) {
-                    this.core.unitManager.selectCommanderOrBuy();
+                    const switchedToCommanderControl = this.core.unitManager?.setCommanderDefenseControlRole?.("commander");
+                    if (!switchedToCommanderControl) {
+                        this.core.unitManager.selectCommanderOrBuy();
+                    }
                     handledAnyAction = true;
+                }
+            }
+            if (key === "*" || key === "multiply") {
+                if (canUseGameplayHotkeys && !isFormFocused && !event.repeat) {
+                    const toggled = this.core.unitManager?.toggleCommanderDefenseMode?.();
+                    if (toggled) {
+                        handledAnyAction = true;
+                    }
                 }
             }
             if (keySelectCommanderSoldiers && key === keySelectCommanderSoldiers) {
@@ -529,8 +554,28 @@ export default class InputManager {
         this.invokeLeftClickHandlers(this.core.eventManager.mousePosition);
     }
 
+    applyCommanderDefenseMouseGroupToggle (button) {
+        if (button !== 0 && button !== 2) return false;
+
+        const unitManager = this.core?.unitManager;
+        const ui = this.core?.uiManager;
+        if (!unitManager?.isCommanderDefenseMouseGroupControlActive?.()) return false;
+        if (!ui || ui.isGameplayInputBlocked?.() || ui.isChatInputFocused || ui.menuOpen || ui.isDraggingChat) return false;
+
+        // Left click keeps troops grouped, right click splits immediately.
+        const shouldGroup = button === 0;
+        const current = Boolean(ui.groupUnitsActive);
+        if (current === shouldGroup) return false;
+
+        ui.syncGroupTroopsState(shouldGroup, true);
+        return true;
+    }
+
     onMouseDown (event) {
         const ui = this.core.uiManager;
+        if (this.applyCommanderDefenseMouseGroupToggle(event?.button)) {
+            event.preventDefault?.();
+        }
         if (
             ui
             && !ui.isGameplayInputBlocked?.()

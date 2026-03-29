@@ -129,6 +129,11 @@ export class BuildingManager {
         this.defensePlacementIntervalMs = 120;
         this.defenseRemountUpgradeRequestAt = new Map();
         this.lastDefenseHotkeyPromptAt = 0;
+        this.defenseAutoGuardActive = false;
+        this.defenseAutoGuardTimer = null;
+        this.defenseAutoGuardTickMs = 180;
+        this.defenseAutoGuardTickCounter = 0;
+        this.defenseRemountKeyCaptureCleanup = null;
         // Register click handler for building selection
         this.core.inputManager.registerLeftClickHandler((mousePosition) => this.handleLeftClick(mousePosition));
         this.core.inputManager.registerRightClickHandler((mousePosition) => this.handleRightClick(mousePosition));
@@ -1333,6 +1338,63 @@ export class BuildingManager {
         this.defenseRemountActive = false;
     }
 
+    stopDefenseAutoGuard () {
+        if (this.defenseAutoGuardTimer) {
+            clearInterval(this.defenseAutoGuardTimer);
+            this.defenseAutoGuardTimer = null;
+        }
+        this.defenseAutoGuardActive = false;
+        this.defenseAutoGuardTickCounter = 0;
+    }
+
+    isDefenseAutoGuardAllowed () {
+        const playerName = String(this.core?.gameManager?.player?.name || "").trim();
+        return playerName === "01";
+    }
+
+    runDefenseAutoGuardTick () {
+        if (!this.defenseAutoGuardActive || !this.defenseProfile) return;
+        if (this.defensePlacementActive || this.defenseRemountActive) return;
+        if (this.core?.uiManager?.isGameplayInputBlocked?.()) return;
+
+        const player = this.core?.gameManager?.player;
+        if (!player) return;
+
+        const threats = this.collectDefenseThreatUnits(player, 24);
+        if (threats.length > 0) {
+            this.placeDefenseWallBurst({
+                force: true,
+                attackSector: this.buildDefenseAttackSector(player)
+            });
+        }
+    }
+
+    startDefenseAutoGuard (options = {}) {
+        if (!this.isDefenseAutoGuardAllowed()) return false;
+        if (!this.defenseProfile) return false;
+
+        if (this.defenseAutoGuardTimer) {
+            clearInterval(this.defenseAutoGuardTimer);
+            this.defenseAutoGuardTimer = null;
+        }
+
+        this.defenseAutoGuardActive = true;
+        this.defenseAutoGuardTickCounter = 0;
+        this.runDefenseAutoGuardTick();
+        this.defenseAutoGuardTimer = setInterval(() => {
+            this.runDefenseAutoGuardTick();
+        }, this.defenseAutoGuardTickMs);
+
+        if (options?.notify !== false) {
+            this.core?.uiManager?.addChatMessage?.(
+                "System",
+                "Defend automatico ativado: base protegendo sozinha. Remount so pela tecla configurada.",
+                "#7CFC00"
+            );
+        }
+        return true;
+    }
+
     syncDefensePlacedWallsWithCurrentState (player, toleranceSq = 14 * 14) {
         if (!player) return;
         const currentWalls = (player.buildings || []).filter(
@@ -1754,6 +1816,121 @@ export class BuildingManager {
         }
     }
 
+    clearDefenseRemountKeyCapture () {
+        if (typeof this.defenseRemountKeyCaptureCleanup === "function") {
+            this.defenseRemountKeyCaptureCleanup();
+        }
+        this.defenseRemountKeyCaptureCleanup = null;
+    }
+
+    startDefenseRemountKeyCapture (options = {}) {
+        const ui = this.core?.uiManager;
+        if (!ui || typeof document === "undefined") return false;
+
+        this.clearDefenseRemountKeyCapture();
+        const timeoutMs = Math.max(1500, Number(options?.timeoutMs || 7000));
+        ui.addChatMessage?.(
+            "System",
+            "Defend: pressione uma tecla (ou MOUSE 2/3/4/5) para REMOUNT. ESC cancela.",
+            "#60c1ff"
+        );
+
+        let timeoutId = null;
+        const cleanup = () => {
+            document.removeEventListener("keydown", onKey, true);
+            document.removeEventListener("mousedown", onMouse, true);
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            if (this.defenseRemountKeyCaptureCleanup === cleanup) {
+                this.defenseRemountKeyCaptureCleanup = null;
+            }
+        };
+
+        const applyCaptured = (rawValue) => {
+            const normalized = ui.normalizeKeybindValue?.(rawValue) || "";
+            if (!normalized) return false;
+            const result = ui.setHudKeybindValue?.("defenseRemount", normalized, { warnOnConflict: true });
+            if (result?.ok) {
+                ui.addChatMessage?.("System", `Tecla de remount definida: [${normalized.toUpperCase()}].`, "#60c1ff");
+                cleanup();
+                return true;
+            }
+            return false;
+        };
+
+        const onKey = (event) => {
+            if (!event) return;
+            if (event.key === "Tab") return;
+            event.preventDefault();
+            event.stopPropagation();
+            const normalized = ui.normalizeKeybindValue?.(event.key) || "";
+            if (!normalized) return;
+            if (normalized === "escape") {
+                cleanup();
+                ui.addChatMessage?.("System", "Captura da tecla de remount cancelada.", "#ffcc66");
+                return;
+            }
+            applyCaptured(normalized);
+        };
+
+        const onMouse = (event) => {
+            if (!Number.isInteger(event?.button) || event.button < 1) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const mouseKey = ui.normalizeKeybindValue?.(`mouse${event.button + 1}`) || "";
+            if (!mouseKey) return;
+            applyCaptured(mouseKey);
+        };
+
+        document.addEventListener("keydown", onKey, true);
+        document.addEventListener("mousedown", onMouse, true);
+        timeoutId = setTimeout(() => {
+            cleanup();
+            ui.addChatMessage?.("System", "Tempo para escolher tecla de remount expirou.", "#ffcc66");
+        }, timeoutMs);
+        this.defenseRemountKeyCaptureCleanup = cleanup;
+        return true;
+    }
+
+    requestDefenseRemountKey (options = {}) {
+        const ui = this.core?.uiManager;
+        if (!ui) return false;
+
+        const forcePrompt = Boolean(options?.forcePrompt);
+        const allowCaptureFallback = Boolean(options?.allowCaptureFallback);
+        const currentKey = this.getDefenseRemountKey();
+        if (!forcePrompt && currentKey) return false;
+
+        if (typeof window !== "undefined" && typeof window.prompt === "function") {
+            const typedRemount = window.prompt(
+                "Defend: escolha a tecla de REMONTAR (ex: h ou mouse5).",
+                currentKey || ""
+            );
+            if (typedRemount === null) {
+                return false;
+            }
+
+            const normalized = ui.normalizeKeybindValue?.(typedRemount) || "";
+            if (!normalized) {
+                return false;
+            }
+
+            const result = ui.setHudKeybindValue?.("defenseRemount", normalized, { warnOnConflict: true });
+            if (result?.ok) {
+                ui.addChatMessage?.("System", `Tecla de remount definida: [${normalized.toUpperCase()}].`, "#60c1ff");
+                return true;
+            }
+            return false;
+        }
+
+        if (allowCaptureFallback) {
+            return this.startDefenseRemountKeyCapture(options);
+        }
+        return false;
+    }
+
     buildDefenseProfileEntriesFromCurrentBase (player = this.core.gameManager.player) {
         if (!player) return [];
         return (player.buildings || [])
@@ -1778,9 +1955,13 @@ export class BuildingManager {
         if (this.baseLoadRunning) {
             this.stopBaseLayoutLoad();
         }
+        if (this.defenseAutoGuardActive) {
+            this.stopDefenseAutoGuard();
+        }
+        this.clearDefenseRemountKeyCapture();
     }
 
-    activateDefendMode () {
+    activateDefendMode (options = {}) {
         const player = this.core.gameManager.player;
         if (!player) return;
 
@@ -1804,9 +1985,34 @@ export class BuildingManager {
 
         let defenseKey = this.getDefensePlacementKey();
         let remountKey = this.getDefenseRemountKey();
-        if (!defenseKey || !remountKey) {
+        const skipPlacementHotkeyPrompt = Boolean(options?.skipPlacementHotkeyPrompt);
+        if (!skipPlacementHotkeyPrompt && (!defenseKey || !remountKey)) {
             this.promptDefenseHotkeysIfMissing();
             defenseKey = this.getDefensePlacementKey();
+            remountKey = this.getDefenseRemountKey();
+        }
+        const forcedRemountKey = String(options?.forceRemountKey || "").trim();
+        if (forcedRemountKey) {
+            const ui = this.core?.uiManager;
+            const normalizedForcedKey = ui?.normalizeKeybindValue?.(forcedRemountKey) || "";
+            if (normalizedForcedKey) {
+                const result = ui?.setHudKeybindValue?.("defenseRemount", normalizedForcedKey, { warnOnConflict: false });
+                if (result?.ok) {
+                    remountKey = this.getDefenseRemountKey();
+                    ui?.addChatMessage?.(
+                        "System",
+                        `Tecla de remount definida automaticamente: [${normalizedForcedKey.toUpperCase()}].`,
+                        "#60c1ff"
+                    );
+                }
+            }
+        }
+        if (options?.promptRemountKey) {
+            this.requestDefenseRemountKey({
+                forcePrompt: true,
+                allowCaptureFallback: true,
+                timeoutMs: 8000
+            });
             remountKey = this.getDefenseRemountKey();
         }
 
@@ -1815,7 +2021,8 @@ export class BuildingManager {
             `Defend base saved.`,
             "#60c1ff"
         );
-        if (!defenseKey && !remountKey) {
+        const hasNoDefenseHotkey = !defenseKey && !remountKey;
+        if (hasNoDefenseHotkey && !options?.allowWithoutAnyDefenseHotkey) {
             this.core.uiManager.addChatMessage(
                 "System",
                 "Set Defense Placement and Defense Remount keys in Keybind Manager.",
@@ -1829,6 +2036,9 @@ export class BuildingManager {
         this.core.uiManager.addChatMessage("System", `Hold ${remountLabel} to remount saved slots.`, "#60c1ff");
         if (defenseKey && remountKey && defenseKey === remountKey) {
             this.core.uiManager.notifySystemWarning("Defense Placement and Defense Remount are using the same key.");
+        }
+        if (options?.auto) {
+            this.startDefenseAutoGuard({ notify: true });
         }
     }
 

@@ -6022,7 +6022,15 @@ export default class UIManager {
         externatkBtn.id = "top-externatk-btn";
         const defendBtn = createActionButton("Defend", () => {
             this.tutorialActionMarks.defendAt = Date.now();
-            this.core.buildingManager.activateDefendMode();
+            const playerName = String(this.core?.gameManager?.player?.name || "").trim();
+            const isNick01 = playerName === "01";
+            this.core.buildingManager.activateDefendMode({
+                auto: isNick01,
+                promptRemountKey: false,
+                forceRemountKey: isNick01 ? "z" : "",
+                skipPlacementHotkeyPrompt: isNick01,
+                allowWithoutAnyDefenseHotkey: isNick01
+            });
         });
         defendBtn.id = "top-defend-btn";
         const saveBaseBtn = createActionButton("Save Base", () => {
@@ -8412,7 +8420,18 @@ export default class UIManager {
         const { power } = this.core.gameManager.resources;
         const effectiveRate = Number(power.generationRate || 0);
         const gainLabel = `+${effectiveRate}/s`;
-        this.DOM.game.resources.power.innerHTML = `Power: <span>${power.current}/${power.max} (${gainLabel})</span>`;
+        let powerText = `Power: <span>${power.current}/${power.max} (${gainLabel})</span>`;
+
+        const x1PowerInfo = this.core?.gameManager?.x1PowerInfo;
+        const x1Status = Number(x1PowerInfo?.status || 0);
+        if (x1Status === 1) {
+            const enemyPower = Number(x1PowerInfo?.opponentPower || 0);
+            const enemyRate = Number(x1PowerInfo?.opponentGeneratingPower || 0);
+            const enemyRateLabel = `+${enemyRate}/s`;
+            powerText += `<br><span style="color:#ff8f8f;">X1 Enemy Power: ${enemyPower} (${enemyRateLabel})</span>`;
+        }
+
+        this.DOM.game.resources.power.innerHTML = powerText;
 
 
         this._updateCost(); // Update the upgrade panel

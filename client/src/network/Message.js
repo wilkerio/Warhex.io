@@ -323,4 +323,9 @@ export default class Message {
         return new Message(MessageTypes.CLIENT_SECURITY_ALERT, payload);
     }
 
+    static createRequestX1PowerMessage () {
+        const payload = new Uint8Array(0);
+        return new Message(MessageTypes.CLIENT_REQUEST_X1_POWER, payload);
+    }
+
 }

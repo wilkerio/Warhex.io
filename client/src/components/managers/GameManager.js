@@ -351,17 +351,20 @@ class GameManager {
     setDuelArena(arena, opponentID = null) {
         this.duelArena = arena || null;
         this.duelOpponentID = opponentID ?? null;
+        this.core?.uiManager?.updateResources?.();
     }
 
     clearDuelArena() {
         this.duelArena = null;
         this.duelOpponentID = null;
         this.x1PowerInfo = null;
+        this.core?.uiManager?.updateResources?.();
     }
 
     setX1PowerInfo(payload = null) {
         if (!payload || typeof payload !== "object") {
             this.x1PowerInfo = null;
+            this.core?.uiManager?.updateResources?.();
             return;
         }
 
@@ -380,6 +383,7 @@ class GameManager {
             opponentGeneratingPower: toSafeNumber(payload.opponentGeneratingPower, 0),
             updatedAt: now
         };
+        this.core?.uiManager?.updateResources?.();
     }
 
     upsertGlobalDuelArena(playerAID, playerBID, arena) {
