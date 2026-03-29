@@ -59,6 +59,8 @@ export default class UnitManager {
         this.commanderDefenseFocusHoldMs = 2100;
         this.commanderDefenseFocusSwitchCountDelta = 3;
         this.commanderDefenseFocusMinCount = 3;
+        this.commanderDefenseFocusRequiredSectorOffset = 1;
+        this.commanderDefenseFocusPreferredSectorOffset = 2;
 
         this.lastTargetPosition = { x: Infinity, y: Infinity };
         this.lastMoveCommandAt = 0;
@@ -490,6 +492,32 @@ export default class UnitManager {
         if (!Number.isFinite(normalized)) return -1;
         const index = Math.floor(normalized * safeSectorCount);
         return Math.max(0, Math.min(safeSectorCount - 1, index));
+    }
+
+    getCommanderDefenseSectorCircularDistance (fromIndex, toIndex, sectorCount = this.commanderDefenseSectorCount) {
+        const a = Number(fromIndex);
+        const b = Number(toIndex);
+        const n = Math.max(6, Math.min(48, Number(sectorCount || this.commanderDefenseSectorCount || 16)));
+        if (!Number.isFinite(a) || !Number.isFinite(b)) return Infinity;
+        const ia = ((Math.floor(a) % n) + n) % n;
+        const ib = ((Math.floor(b) % n) + n) % n;
+        const direct = Math.abs(ia - ib);
+        return Math.min(direct, n - direct);
+    }
+
+    getCommanderDefenseSectorNeighborhoodPressure (counts, centerIndex, radius = 1) {
+        if (!Array.isArray(counts) || counts.length === 0) return 0;
+        const n = counts.length;
+        const ci = ((Math.floor(Number(centerIndex) || 0) % n) + n) % n;
+        const r = Math.max(0, Math.min(4, Math.floor(Number(radius) || 0)));
+        let pressure = 0;
+        for (let offset = -r; offset <= r; offset += 1) {
+            const idx = ((ci + offset) % n + n) % n;
+            const distance = Math.abs(offset);
+            const weight = distance === 0 ? 1 : (distance === 1 ? 0.7 : 0.45);
+            pressure += Number(counts[idx] || 0) * weight;
+        }
+        return pressure;
     }
 
     buildCommanderDefenseSectorHistogram (options = {}) {
@@ -1407,6 +1435,17 @@ export default class UnitManager {
         const requiredSectorIndex = (
             Number.isFinite(requiredSectorIndexRaw) && requiredSectorIndexRaw >= 0
         ) ? Math.floor(requiredSectorIndexRaw) : -1;
+        const requiredSectorMaxOffset = Math.max(
+            0,
+            Math.min(6, Math.floor(Number(options?.requiredSectorMaxOffset || 0)))
+        );
+        const preferredSectorMaxOffset = Math.max(
+            requiredSectorMaxOffset,
+            Math.min(8, Math.floor(Number(
+                options?.preferredSectorMaxOffset
+                ?? Math.max(requiredSectorMaxOffset, 1)
+            )))
+        );
         const sectorCount = Math.max(
             6,
             Math.min(48, Number(options?.sectorCount || this.commanderDefenseSectorCount || 16))
@@ -1459,6 +1498,7 @@ export default class UnitManager {
                 let aggressorRank = 0;
                 let sectorRank = 0;
                 let sectorDensity = 0;
+                let sectorOffsetToPreferred = 0;
                 let isOutsideZoneApproachThreat = false;
                 if (hasZoneFilter) {
                     const centerDx = ux - Number(zoneCenter.x);
@@ -1519,7 +1559,16 @@ export default class UnitManager {
                         zoneCenter,
                         sectorCount
                     );
-                    if (requiredSectorIndex >= 0 && candidateSectorIndex >= 0 && candidateSectorIndex !== requiredSectorIndex) {
+                    const offsetToRequired = this.getCommanderDefenseSectorCircularDistance(
+                        candidateSectorIndex,
+                        requiredSectorIndex,
+                        sectorCount
+                    );
+                    if (
+                        requiredSectorIndex >= 0
+                        && candidateSectorIndex >= 0
+                        && offsetToRequired > requiredSectorMaxOffset
+                    ) {
                         return;
                     }
 
@@ -1530,13 +1579,21 @@ export default class UnitManager {
                         sectorCounts && preferredSectorIndex >= 0
                     ) ? Number(sectorCounts[preferredSectorIndex] || 0) : 0;
                     sectorDensity = candidateSectorDensity;
+                    sectorOffsetToPreferred = this.getCommanderDefenseSectorCircularDistance(
+                        candidateSectorIndex,
+                        preferredSectorIndex,
+                        sectorCount
+                    );
                     if (
                         preferredSectorIndex >= 0
                         && candidateSectorIndex >= 0
-                        && candidateSectorIndex !== preferredSectorIndex
                         && preferredSectorDensity > candidateSectorDensity
                     ) {
-                        sectorRank = 1;
+                        if (sectorOffsetToPreferred > preferredSectorMaxOffset) {
+                            sectorRank = 2;
+                        } else if (sectorOffsetToPreferred > 0) {
+                            sectorRank = 1;
+                        }
                     }
                 }
 
@@ -1580,6 +1637,7 @@ export default class UnitManager {
                         ) ? Number(sectorCounts[preferredSectorIndex] || 0) : 0;
                         const sectorDensityGap = Math.max(0, preferredSectorDensity - sectorDensity);
                         interceptScore += sectorDensityGap * sectorBiasWeight;
+                        interceptScore += Math.max(0, sectorOffsetToPreferred) * 0.08;
                     }
                     if (preferredRank === 0) {
                         interceptScore *= 0.72;
@@ -2033,6 +2091,18 @@ export default class UnitManager {
             includeCommanders: false,
             sectorCount: this.commanderDefenseSectorCount
         });
+        const sectorPressureCounts = Array.isArray(sectorHistogram?.counts)
+            ? sectorHistogram.counts.map((_, index) =>
+                this.getCommanderDefenseSectorNeighborhoodPressure(sectorHistogram.counts, index, 1))
+            : [];
+        let pressureDominantIndex = -1;
+        let pressureDominantCount = 0;
+        sectorPressureCounts.forEach((count, index) => {
+            if (count > pressureDominantCount) {
+                pressureDominantCount = count;
+                pressureDominantIndex = index;
+            }
+        });
         const nowForFocus = Date.now();
         let focusSectorIndex = Number(this.commanderDefenseFocusSectorIndex);
         if (!Number.isFinite(focusSectorIndex) || focusSectorIndex < 0) {
@@ -2040,14 +2110,16 @@ export default class UnitManager {
         } else {
             focusSectorIndex = Math.floor(focusSectorIndex);
         }
-        const dominantSectorIndex = Number.isFinite(Number(sectorHistogram?.dominantIndex))
-            ? Number(sectorHistogram.dominantIndex)
+        const dominantSectorIndex = Number.isFinite(Number(pressureDominantIndex)) && pressureDominantIndex >= 0
+            ? Number(pressureDominantIndex)
             : -1;
-        const dominantSectorCount = Number(sectorHistogram?.dominantCount || 0);
+        const dominantSectorCount = dominantSectorIndex >= 0
+            ? Number(sectorPressureCounts[dominantSectorIndex] || 0)
+            : Number(sectorHistogram?.dominantCount || 0);
         const hasDominantSector = dominantSectorIndex >= 0
             && dominantSectorCount >= this.commanderDefenseFocusMinCount;
         const focusSectorCount = focusSectorIndex >= 0
-            ? Number(sectorHistogram?.counts?.[focusSectorIndex] || 0)
+            ? Number((sectorPressureCounts.length ? sectorPressureCounts : sectorHistogram?.counts)?.[focusSectorIndex] || 0)
             : 0;
         const focusLockActive = nowForFocus < Number(this.commanderDefenseFocusSectorLockedUntil || 0);
         if (focusSectorIndex < 0) {
@@ -2073,7 +2145,7 @@ export default class UnitManager {
         this.commanderDefenseFocusSectorIndex = focusSectorIndex;
         const focusLockActiveAfterDecision = nowForFocus < Number(this.commanderDefenseFocusSectorLockedUntil || 0);
         const effectiveFocusSectorCount = focusSectorIndex >= 0
-            ? Number(sectorHistogram?.counts?.[focusSectorIndex] || 0)
+            ? Number((sectorPressureCounts.length ? sectorPressureCounts : sectorHistogram?.counts)?.[focusSectorIndex] || 0)
             : 0;
         const enforceFocusSector = focusSectorIndex >= 0
             && effectiveFocusSectorCount >= this.commanderDefenseFocusMinCount;
@@ -2092,10 +2164,12 @@ export default class UnitManager {
             zoneRadius,
             allowApproachingOutsideZone: false,
             outsideZoneBuffer: 0,
-            sectorCounts: sectorHistogram.counts,
+            sectorCounts: sectorPressureCounts.length ? sectorPressureCounts : sectorHistogram.counts,
             sectorCount: sectorHistogram.sectorCount,
             preferredSectorIndex: focusSectorIndex,
             requiredSectorIndex: enforceFocusSector ? focusSectorIndex : -1,
+            requiredSectorMaxOffset: enforceFocusSector ? this.commanderDefenseFocusRequiredSectorOffset : 0,
+            preferredSectorMaxOffset: this.commanderDefenseFocusPreferredSectorOffset,
             sectorBiasWeight: 0.22,
             allowedEnemyPlayerID: strictX1Focus ? x1OpponentID : 0,
             allowEnemyCommanders: false,
@@ -2146,9 +2220,14 @@ export default class UnitManager {
                         zoneCenter,
                         sectorHistogram?.sectorCount || this.commanderDefenseSectorCount
                     );
+                    const retainedSectorOffset = this.getCommanderDefenseSectorCircularDistance(
+                        retainedSectorIndex,
+                        focusSectorIndex,
+                        sectorHistogram?.sectorCount || this.commanderDefenseSectorCount
+                    );
                     const allowedByFocus = !enforceFocusSector
                         || !focusLockActiveAfterDecision
-                        || retainedSectorIndex === focusSectorIndex;
+                        || retainedSectorOffset <= this.commanderDefenseFocusRequiredSectorOffset;
                     if (retainedDistance <= zoneRadius + chaseReleaseBuffer && allowedByFocus) {
                         targetThreat = retainedTarget;
                     }
@@ -2207,6 +2286,9 @@ export default class UnitManager {
                 ...targetSearchOptions,
                 allowEnemyCommanders: false,
                 requiredSectorIndex: (enforceFocusSector && focusLockActiveAfterDecision) ? focusSectorIndex : -1,
+                requiredSectorMaxOffset: (enforceFocusSector && focusLockActiveAfterDecision)
+                    ? this.commanderDefenseFocusRequiredSectorOffset
+                    : 0,
                 allowApproachingOutsideZone: true,
                 outsideZoneBuffer: preStageOutsideBuffer,
                 preferredTargetID: this.commanderDefenseLastTargetUnitId
@@ -2243,9 +2325,14 @@ export default class UnitManager {
             sectorHistogram?.sectorCount || this.commanderDefenseSectorCount
         );
         if (selectedThreatSectorIndex >= 0) {
+            const selectedSectorOffset = this.getCommanderDefenseSectorCircularDistance(
+                selectedThreatSectorIndex,
+                focusSectorIndex,
+                sectorHistogram?.sectorCount || this.commanderDefenseSectorCount
+            );
             if (
                 focusSectorIndex < 0
-                || selectedThreatSectorIndex === focusSectorIndex
+                || selectedSectorOffset <= this.commanderDefenseFocusRequiredSectorOffset
                 || (!focusLockActiveAfterDecision && !enforceFocusSector)
             ) {
                 this.commanderDefenseFocusSectorIndex = selectedThreatSectorIndex;
