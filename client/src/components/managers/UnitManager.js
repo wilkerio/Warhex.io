@@ -51,6 +51,14 @@ export default class UnitManager {
         this.commanderDefenseAutoDefendSetupCooldownMs = 1200;
         this.commanderDefenseThreatHistory = new Map();
         this.commanderDefenseThreatHistoryTtlMs = 1400;
+        this.commanderDefenseApproachThreatMinBuffer = 320;
+        this.commanderDefenseApproachThreatBufferFactor = 0.72;
+        this.commanderDefenseSectorCount = 16;
+        this.commanderDefenseFocusSectorIndex = -1;
+        this.commanderDefenseFocusSectorLockedUntil = 0;
+        this.commanderDefenseFocusHoldMs = 2100;
+        this.commanderDefenseFocusSwitchCountDelta = 3;
+        this.commanderDefenseFocusMinCount = 3;
 
         this.lastTargetPosition = { x: Infinity, y: Infinity };
         this.lastMoveCommandAt = 0;
@@ -431,6 +439,223 @@ export default class UnitManager {
     getCommanderDefenseSafeRadius (radius = this.commanderDefenseDefaultRadius) {
         const parsedRadius = Number(radius);
         return Math.max(80, Math.min(3600, Number.isFinite(parsedRadius) ? parsedRadius : this.commanderDefenseDefaultRadius));
+    }
+
+    getCommanderDefenseBoundedPosition (position, options = {}) {
+        const px = Number(position?.x);
+        const py = Number(position?.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return null;
+
+        const zoneCenter = options?.zoneCenter || this.commanderDefenseZone?.center || this.getCommanderDefenseBaseCenter();
+        const cx = Number(zoneCenter?.x);
+        const cy = Number(zoneCenter?.y);
+        if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
+            return { x: px, y: py, isClamped: false };
+        }
+
+        const zoneRadius = this.getCommanderDefenseSafeRadius(options?.zoneRadius ?? this.commanderDefenseZone?.radius);
+        const edgePadding = Math.max(0, Number(options?.edgePadding || 0));
+        const boundedRadius = Math.max(42, zoneRadius - edgePadding);
+        const dx = px - cx;
+        const dy = py - cy;
+        const distance = Math.sqrt((dx * dx) + (dy * dy));
+        if (!Number.isFinite(distance) || distance <= boundedRadius) {
+            return { x: px, y: py, isClamped: false };
+        }
+
+        if (distance <= 0) {
+            return { x: cx, y: cy, isClamped: true };
+        }
+
+        const scale = boundedRadius / distance;
+        return {
+            x: cx + (dx * scale),
+            y: cy + (dy * scale),
+            isClamped: true
+        };
+    }
+
+    getCommanderDefenseSectorIndex (position, center = this.commanderDefenseZone?.center, sectorCount = this.commanderDefenseSectorCount) {
+        const px = Number(position?.x);
+        const py = Number(position?.y);
+        const cx = Number(center?.x);
+        const cy = Number(center?.y);
+        const safeSectorCount = Math.max(6, Math.min(48, Number(sectorCount || this.commanderDefenseSectorCount || 16)));
+        if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+            return -1;
+        }
+
+        const angle = Math.atan2(py - cy, px - cx);
+        const normalized = ((angle + Math.PI) / (Math.PI * 2));
+        if (!Number.isFinite(normalized)) return -1;
+        const index = Math.floor(normalized * safeSectorCount);
+        return Math.max(0, Math.min(safeSectorCount - 1, index));
+    }
+
+    buildCommanderDefenseSectorHistogram (options = {}) {
+        const zoneCenter = options?.zoneCenter || this.commanderDefenseZone?.center || this.getCommanderDefenseBaseCenter();
+        const centerX = Number(zoneCenter?.x);
+        const centerY = Number(zoneCenter?.y);
+        const sectorCount = Math.max(6, Math.min(48, Number(options?.sectorCount || this.commanderDefenseSectorCount || 16)));
+        const counts = Array.from({ length: sectorCount }, () => 0);
+        if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) {
+            return {
+                counts,
+                sectorCount,
+                dominantIndex: -1,
+                dominantCount: 0,
+                totalCount: 0
+            };
+        }
+
+        const zoneRadius = this.getCommanderDefenseSafeRadius(options?.zoneRadius ?? this.commanderDefenseZone?.radius);
+        const outsideBuffer = Math.max(0, Number(options?.outsideBuffer || 0));
+        const maxDistanceSq = (zoneRadius + outsideBuffer) ** 2;
+        const allowedEnemyPlayerID = Number(options?.allowedEnemyPlayerID || 0);
+        const includeCommanders = Boolean(options?.includeCommanders);
+        const enemyPlayers = Array.isArray(this.core?.gameManager?.players)
+            ? this.core.gameManager.players
+            : [];
+
+        let totalCount = 0;
+        enemyPlayers.forEach((enemyPlayer) => {
+            if (!enemyPlayer || enemyPlayer.removeFlag || enemyPlayer.hasSpawnProtection) return;
+            if (allowedEnemyPlayerID > 0 && Number(enemyPlayer.id) !== allowedEnemyPlayerID) return;
+            const units = Array.isArray(enemyPlayer.units) ? enemyPlayer.units : [];
+            units.forEach((unit) => {
+                if (!unit || unit.removeFlag || unit.isFadingOut) return;
+                const isSoldier = unit.type === UnitTypes.SOLDIER;
+                const isCommander = unit.type === UnitTypes.COMMANDER || unit.type === UnitTypes.TRI_COMMANDER;
+                if (!isSoldier && !(includeCommanders && isCommander)) return;
+
+                const ux = Number(unit?.position?.x);
+                const uy = Number(unit?.position?.y);
+                if (!Number.isFinite(ux) || !Number.isFinite(uy)) return;
+                const dx = ux - centerX;
+                const dy = uy - centerY;
+                if ((dx * dx) + (dy * dy) > maxDistanceSq) return;
+
+                const sectorIndex = this.getCommanderDefenseSectorIndex(
+                    { x: ux, y: uy },
+                    { x: centerX, y: centerY },
+                    sectorCount
+                );
+                if (sectorIndex < 0) return;
+                const weight = isSoldier ? 1 : 0.75;
+                counts[sectorIndex] += weight;
+                totalCount += weight;
+            });
+        });
+
+        let dominantIndex = -1;
+        let dominantCount = 0;
+        counts.forEach((count, index) => {
+            if (count > dominantCount) {
+                dominantCount = count;
+                dominantIndex = index;
+            }
+        });
+
+        return {
+            counts,
+            sectorCount,
+            dominantIndex,
+            dominantCount,
+            totalCount
+        };
+    }
+
+    getCommanderDefenseIngressBlockPosition (threatUnit, options = {}) {
+        const zoneCenter = options?.zoneCenter || this.commanderDefenseZone?.center || this.getCommanderDefenseBaseCenter();
+        const cx = Number(zoneCenter?.x);
+        const cy = Number(zoneCenter?.y);
+        if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+
+        const zoneRadius = this.getCommanderDefenseSafeRadius(options?.zoneRadius ?? this.commanderDefenseZone?.radius);
+        if (!Number.isFinite(zoneRadius) || zoneRadius <= 0) return null;
+
+        const threatVelocity = this.getThreatVelocityVector(threatUnit);
+        const ux = Number(threatVelocity?.ux);
+        const uy = Number(threatVelocity?.uy);
+        if (!Number.isFinite(ux) || !Number.isFinite(uy)) return null;
+
+        const velocityX = Number(threatVelocity?.vx || 0);
+        const velocityY = Number(threatVelocity?.vy || 0);
+        const velocityMagnitude = Math.sqrt((velocityX * velocityX) + (velocityY * velocityY));
+        const commanderX = Number(options?.commanderPosition?.x);
+        const commanderY = Number(options?.commanderPosition?.y);
+        const interceptorSpeed = Math.max(120, Number(options?.interceptorSpeed || 0) || 220);
+        let projectedLeadSeconds = 0.28;
+        if (Number.isFinite(commanderX) && Number.isFinite(commanderY) && velocityMagnitude > 1) {
+            const commanderThreatDx = ux - commanderX;
+            const commanderThreatDy = uy - commanderY;
+            const commanderThreatDistance = Math.sqrt((commanderThreatDx * commanderThreatDx) + (commanderThreatDy * commanderThreatDy));
+            projectedLeadSeconds = Math.max(
+                0.14,
+                Math.min(1.08, commanderThreatDistance / Math.max(140, interceptorSpeed * 1.1))
+            );
+        }
+        let projectedX = ux;
+        let projectedY = uy;
+        if (velocityMagnitude > 1) {
+            projectedX = ux + (velocityX * projectedLeadSeconds);
+            projectedY = uy + (velocityY * projectedLeadSeconds);
+        }
+        const projectionBlend = velocityMagnitude > 1
+            ? (Math.max(0.36, Math.min(0.84, 0.48 + (projectedLeadSeconds * 0.22))))
+            : 0;
+        const aimX = (ux * (1 - projectionBlend)) + (projectedX * projectionBlend);
+        const aimY = (uy * (1 - projectionBlend)) + (projectedY * projectionBlend);
+
+        const radialDx = aimX - cx;
+        const radialDy = aimY - cy;
+        const radialDistance = Math.sqrt((radialDx * radialDx) + (radialDy * radialDy));
+        if (!Number.isFinite(radialDistance) || radialDistance < 1) {
+            return { x: cx, y: cy };
+        }
+
+        const radialNx = radialDx / radialDistance;
+        const radialNy = radialDy / radialDistance;
+        let blockRadius = zoneRadius * 0.78;
+        if (radialDistance <= zoneRadius) {
+            blockRadius = Math.max(zoneRadius * 0.42, Math.min(zoneRadius * 0.82, radialDistance * 0.88));
+        } else {
+            const outsideDistance = radialDistance - zoneRadius;
+            const ingressAdvance = Math.max(24, Math.min(zoneRadius * 0.2, outsideDistance * 0.38));
+            blockRadius = Math.max(zoneRadius * 0.56, Math.min(zoneRadius * 0.92, zoneRadius - ingressAdvance));
+        }
+        if (Number.isFinite(commanderX) && Number.isFinite(commanderY)) {
+            const commanderCenterDx = commanderX - cx;
+            const commanderCenterDy = commanderY - cy;
+            const commanderCenterDistance = Math.sqrt((commanderCenterDx * commanderCenterDx) + (commanderCenterDy * commanderCenterDy));
+            const commanderBehindProjectedThreat = commanderCenterDistance > radialDistance + Math.max(26, zoneRadius * 0.03);
+            if (commanderBehindProjectedThreat) {
+                const deepCutRadius = radialDistance <= zoneRadius * 0.94
+                    ? zoneRadius * 0.5
+                    : zoneRadius * 0.62;
+                blockRadius = Math.min(blockRadius, deepCutRadius);
+            }
+        }
+
+        let blockX = cx + (radialNx * blockRadius);
+        let blockY = cy + (radialNy * blockRadius);
+
+        const tangentNx = -radialNy;
+        const tangentNy = radialNx;
+        const lateralSpeed = (velocityX * tangentNx) + (velocityY * tangentNy);
+        const lateralOffset = Math.max(-zoneRadius * 0.18, Math.min(zoneRadius * 0.18, lateralSpeed * 0.22));
+        blockX += tangentNx * lateralOffset;
+        blockY += tangentNy * lateralOffset;
+
+        const bounded = this.getCommanderDefenseBoundedPosition(
+            { x: blockX, y: blockY },
+            {
+                zoneCenter,
+                zoneRadius,
+                edgePadding: Math.max(18, Math.min(84, zoneRadius * 0.06))
+            }
+        );
+        return bounded || { x: blockX, y: blockY };
     }
 
     getCommanderDefenseX1OpponentID () {
@@ -859,9 +1084,13 @@ export default class UnitManager {
             this.commanderDefenseLastFollowMoveAt = 0;
             this.commanderDefenseLastFollowTargetPosition = { x: Infinity, y: Infinity };
             this.commanderDefenseDirectionTargetPosition = null;
+            this.commanderDefenseFocusSectorIndex = -1;
+            this.commanderDefenseFocusSectorLockedUntil = 0;
         } else {
             this.commanderDefenseLastTargetUnitId = null;
             this.commanderDefenseDirectionTargetPosition = null;
+            this.commanderDefenseFocusSectorIndex = -1;
+            this.commanderDefenseFocusSectorLockedUntil = 0;
             if (this.commanderDefenseThreatHistory instanceof Map) {
                 this.commanderDefenseThreatHistory.clear();
             }
@@ -1170,6 +1399,20 @@ export default class UnitManager {
         const preferInterception = Boolean(options?.preferInterception);
         const interceptorSpeed = Number(options?.interceptorSpeed || 0);
         const preferredTargetID = Number(options?.preferredTargetID || -1);
+        const preferredSectorIndexRaw = Number(options?.preferredSectorIndex);
+        const preferredSectorIndex = (
+            Number.isFinite(preferredSectorIndexRaw) && preferredSectorIndexRaw >= 0
+        ) ? Math.floor(preferredSectorIndexRaw) : -1;
+        const requiredSectorIndexRaw = Number(options?.requiredSectorIndex);
+        const requiredSectorIndex = (
+            Number.isFinite(requiredSectorIndexRaw) && requiredSectorIndexRaw >= 0
+        ) ? Math.floor(requiredSectorIndexRaw) : -1;
+        const sectorCount = Math.max(
+            6,
+            Math.min(48, Number(options?.sectorCount || this.commanderDefenseSectorCount || 16))
+        );
+        const sectorCounts = Array.isArray(options?.sectorCounts) ? options.sectorCounts : null;
+        const sectorBiasWeight = Math.max(0, Number(options?.sectorBiasWeight || 0.18));
         const zoneCenter = options?.zoneCenter;
         const zoneRadius = Number(options?.zoneRadius || 0);
         const hasZoneFilter = Boolean(
@@ -1178,10 +1421,21 @@ export default class UnitManager {
             && Number.isFinite(Number(zoneCenter.y))
             && zoneRadius > 0
         );
+        const allowApproachingOutsideZone = Boolean(options?.allowApproachingOutsideZone && hasZoneFilter);
+        const parsedOutsideZoneBuffer = Number(options?.outsideZoneBuffer || 0);
+        const outsideZoneBuffer = Math.max(
+            120,
+            Number.isFinite(parsedOutsideZoneBuffer)
+                ? parsedOutsideZoneBuffer
+                : Math.max(260, zoneRadius * 0.55)
+        );
         const zoneRadiusSq = zoneRadius * zoneRadius;
+        const outsideZoneRadiusSq = (zoneRadius + outsideZoneBuffer) ** 2;
         const priorityThreatZoneRadiusSq = Math.max(120, zoneRadius * 0.6) ** 2;
         let bestTarget = null;
         let bestAggressorRank = Infinity;
+        let bestSectorRank = Infinity;
+        let bestSectorDensity = -Infinity;
         let bestPreferredRank = Infinity;
         let bestTypeRank = Infinity;
         let bestInterceptScore = Infinity;
@@ -1200,37 +1454,90 @@ export default class UnitManager {
                 const ux = Number(unit?.position?.x);
                 const uy = Number(unit?.position?.y);
                 if (!Number.isFinite(ux) || !Number.isFinite(uy)) return;
-                if (hasZoneFilter) {
-                    const zdx = ux - Number(zoneCenter.x);
-                    const zdy = uy - Number(zoneCenter.y);
-                    if ((zdx * zdx) + (zdy * zdy) > zoneRadiusSq) return;
-                }
 
                 let zoneDistanceSq = 0;
                 let aggressorRank = 0;
+                let sectorRank = 0;
+                let sectorDensity = 0;
+                let isOutsideZoneApproachThreat = false;
                 if (hasZoneFilter) {
                     const centerDx = ux - Number(zoneCenter.x);
                     const centerDy = uy - Number(zoneCenter.y);
                     zoneDistanceSq = (centerDx * centerDx) + (centerDy * centerDy);
+                    const insideZone = zoneDistanceSq <= zoneRadiusSq;
                     let isAggressor = zoneDistanceSq <= priorityThreatZoneRadiusSq;
+                    const centerVectorDx = Number(zoneCenter.x) - ux;
+                    const centerVectorDy = Number(zoneCenter.y) - uy;
+                    let movingTowardCenter = false;
+                    let targetZoneDistanceSq = Infinity;
 
                     const tx = Number(unit?.targetPosition?.x);
                     const ty = Number(unit?.targetPosition?.y);
                     if (Number.isFinite(tx) && Number.isFinite(ty)) {
                         const targetCenterDx = tx - Number(zoneCenter.x);
                         const targetCenterDy = ty - Number(zoneCenter.y);
-                        const targetZoneDistanceSq = (targetCenterDx * targetCenterDx) + (targetCenterDy * targetCenterDy);
+                        targetZoneDistanceSq = (targetCenterDx * targetCenterDx) + (targetCenterDy * targetCenterDy);
                         const moveDx = tx - ux;
                         const moveDy = ty - uy;
-                        const centerVectorDx = Number(zoneCenter.x) - ux;
-                        const centerVectorDy = Number(zoneCenter.y) - uy;
-                        const movingTowardCenter = ((moveDx * centerVectorDx) + (moveDy * centerVectorDy)) > 0;
+                        movingTowardCenter = ((moveDx * centerVectorDx) + (moveDy * centerVectorDy)) > 0;
                         if (targetZoneDistanceSq <= zoneRadiusSq || (movingTowardCenter && targetZoneDistanceSq < zoneDistanceSq)) {
                             isAggressor = true;
                         }
                     }
 
+                    if (!insideZone) {
+                        if (!movingTowardCenter) {
+                            const movement = this.getUnitMovementDirectionVector(unit, 10);
+                            if (movement) {
+                                movingTowardCenter = ((movement.moveDx * centerVectorDx) + (movement.moveDy * centerVectorDy)) > 0;
+                            }
+                        }
+
+                        const enteringDefenseZoneSoon = (
+                            Number.isFinite(targetZoneDistanceSq)
+                            && targetZoneDistanceSq <= zoneRadiusSq
+                        ) || (
+                            movingTowardCenter
+                            && Number.isFinite(targetZoneDistanceSq)
+                            && targetZoneDistanceSq < zoneDistanceSq
+                        ) || (
+                            movingTowardCenter
+                            && !Number.isFinite(targetZoneDistanceSq)
+                        );
+
+                        if (!allowApproachingOutsideZone || !movingTowardCenter || !enteringDefenseZoneSoon || zoneDistanceSq > outsideZoneRadiusSq) {
+                            return;
+                        }
+                        isOutsideZoneApproachThreat = true;
+                        isAggressor = false;
+                    }
+
                     aggressorRank = prioritizeAggressors ? (isAggressor ? 0 : 1) : 0;
+
+                    const candidateSectorIndex = this.getCommanderDefenseSectorIndex(
+                        { x: ux, y: uy },
+                        zoneCenter,
+                        sectorCount
+                    );
+                    if (requiredSectorIndex >= 0 && candidateSectorIndex >= 0 && candidateSectorIndex !== requiredSectorIndex) {
+                        return;
+                    }
+
+                    const candidateSectorDensity = (
+                        sectorCounts && candidateSectorIndex >= 0
+                    ) ? Number(sectorCounts[candidateSectorIndex] || 0) : 0;
+                    const preferredSectorDensity = (
+                        sectorCounts && preferredSectorIndex >= 0
+                    ) ? Number(sectorCounts[preferredSectorIndex] || 0) : 0;
+                    sectorDensity = candidateSectorDensity;
+                    if (
+                        preferredSectorIndex >= 0
+                        && candidateSectorIndex >= 0
+                        && candidateSectorIndex !== preferredSectorIndex
+                        && preferredSectorDensity > candidateSectorDensity
+                    ) {
+                        sectorRank = 1;
+                    }
                 }
 
                 const dx = ux - fromPosition.x;
@@ -1264,6 +1571,16 @@ export default class UnitManager {
                     if (!isSoldier) {
                         interceptScore += 0.12;
                     }
+                    if (isOutsideZoneApproachThreat) {
+                        interceptScore += 0.18;
+                    }
+                    if (sectorRank > 0) {
+                        const preferredSectorDensity = (
+                            sectorCounts && preferredSectorIndex >= 0
+                        ) ? Number(sectorCounts[preferredSectorIndex] || 0) : 0;
+                        const sectorDensityGap = Math.max(0, preferredSectorDensity - sectorDensity);
+                        interceptScore += sectorDensityGap * sectorBiasWeight;
+                    }
                     if (preferredRank === 0) {
                         interceptScore *= 0.72;
                     }
@@ -1271,10 +1588,29 @@ export default class UnitManager {
 
                 const isBetterCandidate =
                     (aggressorRank < bestAggressorRank)
-                    || (aggressorRank === bestAggressorRank && preferredRank < bestPreferredRank)
-                    || (aggressorRank === bestAggressorRank && preferredRank === bestPreferredRank && typeRank < bestTypeRank)
+                    || (aggressorRank === bestAggressorRank && sectorRank < bestSectorRank)
                     || (
                         aggressorRank === bestAggressorRank
+                        && sectorRank === bestSectorRank
+                        && sectorDensity > bestSectorDensity
+                    )
+                    || (
+                        aggressorRank === bestAggressorRank
+                        && sectorRank === bestSectorRank
+                        && sectorDensity === bestSectorDensity
+                        && preferredRank < bestPreferredRank
+                    )
+                    || (
+                        aggressorRank === bestAggressorRank
+                        && sectorRank === bestSectorRank
+                        && sectorDensity === bestSectorDensity
+                        && preferredRank === bestPreferredRank
+                        && typeRank < bestTypeRank
+                    )
+                    || (
+                        aggressorRank === bestAggressorRank
+                        && sectorRank === bestSectorRank
+                        && sectorDensity === bestSectorDensity
                         && preferredRank === bestPreferredRank
                         && typeRank === bestTypeRank
                         && (
@@ -1292,6 +1628,8 @@ export default class UnitManager {
 
                 if (isBetterCandidate) {
                     bestAggressorRank = aggressorRank;
+                    bestSectorRank = sectorRank;
+                    bestSectorDensity = sectorDensity;
                     bestPreferredRank = preferredRank;
                     bestTypeRank = typeRank;
                     bestInterceptScore = interceptScore;
@@ -1364,6 +1702,7 @@ export default class UnitManager {
         const zoneCenter = this.commanderDefenseZone?.center || this.getCommanderDefenseBaseCenter();
         const zoneX = Number(zoneCenter?.x);
         const zoneY = Number(zoneCenter?.y);
+        const zoneRadius = this.getCommanderDefenseSafeRadius(this.commanderDefenseZone?.radius);
         if (Number.isFinite(zoneX) && Number.isFinite(zoneY) && forwardMagnitude > 1) {
             const towardBaseDx = zoneX - ux;
             const towardBaseDy = zoneY - uy;
@@ -1377,6 +1716,34 @@ export default class UnitManager {
                 const turnBlend = Math.max(0.16, Math.min(0.78, 0.2 + (turnRisk * 0.62) + (distanceToCommander < 240 ? 0.12 : 0)));
                 predictedX = (predictedX * (1 - turnBlend)) + (turnPredictionX * turnBlend);
                 predictedY = (predictedY * (1 - turnBlend)) + (turnPredictionY * turnBlend);
+            }
+        }
+
+        // On long chases, bias toward an inside cutoff point so the commander can "cut path"
+        // instead of only following behind the current enemy position.
+        if (Number.isFinite(zoneX) && Number.isFinite(zoneY) && zoneRadius > 0 && velocityMagnitude > 1) {
+            const towardZoneDx = zoneX - ux;
+            const towardZoneDy = zoneY - uy;
+            const threatToZoneDistance = Math.sqrt((towardZoneDx * towardZoneDx) + (towardZoneDy * towardZoneDy));
+            if (threatToZoneDistance > 1) {
+                const outsideDistance = threatToZoneDistance - zoneRadius;
+                const movingTowardZoneDot = (
+                    (threatVelocity.vx * towardZoneDx)
+                    + (threatVelocity.vy * towardZoneDy)
+                ) / (Math.max(1, velocityMagnitude) * threatToZoneDistance);
+                const threatApproachingZone = movingTowardZoneDot > 0.2;
+                const minShortcutDistance = Math.max(220, zoneRadius * 0.24);
+                if (outsideDistance > 0 && threatApproachingZone && distanceToCommander > minShortcutDistance) {
+                    const towardZoneNx = towardZoneDx / threatToZoneDistance;
+                    const towardZoneNy = towardZoneDy / threatToZoneDistance;
+                    const shortcutRadius = Math.max(120, zoneRadius * 0.68);
+                    const shortcutX = zoneX - (towardZoneNx * shortcutRadius);
+                    const shortcutY = zoneY - (towardZoneNy * shortcutRadius);
+                    const outsideScale = Math.max(0, Math.min(1, outsideDistance / Math.max(240, zoneRadius * 0.7)));
+                    const shortcutBlend = Math.max(0.22, Math.min(0.74, 0.24 + (outsideScale * 0.5)));
+                    predictedX = (predictedX * (1 - shortcutBlend)) + (shortcutX * shortcutBlend);
+                    predictedY = (predictedY * (1 - shortcutBlend)) + (shortcutY * shortcutBlend);
+                }
             }
         }
 
@@ -1435,6 +1802,179 @@ export default class UnitManager {
         return count;
     }
 
+    findCommanderDefenseThreatByID (targetID, options = {}) {
+        const parsedTargetID = Number(targetID || 0);
+        if (!Number.isFinite(parsedTargetID) || parsedTargetID <= 0) return null;
+
+        const allowedEnemyPlayerID = Number(options?.allowedEnemyPlayerID || 0);
+        const allowEnemyCommanders = Boolean(options?.allowEnemyCommanders);
+        const enemyPlayers = Array.isArray(this.core?.gameManager?.players)
+            ? this.core.gameManager.players
+            : [];
+
+        for (const enemyPlayer of enemyPlayers) {
+            if (!enemyPlayer || enemyPlayer.removeFlag || enemyPlayer.hasSpawnProtection) continue;
+            if (allowedEnemyPlayerID > 0 && Number(enemyPlayer.id) !== allowedEnemyPlayerID) continue;
+            const units = Array.isArray(enemyPlayer.units) ? enemyPlayer.units : [];
+            for (const unit of units) {
+                if (!unit || unit.removeFlag || unit.isFadingOut) continue;
+                if (Number(unit?.id) !== parsedTargetID) continue;
+                const isSoldier = unit.type === UnitTypes.SOLDIER;
+                const isCommander = unit.type === UnitTypes.COMMANDER || unit.type === UnitTypes.TRI_COMMANDER;
+                if (!isSoldier && !(allowEnemyCommanders && isCommander)) continue;
+                return unit;
+            }
+        }
+
+        return null;
+    }
+
+    findCommanderDefenseCriticalBreachThreat (options = {}) {
+        const zoneCenter = options?.zoneCenter || this.commanderDefenseZone?.center || this.getCommanderDefenseBaseCenter();
+        const zoneRadius = this.getCommanderDefenseSafeRadius(options?.zoneRadius ?? this.commanderDefenseZone?.radius);
+        const allowedEnemyPlayerID = Number(options?.allowedEnemyPlayerID || 0);
+        const breachRatio = Math.max(0.45, Math.min(0.95, Number(options?.breachRatio || 0.76)));
+        const criticalRadius = zoneRadius * breachRatio;
+        const sectorCount = Math.max(6, Math.min(48, Number(options?.sectorCount || this.commanderDefenseSectorCount || 16)));
+        const focusSectorIndexRaw = Number(options?.focusSectorIndex);
+        const focusSectorIndex = (
+            Number.isFinite(focusSectorIndexRaw) && focusSectorIndexRaw >= 0
+        ) ? Math.floor(focusSectorIndexRaw) : -1;
+        const focusSectorCount = Math.max(0, Number(options?.focusSectorCount || 0));
+        const minClusterCount = Math.max(1, Number(options?.minClusterCount || 2));
+        const sectorBreakRatio = Math.max(0.45, Math.min(0.95, Number(options?.sectorBreakRatio || 0.72)));
+        const absoluteCriticalRatio = Math.max(0.35, Math.min(0.9, Number(options?.absoluteCriticalRatio || 0.56)));
+        const criticalHistogram = this.buildCommanderDefenseSectorHistogram({
+            zoneCenter,
+            zoneRadius: criticalRadius,
+            outsideBuffer: 0,
+            allowedEnemyPlayerID,
+            includeCommanders: false,
+            sectorCount
+        });
+        const dominantSectorIndex = Number.isFinite(Number(criticalHistogram?.dominantIndex))
+            ? Number(criticalHistogram.dominantIndex)
+            : -1;
+        const dominantSectorCount = Math.max(0, Number(criticalHistogram?.dominantCount || 0));
+        if (dominantSectorIndex < 0 || dominantSectorCount <= 0) return null;
+        const requiredClusterCount = (
+            focusSectorIndex >= 0 && focusSectorIndex !== dominantSectorIndex
+        )
+            ? Math.max(minClusterCount, focusSectorCount * sectorBreakRatio)
+            : minClusterCount;
+
+        const breachTarget = this.findNearestEnemySoldierTarget(zoneCenter, {
+            zoneCenter,
+            zoneRadius: criticalRadius,
+            allowApproachingOutsideZone: false,
+            outsideZoneBuffer: 0,
+            allowedEnemyPlayerID,
+            allowEnemyCommanders: false,
+            prioritizeAggressors: true,
+            preferInterception: false,
+            interceptorSpeed: 0,
+            preferredTargetID: -1,
+            sectorCounts: criticalHistogram.counts,
+            sectorCount: criticalHistogram.sectorCount,
+            preferredSectorIndex: dominantSectorIndex,
+            requiredSectorIndex: dominantSectorIndex,
+            sectorBiasWeight: 0
+        });
+
+        if (!breachTarget) return null;
+
+        const bx = Number(breachTarget?.position?.x);
+        const by = Number(breachTarget?.position?.y);
+        const cx = Number(zoneCenter?.x);
+        const cy = Number(zoneCenter?.y);
+        if (!Number.isFinite(bx) || !Number.isFinite(by) || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+            return null;
+        }
+        const dx = bx - cx;
+        const dy = by - cy;
+        const distanceToCenter = Math.sqrt((dx * dx) + (dy * dy));
+        if (!Number.isFinite(distanceToCenter) || distanceToCenter > criticalRadius) return null;
+        const isDeepCritical = distanceToCenter <= zoneRadius * absoluteCriticalRatio;
+        if (dominantSectorCount < requiredClusterCount && !isDeepCritical) return null;
+
+        return breachTarget;
+    }
+
+    issueCommanderDefenseIngressStageMove (commander, threatUnit, options = {}) {
+        if (!commander || !threatUnit) return false;
+
+        const zoneCenter = options?.zoneCenter || this.commanderDefenseZone?.center;
+        const zoneRadius = this.getCommanderDefenseSafeRadius(options?.zoneRadius ?? this.commanderDefenseZone?.radius);
+        const stageTarget = this.getCommanderDefenseIngressBlockPosition(threatUnit, {
+            zoneCenter,
+            zoneRadius,
+            commanderPosition: commander?.position,
+            interceptorSpeed: Number(commander?.details?.speed || 220)
+        });
+        if (!stageTarget || !Number.isFinite(stageTarget.x) || !Number.isFinite(stageTarget.y)) return false;
+
+        const centerX = Number(zoneCenter?.x);
+        const centerY = Number(zoneCenter?.y);
+        const threatX = Number(threatUnit?.position?.x);
+        const threatY = Number(threatUnit?.position?.y);
+        const commanderX = Number(commander?.position?.x);
+        const commanderY = Number(commander?.position?.y);
+        if (
+            !Number.isFinite(centerX)
+            || !Number.isFinite(centerY)
+            || !Number.isFinite(threatX)
+            || !Number.isFinite(threatY)
+            || !Number.isFinite(commanderX)
+            || !Number.isFinite(commanderY)
+        ) {
+            return false;
+        }
+
+        const threatCenterDx = threatX - centerX;
+        const threatCenterDy = threatY - centerY;
+        const threatCenterDistance = Math.sqrt((threatCenterDx * threatCenterDx) + (threatCenterDy * threatCenterDy));
+        const commanderCenterDx = commanderX - centerX;
+        const commanderCenterDy = commanderY - centerY;
+        const commanderCenterDistance = Math.sqrt((commanderCenterDx * commanderCenterDx) + (commanderCenterDy * commanderCenterDy));
+        const commanderBehindThreat = Number.isFinite(commanderCenterDistance)
+            && Number.isFinite(threatCenterDistance)
+            && commanderCenterDistance > threatCenterDistance + Math.max(22, zoneRadius * 0.03);
+        const commanderToStageDx = stageTarget.x - commanderX;
+        const commanderToStageDy = stageTarget.y - commanderY;
+        const commanderToStageDistance = Math.sqrt((commanderToStageDx * commanderToStageDx) + (commanderToStageDy * commanderToStageDy));
+
+        let stageIntervalMs = 68;
+        if (Number.isFinite(threatCenterDistance)) {
+            if (threatCenterDistance <= zoneRadius * 1.04) {
+                stageIntervalMs = 22;
+            } else if (threatCenterDistance <= zoneRadius * 1.2) {
+                stageIntervalMs = 30;
+            } else if (threatCenterDistance <= zoneRadius * 1.45) {
+                stageIntervalMs = 42;
+            }
+        }
+        if (Number.isFinite(commanderToStageDistance) && commanderToStageDistance > Math.max(260, zoneRadius * 0.32)) {
+            stageIntervalMs = Math.max(16, stageIntervalMs - 10);
+        }
+        if (commanderBehindThreat) {
+            stageIntervalMs = Math.min(stageIntervalMs, 14);
+        }
+
+        const now = Date.now();
+        if (!options?.force && now - this.commanderDefenseLastRetargetAt < stageIntervalMs) {
+            return false;
+        }
+
+        this.updateUnitsCannonTarget([commander], stageTarget);
+        this.core?.networkManager?.moveUnits?.([commander], stageTarget);
+        this.commanderDefenseLastRetargetAt = now;
+        this.commanderDefenseLastTargetUnitId = Number(threatUnit?.id) || null;
+        if (this.commanderDefenseControlRole !== "soldiers") {
+            this.commanderDefenseDirectionTargetPosition = stageTarget;
+        }
+        return true;
+    }
+
     issueCommanderDefenseMove (force = false) {
         if (!this.commanderDefenseModeActive && !force) return false;
 
@@ -1456,19 +1996,107 @@ export default class UnitManager {
         const x1Status = Number(this.core?.gameManager?.x1PowerInfo?.status || 0);
         const strictX1Focus = Boolean(this.core?.gameManager?.duelArena || x1Status === 1 || x1OpponentID > 0);
         if (strictX1Focus && x1OpponentID <= 0) {
-            if (this.commanderDefenseLastTargetUnitId !== null) {
+            const fallbackZoneRadius = this.getCommanderDefenseSafeRadius(this.commanderDefenseZone?.radius);
+            const boundedHoldPosition = this.getCommanderDefenseBoundedPosition(commanderPos, {
+                zoneCenter: this.commanderDefenseZone?.center,
+                zoneRadius: fallbackZoneRadius,
+                edgePadding: Math.max(16, Math.min(68, fallbackZoneRadius * 0.04))
+            });
+            if (this.commanderDefenseLastTargetUnitId !== null || Boolean(boundedHoldPosition?.isClamped)) {
                 this.commanderDefenseLastTargetUnitId = null;
-                const holdPosition = { x: commanderPos.x, y: commanderPos.y };
+                const holdPosition = boundedHoldPosition || { x: commanderPos.x, y: commanderPos.y };
                 this.updateUnitsCannonTarget([commander], holdPosition);
                 this.core?.networkManager?.moveUnits?.([commander], holdPosition);
             }
             return false;
         }
         const zoneRadius = this.getCommanderDefenseSafeRadius(this.commanderDefenseZone?.radius);
-        const commanderSpeed = Number(commander?.details?.speed || 220);
-        const targetSearchOptions = {
-            zoneCenter: this.commanderDefenseZone?.center,
+        const zoneCenter = this.commanderDefenseZone?.center;
+        const commanderBoundedPosition = this.getCommanderDefenseBoundedPosition(commanderPos, {
+            zoneCenter,
             zoneRadius,
+            edgePadding: Math.max(16, Math.min(68, zoneRadius * 0.04))
+        });
+        const commanderIsOutsideDefenseRadius = Boolean(commanderBoundedPosition?.isClamped);
+        const commanderSpeed = Number(commander?.details?.speed || 220);
+        const engageRadiusPadding = Math.max(8, Math.min(56, zoneRadius * 0.03));
+        const chaseReleaseBuffer = Math.max(90, Math.min(260, zoneRadius * 0.16));
+        const preStageOutsideBuffer = Math.max(
+            this.commanderDefenseApproachThreatMinBuffer,
+            Math.min(2400, zoneRadius * this.commanderDefenseApproachThreatBufferFactor)
+        );
+        const sectorHistogram = this.buildCommanderDefenseSectorHistogram({
+            zoneCenter,
+            zoneRadius,
+            outsideBuffer: preStageOutsideBuffer,
+            allowedEnemyPlayerID: strictX1Focus ? x1OpponentID : 0,
+            includeCommanders: false,
+            sectorCount: this.commanderDefenseSectorCount
+        });
+        const nowForFocus = Date.now();
+        let focusSectorIndex = Number(this.commanderDefenseFocusSectorIndex);
+        if (!Number.isFinite(focusSectorIndex) || focusSectorIndex < 0) {
+            focusSectorIndex = -1;
+        } else {
+            focusSectorIndex = Math.floor(focusSectorIndex);
+        }
+        const dominantSectorIndex = Number.isFinite(Number(sectorHistogram?.dominantIndex))
+            ? Number(sectorHistogram.dominantIndex)
+            : -1;
+        const dominantSectorCount = Number(sectorHistogram?.dominantCount || 0);
+        const hasDominantSector = dominantSectorIndex >= 0
+            && dominantSectorCount >= this.commanderDefenseFocusMinCount;
+        const focusSectorCount = focusSectorIndex >= 0
+            ? Number(sectorHistogram?.counts?.[focusSectorIndex] || 0)
+            : 0;
+        const focusLockActive = nowForFocus < Number(this.commanderDefenseFocusSectorLockedUntil || 0);
+        if (focusSectorIndex < 0) {
+            if (hasDominantSector) {
+                focusSectorIndex = dominantSectorIndex;
+                this.commanderDefenseFocusSectorLockedUntil = nowForFocus + this.commanderDefenseFocusHoldMs;
+            }
+        } else if (focusSectorCount <= 0) {
+            if (hasDominantSector) {
+                focusSectorIndex = dominantSectorIndex;
+                this.commanderDefenseFocusSectorLockedUntil = nowForFocus + this.commanderDefenseFocusHoldMs;
+            } else {
+                focusSectorIndex = -1;
+                this.commanderDefenseFocusSectorLockedUntil = 0;
+            }
+        } else if (!focusLockActive && hasDominantSector && dominantSectorIndex !== focusSectorIndex) {
+            const switchDelta = dominantSectorCount - focusSectorCount;
+            if (switchDelta >= this.commanderDefenseFocusSwitchCountDelta) {
+                focusSectorIndex = dominantSectorIndex;
+                this.commanderDefenseFocusSectorLockedUntil = nowForFocus + this.commanderDefenseFocusHoldMs;
+            }
+        }
+        this.commanderDefenseFocusSectorIndex = focusSectorIndex;
+        const focusLockActiveAfterDecision = nowForFocus < Number(this.commanderDefenseFocusSectorLockedUntil || 0);
+        const effectiveFocusSectorCount = focusSectorIndex >= 0
+            ? Number(sectorHistogram?.counts?.[focusSectorIndex] || 0)
+            : 0;
+        const enforceFocusSector = focusSectorIndex >= 0
+            && effectiveFocusSectorCount >= this.commanderDefenseFocusMinCount;
+        const criticalBreachMinClusterCount = Math.max(
+            2,
+            Math.min(
+                10,
+                Math.ceil(
+                    effectiveFocusSectorCount
+                    * (focusLockActiveAfterDecision ? 0.78 : 0.6)
+                )
+            )
+        );
+        const targetSearchOptions = {
+            zoneCenter,
+            zoneRadius,
+            allowApproachingOutsideZone: false,
+            outsideZoneBuffer: 0,
+            sectorCounts: sectorHistogram.counts,
+            sectorCount: sectorHistogram.sectorCount,
+            preferredSectorIndex: focusSectorIndex,
+            requiredSectorIndex: enforceFocusSector ? focusSectorIndex : -1,
+            sectorBiasWeight: 0.22,
             allowedEnemyPlayerID: strictX1Focus ? x1OpponentID : 0,
             allowEnemyCommanders: false,
             prioritizeAggressors: true,
@@ -1477,21 +2105,129 @@ export default class UnitManager {
             preferredTargetID: this.commanderDefenseLastTargetUnitId
         };
         let targetThreat = this.findNearestEnemySoldierTarget(commanderPos, targetSearchOptions);
-        if (!targetThreat) {
+        if (!targetThreat && enforceFocusSector && !focusLockActiveAfterDecision) {
+            targetThreat = this.findNearestEnemySoldierTarget(commanderPos, {
+                ...targetSearchOptions,
+                requiredSectorIndex: -1
+            });
+        }
+        if (!targetThreat && (!enforceFocusSector || !focusLockActiveAfterDecision)) {
             // Fallback: if there are no enemy soldiers in range, chase enemy commander.
             targetThreat = this.findNearestEnemySoldierTarget(commanderPos, {
                 ...targetSearchOptions,
+                requiredSectorIndex: -1,
                 allowEnemyCommanders: true
             });
         }
+        if (!targetThreat && this.commanderDefenseLastTargetUnitId !== null) {
+            const retainedTarget = this.findCommanderDefenseThreatByID(
+                this.commanderDefenseLastTargetUnitId,
+                {
+                    allowedEnemyPlayerID: strictX1Focus ? x1OpponentID : 0,
+                    allowEnemyCommanders: true
+                }
+            );
+            if (retainedTarget) {
+                const retainedX = Number(retainedTarget?.position?.x);
+                const retainedY = Number(retainedTarget?.position?.y);
+                const centerX = Number(zoneCenter?.x);
+                const centerY = Number(zoneCenter?.y);
+                if (
+                    Number.isFinite(retainedX)
+                    && Number.isFinite(retainedY)
+                    && Number.isFinite(centerX)
+                    && Number.isFinite(centerY)
+                ) {
+                    const retainedDx = retainedX - centerX;
+                    const retainedDy = retainedY - centerY;
+                    const retainedDistance = Math.sqrt((retainedDx * retainedDx) + (retainedDy * retainedDy));
+                    const retainedSectorIndex = this.getCommanderDefenseSectorIndex(
+                        retainedTarget?.position,
+                        zoneCenter,
+                        sectorHistogram?.sectorCount || this.commanderDefenseSectorCount
+                    );
+                    const allowedByFocus = !enforceFocusSector
+                        || !focusLockActiveAfterDecision
+                        || retainedSectorIndex === focusSectorIndex;
+                    if (retainedDistance <= zoneRadius + chaseReleaseBuffer && allowedByFocus) {
+                        targetThreat = retainedTarget;
+                    }
+                }
+            }
+        }
+        const criticalBreachThreat = this.findCommanderDefenseCriticalBreachThreat({
+            zoneCenter,
+            zoneRadius,
+            allowedEnemyPlayerID: strictX1Focus ? x1OpponentID : 0,
+            breachRatio: 0.74,
+            sectorCount: sectorHistogram?.sectorCount || this.commanderDefenseSectorCount,
+            focusSectorIndex,
+            focusSectorCount: effectiveFocusSectorCount,
+            minClusterCount: criticalBreachMinClusterCount,
+            sectorBreakRatio: focusLockActiveAfterDecision ? 0.84 : 0.72,
+            absoluteCriticalRatio: 0.52
+        });
+        if (criticalBreachThreat) {
+            if (!targetThreat) {
+                targetThreat = criticalBreachThreat;
+            } else {
+                const criticalX = Number(criticalBreachThreat?.position?.x);
+                const criticalY = Number(criticalBreachThreat?.position?.y);
+                const currentX = Number(targetThreat?.position?.x);
+                const currentY = Number(targetThreat?.position?.y);
+                const centerX = Number(zoneCenter?.x);
+                const centerY = Number(zoneCenter?.y);
+                if (
+                    Number.isFinite(criticalX)
+                    && Number.isFinite(criticalY)
+                    && Number.isFinite(currentX)
+                    && Number.isFinite(currentY)
+                    && Number.isFinite(centerX)
+                    && Number.isFinite(centerY)
+                ) {
+                    const criticalDx = criticalX - centerX;
+                    const criticalDy = criticalY - centerY;
+                    const currentDx = currentX - centerX;
+                    const currentDy = currentY - centerY;
+                    const criticalDistance = Math.sqrt((criticalDx * criticalDx) + (criticalDy * criticalDy));
+                    const currentDistance = Math.sqrt((currentDx * currentDx) + (currentDy * currentDy));
+                    if (criticalDistance + Math.max(42, zoneRadius * 0.06) < currentDistance) {
+                        targetThreat = criticalBreachThreat;
+                    }
+                }
+            }
+        }
 
         if (!targetThreat) {
+            if (Number(sectorHistogram?.totalCount || 0) <= 0) {
+                this.commanderDefenseFocusSectorIndex = -1;
+                this.commanderDefenseFocusSectorLockedUntil = 0;
+            }
+            const stagingThreat = this.findNearestEnemySoldierTarget(commanderPos, {
+                ...targetSearchOptions,
+                allowEnemyCommanders: false,
+                requiredSectorIndex: (enforceFocusSector && focusLockActiveAfterDecision) ? focusSectorIndex : -1,
+                allowApproachingOutsideZone: true,
+                outsideZoneBuffer: preStageOutsideBuffer,
+                preferredTargetID: this.commanderDefenseLastTargetUnitId
+            });
+            if (stagingThreat) {
+                const staged = this.issueCommanderDefenseIngressStageMove(commander, stagingThreat, {
+                    zoneCenter,
+                    zoneRadius,
+                    force
+                });
+                if (staged) {
+                    return true;
+                }
+            }
+
             const now = Date.now();
             if (!force && now - this.commanderDefenseLastRetargetAt < this.commanderDefenseRetargetIntervalMs) {
                 return false;
             }
-            if (this.commanderDefenseLastTargetUnitId !== null) {
-                const holdPosition = { x: commanderPos.x, y: commanderPos.y };
+            if (this.commanderDefenseLastTargetUnitId !== null || commanderIsOutsideDefenseRadius) {
+                const holdPosition = commanderBoundedPosition || { x: commanderPos.x, y: commanderPos.y };
                 this.updateUnitsCannonTarget([commander], holdPosition);
                 this.core?.networkManager?.moveUnits?.([commander], holdPosition);
             }
@@ -1500,6 +2236,21 @@ export default class UnitManager {
                 this.commanderDefenseDirectionTargetPosition = null;
             }
             return false;
+        }
+        const selectedThreatSectorIndex = this.getCommanderDefenseSectorIndex(
+            targetThreat?.position,
+            zoneCenter,
+            sectorHistogram?.sectorCount || this.commanderDefenseSectorCount
+        );
+        if (selectedThreatSectorIndex >= 0) {
+            if (
+                focusSectorIndex < 0
+                || selectedThreatSectorIndex === focusSectorIndex
+                || (!focusLockActiveAfterDecision && !enforceFocusSector)
+            ) {
+                this.commanderDefenseFocusSectorIndex = selectedThreatSectorIndex;
+                this.commanderDefenseFocusSectorLockedUntil = nowForFocus + this.commanderDefenseFocusHoldMs;
+            }
         }
 
         const threatDx = Number(targetThreat?.position?.x) - commanderPos.x;
@@ -1532,6 +2283,65 @@ export default class UnitManager {
         } else if (nearbyThreatCount >= 3) {
             dynamicRetargetIntervalMs = Math.max(52, Math.floor(dynamicRetargetIntervalMs * 0.72));
         }
+        const threatZoneCenterDx = Number(targetThreat?.position?.x) - Number(zoneCenter?.x);
+        const threatZoneCenterDy = Number(targetThreat?.position?.y) - Number(zoneCenter?.y);
+        const threatZoneCenterDistance = Math.sqrt(
+            (threatZoneCenterDx * threatZoneCenterDx)
+            + (threatZoneCenterDy * threatZoneCenterDy)
+        );
+        const commanderZoneCenterDx = commanderPos.x - Number(zoneCenter?.x);
+        const commanderZoneCenterDy = commanderPos.y - Number(zoneCenter?.y);
+        const commanderZoneCenterDistance = Math.sqrt(
+            (commanderZoneCenterDx * commanderZoneCenterDx)
+            + (commanderZoneCenterDy * commanderZoneCenterDy)
+        );
+        const commanderLagDistance = commanderZoneCenterDistance - threatZoneCenterDistance;
+        const commanderIsBehindThreat = Number.isFinite(commanderLagDistance)
+            && commanderLagDistance > Math.max(28, zoneRadius * 0.035);
+        const antiJukeRisk = commanderIsBehindThreat
+            || (Number.isFinite(threatDistance) && threatDistance < Math.max(170, zoneRadius * 0.18))
+            || threatTurnRisk > 0.42;
+        const threatInsideEngageRadius = Number.isFinite(threatZoneCenterDistance)
+            && threatZoneCenterDistance <= zoneRadius + engageRadiusPadding;
+        if (!threatInsideEngageRadius) {
+            const canPreStageOutsideThreat = Number.isFinite(threatZoneCenterDistance)
+                && threatZoneCenterDistance <= zoneRadius + preStageOutsideBuffer;
+            if (canPreStageOutsideThreat) {
+                const staged = this.issueCommanderDefenseIngressStageMove(commander, targetThreat, {
+                    zoneCenter,
+                    zoneRadius,
+                    force
+                });
+                if (staged) {
+                    return true;
+                }
+            }
+            if (this.commanderDefenseLastTargetUnitId !== null || commanderIsOutsideDefenseRadius) {
+                const holdPosition = commanderBoundedPosition || { x: commanderPos.x, y: commanderPos.y };
+                this.updateUnitsCannonTarget([commander], holdPosition);
+                this.core?.networkManager?.moveUnits?.([commander], holdPosition);
+            }
+            this.commanderDefenseLastTargetUnitId = null;
+            if (this.commanderDefenseControlRole === "commander") {
+                this.commanderDefenseDirectionTargetPosition = null;
+            }
+            return false;
+        }
+        if (Number.isFinite(threatZoneCenterDistance)) {
+            if (threatZoneCenterDistance < zoneRadius * 0.82) {
+                dynamicRetargetIntervalMs = Math.min(dynamicRetargetIntervalMs, 26);
+            } else if (threatZoneCenterDistance < zoneRadius * 1.06) {
+                dynamicRetargetIntervalMs = Math.min(dynamicRetargetIntervalMs, 38);
+            }
+            if (threatZoneCenterDistance < zoneRadius * 0.64) {
+                dynamicRetargetIntervalMs = Math.min(dynamicRetargetIntervalMs, 20);
+            }
+        }
+        if (commanderIsBehindThreat) {
+            dynamicRetargetIntervalMs = Math.min(dynamicRetargetIntervalMs, 18);
+        } else if (antiJukeRisk) {
+            dynamicRetargetIntervalMs = Math.min(dynamicRetargetIntervalMs, 22);
+        }
         const now = Date.now();
         if (!force && now - this.commanderDefenseLastRetargetAt < dynamicRetargetIntervalMs) {
             return false;
@@ -1544,13 +2354,65 @@ export default class UnitManager {
         };
         const targetPosition = predictedTargetPosition || fallbackCurrentPosition;
         if (!Number.isFinite(targetPosition.x) || !Number.isFinite(targetPosition.y)) return false;
+        let strategicTargetPosition = targetPosition;
+        const ingressBlockPosition = this.getCommanderDefenseIngressBlockPosition(targetThreat, {
+            zoneCenter,
+            zoneRadius,
+            commanderPosition: commanderPos,
+            interceptorSpeed: commanderSpeed
+        });
+        if (ingressBlockPosition && Number.isFinite(threatZoneCenterDistance)) {
+            const zoneCenterDx = Number(zoneCenter?.x) - Number(targetThreat?.position?.x);
+            const zoneCenterDy = Number(zoneCenter?.y) - Number(targetThreat?.position?.y);
+            const zoneCenterDistance = Math.sqrt((zoneCenterDx * zoneCenterDx) + (zoneCenterDy * zoneCenterDy));
+            const safeZoneCenterDistance = zoneCenterDistance > 0 ? zoneCenterDistance : 1;
+            const approachDot = (
+                (Number(threatMotion?.vx || 0) * zoneCenterDx)
+                + (Number(threatMotion?.vy || 0) * zoneCenterDy)
+            ) / safeZoneCenterDistance;
+            const approachingCenter = approachDot > 4 || threatZoneCenterDistance <= zoneRadius * 1.08;
+            const nearDefense = threatZoneCenterDistance <= zoneRadius * 1.12;
+            if ((approachingCenter || commanderIsBehindThreat) && nearDefense) {
+                let blockBlend = threatZoneCenterDistance <= zoneRadius ? 0.62 : 0.4;
+                if (antiJukeRisk) {
+                    blockBlend += 0.12;
+                }
+                if (commanderIsBehindThreat) {
+                    blockBlend += 0.18;
+                }
+                if (nearbyThreatCount >= 4) {
+                    blockBlend += 0.08;
+                }
+                if (threatTurnRisk > 0.55) {
+                    blockBlend += 0.06;
+                }
+                blockBlend = Math.max(0.34, Math.min(0.92, blockBlend));
+                if (commanderIsBehindThreat && threatZoneCenterDistance <= zoneRadius * 0.98) {
+                    strategicTargetPosition = {
+                        x: ingressBlockPosition.x,
+                        y: ingressBlockPosition.y
+                    };
+                } else {
+                    strategicTargetPosition = {
+                        x: (targetPosition.x * (1 - blockBlend)) + (ingressBlockPosition.x * blockBlend),
+                        y: (targetPosition.y * (1 - blockBlend)) + (ingressBlockPosition.y * blockBlend)
+                    };
+                }
+            }
+        }
+        const boundedTargetPosition = this.getCommanderDefenseBoundedPosition(strategicTargetPosition, {
+            zoneCenter,
+            zoneRadius,
+            edgePadding: Math.max(16, Math.min(72, zoneRadius * 0.05))
+        });
+        const finalTargetPosition = boundedTargetPosition || strategicTargetPosition;
 
-        this.updateUnitsCannonTarget([commander], targetPosition);
-        this.core?.networkManager?.moveUnits?.([commander], targetPosition);
+        this.updateUnitsCannonTarget([commander], finalTargetPosition);
+        this.core?.networkManager?.moveUnits?.([commander], finalTargetPosition);
         this.commanderDefenseLastRetargetAt = now;
         this.commanderDefenseLastTargetUnitId = targetThreat.id;
         if (this.commanderDefenseControlRole !== "soldiers") {
-            this.commanderDefenseDirectionTargetPosition = targetPosition;
+            this.commanderDefenseDirectionTargetPosition = finalTargetPosition;
         }
         return true;
     }
