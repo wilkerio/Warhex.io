@@ -260,8 +260,12 @@ export default class InputManager {
             }
             if (key === keySelectArmy) {
                 if (canUseGameplayHotkeys) {
-                    const switchedToSoldierControl = this.core.unitManager?.setCommanderDefenseControlRole?.("soldiers");
-                    if (!switchedToSoldierControl) {
+                    const defenseMouseControlActive = this.core.unitManager?.isCommanderDefenseMouseGroupControlActive?.();
+                    if (defenseMouseControlActive) {
+                        // In commander defense mode, Q must always return control to soldiers.
+                        this.core.unitManager?.setCommanderDefenseControlRole?.("soldiers");
+                        this.core.unitManager?.selectOnlySoldiers?.();
+                    } else {
                         this.core.unitManager.selectArmyCombatUnits();
                     }
                     handledAnyAction = true;
@@ -269,6 +273,9 @@ export default class InputManager {
             }
             if (key === keySelectSoldiersOnly) {
                 if (canUseGameplayHotkeys) {
+                    if (this.core.unitManager?.isCommanderDefenseMouseGroupControlActive?.()) {
+                        this.core.unitManager?.setCommanderDefenseControlRole?.("soldiers");
+                    }
                     this.core.unitManager.selectOnlySoldiers();
                     handledAnyAction = true;
                 }
@@ -294,7 +301,9 @@ export default class InputManager {
             if (key === keySelectCommander) {
                 if (canUseGameplayHotkeys && !event.repeat) {
                     const switchedToCommanderControl = this.core.unitManager?.setCommanderDefenseControlRole?.("commander");
-                    if (!switchedToCommanderControl) {
+                    if (switchedToCommanderControl) {
+                        this.core.unitManager?.selectCommanderUnit?.({ suppressHint: true });
+                    } else {
                         this.core.unitManager.selectCommanderOrBuy();
                     }
                     handledAnyAction = true;

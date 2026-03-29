@@ -1466,7 +1466,7 @@ export default class UnitManager {
         }
         const zoneRadius = this.getCommanderDefenseSafeRadius(this.commanderDefenseZone?.radius);
         const commanderSpeed = Number(commander?.details?.speed || 220);
-        const targetThreat = this.findNearestEnemySoldierTarget(commanderPos, {
+        const targetSearchOptions = {
             zoneCenter: this.commanderDefenseZone?.center,
             zoneRadius,
             allowedEnemyPlayerID: strictX1Focus ? x1OpponentID : 0,
@@ -1475,7 +1475,15 @@ export default class UnitManager {
             preferInterception: true,
             interceptorSpeed: commanderSpeed,
             preferredTargetID: this.commanderDefenseLastTargetUnitId
-        });
+        };
+        let targetThreat = this.findNearestEnemySoldierTarget(commanderPos, targetSearchOptions);
+        if (!targetThreat) {
+            // Fallback: if there are no enemy soldiers in range, chase enemy commander.
+            targetThreat = this.findNearestEnemySoldierTarget(commanderPos, {
+                ...targetSearchOptions,
+                allowEnemyCommanders: true
+            });
+        }
 
         if (!targetThreat) {
             const now = Date.now();

@@ -301,7 +301,7 @@ func popSessionLockState(conn *websocket.Conn) (sessionLockState, bool) {
 	return state, ok
 }
 
-func hasStrictSignalConflict(ctx context.Context, lockKey, sessionToken, deviceID string, fingerprint64 int64, ipPrefix, userAgentHash string) (bool, error) {
+func hasStrictSignalConflict(ctx context.Context, lockKey, deviceID string, fingerprint64 int64, ipPrefix, userAgentHash string) (bool, error) {
 	if sessionLockDB == nil {
 		return false, nil
 	}
@@ -315,20 +315,19 @@ func hasStrictSignalConflict(ctx context.Context, lockKey, sessionToken, deviceI
 
 	var dummy int
 	err := sessionLockDB.QueryRowContext(ctx, `
-		SELECT 1
-		FROM public.active_session_locks
-		WHERE expires_at > now()
-		  AND NOT (lock_key = $1 AND session_token = $2)
-		  AND (
-			($3 AND device_id = $4)
-			OR ($5 AND fingerprint = $6)
-			OR ($7 AND ip_prefix = $8)
-			OR ($9 AND ip_prefix = $8 AND user_agent_hash = $10)
-		  )
-		LIMIT 1
-	`,
+			SELECT 1
+			FROM public.active_session_locks
+			WHERE expires_at > now()
+			  AND lock_key <> $1
+			  AND (
+				($2 AND device_id = $3)
+				OR ($4 AND fingerprint = $5)
+				OR ($6 AND ip_prefix = $7)
+				OR ($8 AND ip_prefix = $7 AND user_agent_hash = $9)
+			  )
+			LIMIT 1
+		`,
 		lockKey,
-		sessionToken,
 		shouldCheckDevice, deviceID,
 		shouldCheckFingerprint, fingerprint64,
 		shouldCheckIPPrefix, ipPrefix,
@@ -362,7 +361,7 @@ func acquireDBSessionLockForConn(conn *websocket.Conn, userData UserData, finger
 	ctx, cancel := context.WithTimeout(context.Background(), sessionLockDBTimeout)
 	defer cancel()
 
-	strictConflict, err := hasStrictSignalConflict(ctx, lockKey, sessionToken, deviceID, fingerprint64, ipPrefix, userAgentHash)
+	strictConflict, err := hasStrictSignalConflict(ctx, lockKey, deviceID, fingerprint64, ipPrefix, userAgentHash)
 	if err != nil {
 		log.Printf("db session strict-check failed (allowing join): %v", err)
 	} else if strictConflict {
