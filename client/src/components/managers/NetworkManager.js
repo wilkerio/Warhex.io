@@ -1315,6 +1315,16 @@ export default class NetworkManager {
         const localPlayerID = Number(gameManager?.getCurrentPlayerId?.() || 0);
         if (!localPlayerID) return;
 
+        const commanderDefensePowerViewEnabled = Boolean(
+            this.core?.unitManager?.isCommanderDefenseMouseGroupControlActive?.()
+        );
+        if (!commanderDefensePowerViewEnabled) {
+            if (gameManager?.x1PowerInfo) {
+                gameManager.setX1PowerInfo(null);
+            }
+            return;
+        }
+
         const duelOpponentID = Number(gameManager?.duelOpponentID || 0);
         if (!duelOpponentID) {
             if (gameManager?.x1PowerInfo) {
@@ -3363,6 +3373,14 @@ export default class NetworkManager {
 
     handleX1PowerInfo(payload) {
         const gameManager = this.core?.gameManager;
+        const commanderDefensePowerViewEnabled = Boolean(
+            this.core?.unitManager?.isCommanderDefenseMouseGroupControlActive?.()
+        );
+        if (!commanderDefensePowerViewEnabled) {
+            gameManager?.setX1PowerInfo?.(null);
+            return;
+        }
+
         gameManager?.setX1PowerInfo?.(payload);
         const opponentID = Number(payload?.opponentID || 0);
         if (Number(payload?.status || 0) === 1 && opponentID > 0 && !Number(gameManager?.duelOpponentID || 0)) {

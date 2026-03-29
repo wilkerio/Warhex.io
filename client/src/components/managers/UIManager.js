@@ -8424,7 +8424,10 @@ export default class UIManager {
 
         const x1PowerInfo = this.core?.gameManager?.x1PowerInfo;
         const x1Status = Number(x1PowerInfo?.status || 0);
-        if (x1Status === 1) {
+        const commanderDefensePowerViewEnabled = Boolean(
+            this.core?.unitManager?.isCommanderDefenseMouseGroupControlActive?.()
+        );
+        if (commanderDefensePowerViewEnabled && x1Status === 1) {
             const enemyPower = Number(x1PowerInfo?.opponentPower || 0);
             const enemyRate = Number(x1PowerInfo?.opponentGeneratingPower || 0);
             const enemyRateLabel = `+${enemyRate}/s`;
