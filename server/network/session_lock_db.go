@@ -3,8 +3,10 @@ package network
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -138,6 +140,12 @@ func ensureSessionLockSchema(db *sql.DB) error {
 			ip_prefix text NOT NULL DEFAULT '',
 			user_agent_hash text NOT NULL DEFAULT '',
 			fingerprint bigint NOT NULL DEFAULT 0,
+			risk_score integer NOT NULL DEFAULT 0,
+			risk_reasons jsonb NOT NULL DEFAULT '[]'::jsonb,
+			last_heartbeat_at timestamptz NOT NULL DEFAULT now(),
+			disconnect_reason text NOT NULL DEFAULT '',
+			is_vpn_or_proxy boolean NOT NULL DEFAULT false,
+			is_datacenter boolean NOT NULL DEFAULT false,
 			created_at timestamptz NOT NULL DEFAULT now(),
 			updated_at timestamptz NOT NULL DEFAULT now(),
 			expires_at timestamptz NOT NULL
@@ -174,6 +182,30 @@ func ensureSessionLockSchema(db *sql.DB) error {
 		`
 		ALTER TABLE public.active_session_locks
 		ADD COLUMN IF NOT EXISTS user_agent_hash text NOT NULL DEFAULT ''
+		`,
+		`
+		ALTER TABLE public.active_session_locks
+		ADD COLUMN IF NOT EXISTS risk_score integer NOT NULL DEFAULT 0
+		`,
+		`
+		ALTER TABLE public.active_session_locks
+		ADD COLUMN IF NOT EXISTS risk_reasons jsonb NOT NULL DEFAULT '[]'::jsonb
+		`,
+		`
+		ALTER TABLE public.active_session_locks
+		ADD COLUMN IF NOT EXISTS last_heartbeat_at timestamptz NOT NULL DEFAULT now()
+		`,
+		`
+		ALTER TABLE public.active_session_locks
+		ADD COLUMN IF NOT EXISTS disconnect_reason text NOT NULL DEFAULT ''
+		`,
+		`
+		ALTER TABLE public.active_session_locks
+		ADD COLUMN IF NOT EXISTS is_vpn_or_proxy boolean NOT NULL DEFAULT false
+		`,
+		`
+		ALTER TABLE public.active_session_locks
+		ADD COLUMN IF NOT EXISTS is_datacenter boolean NOT NULL DEFAULT false
 		`,
 	}
 	for _, stmt := range statements {
@@ -242,11 +274,21 @@ func deriveIPPrefix(clientIP string) string {
 	return strings.ToLower(fmt.Sprintf("%02x%02x:%02x%02x:%02x%02x:%02x%02x", v6[0], v6[1], v6[2], v6[3], v6[4], v6[5], v6[6], v6[7]))
 }
 
-func buildSessionLockIdentity(userData UserData, fingerprint uint32) (lockKey, progressID, discordID, deviceID, clientIP, ipPrefix, userAgentHash string, fingerprint64 int64) {
+func hashSensitiveValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:16])
+}
+
+func buildSessionLockIdentity(userData UserData, fingerprint uint32) (lockKey, progressID, discordID, deviceID, clientIPHash, ipPrefix, userAgentHash string, fingerprint64 int64) {
 	progressID = strings.TrimSpace(userData.ProgressUserID())
 	discordID = strings.TrimSpace(userData.Discord.ID)
 	deviceID = strings.TrimSpace(userData.DeviceID)
-	clientIP = normalizeClientIP(userData.ClientIP)
+	clientIP := normalizeClientIP(userData.ClientIP)
+	clientIPHash = hashSensitiveValue(clientIP)
 	ipPrefix = deriveIPPrefix(clientIP)
 	userAgentHash = strings.TrimSpace(userData.UserAgentHash)
 	fingerprint64 = int64(fingerprint)
@@ -258,10 +300,10 @@ func buildSessionLockIdentity(userData UserData, fingerprint uint32) (lockKey, p
 		lockKey = "discord:" + discordID
 	case deviceID != "":
 		lockKey = "guest_device:" + deviceID
-	case clientIP != "" && fingerprint != 0:
-		lockKey = fmt.Sprintf("guest:%s:%d", clientIP, fingerprint)
-	case clientIP != "":
-		lockKey = "guest_ip:" + clientIP
+	case clientIPHash != "" && fingerprint != 0:
+		lockKey = fmt.Sprintf("guest:%s:%d", clientIPHash, fingerprint)
+	case clientIPHash != "":
+		lockKey = "guest_ip:" + clientIPHash
 	case fingerprint != 0:
 		lockKey = fmt.Sprintf("guest_fp:%d", fingerprint)
 	default:
@@ -365,14 +407,15 @@ func acquireDBSessionLockForConn(conn *websocket.Conn, userData UserData, finger
 	if err != nil {
 		log.Printf("db session strict-check failed (allowing join): %v", err)
 	} else if strictConflict {
+		recordDBSessionRiskForConn(conn, "strict_signal_conflict", 10)
 		return false
 	}
 
 	result, err := sessionLockDB.ExecContext(ctx, `
 			INSERT INTO public.active_session_locks (
-				lock_key, session_token, progress_user_id, discord_id, device_id, client_ip, ip_prefix, user_agent_hash, fingerprint, created_at, updated_at, expires_at
+				lock_key, session_token, progress_user_id, discord_id, device_id, client_ip, ip_prefix, user_agent_hash, fingerprint, risk_score, risk_reasons, last_heartbeat_at, disconnect_reason, is_vpn_or_proxy, is_datacenter, created_at, updated_at, expires_at
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now(), $10)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, '[]'::jsonb, now(), '', false, false, now(), now(), $10)
 			ON CONFLICT (lock_key) DO UPDATE
 			SET
 				session_token = EXCLUDED.session_token,
@@ -383,6 +426,7 @@ func acquireDBSessionLockForConn(conn *websocket.Conn, userData UserData, finger
 				ip_prefix = EXCLUDED.ip_prefix,
 				user_agent_hash = EXCLUDED.user_agent_hash,
 				fingerprint = EXCLUDED.fingerprint,
+				last_heartbeat_at = now(),
 				updated_at = now(),
 				expires_at = EXCLUDED.expires_at
 			WHERE
@@ -425,13 +469,104 @@ func touchDBSessionLockForConn(conn *websocket.Conn) {
 	ctx, cancel := context.WithTimeout(context.Background(), sessionLockDBTimeout)
 	defer cancel()
 
-	_, err := sessionLockDB.ExecContext(ctx, `
+	result, err := sessionLockDB.ExecContext(ctx, `
 		UPDATE public.active_session_locks
-		SET updated_at = now(), expires_at = $3
+		SET updated_at = now(), last_heartbeat_at = now(), expires_at = $3
 		WHERE lock_key = $1 AND session_token = $2
 	`, state.lockKey, state.sessionToken, expiresAt)
 	if err != nil {
 		log.Printf("db session lock touch failed: %v", err)
+		return
+	}
+
+	rows, rowsErr := result.RowsAffected()
+	if rowsErr == nil && rows == 0 {
+		recordDBSessionRiskForConn(conn, "heartbeat_session_missing", 5)
+	}
+}
+
+func markDBSessionLockDisconnectReasonForConn(conn *websocket.Conn, reason string) {
+	if sessionLockDB == nil || conn == nil {
+		return
+	}
+
+	state, ok := getSessionLockState(conn)
+	if !ok || state.lockKey == "" || state.sessionToken == "" {
+		return
+	}
+
+	cleanReason := strings.TrimSpace(reason)
+	if cleanReason == "" {
+		return
+	}
+	if len(cleanReason) > 180 {
+		cleanReason = cleanReason[:180]
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), sessionLockDBTimeout)
+	defer cancel()
+
+	_, err := sessionLockDB.ExecContext(ctx, `
+		UPDATE public.active_session_locks
+		SET disconnect_reason = $3, updated_at = now()
+		WHERE lock_key = $1 AND session_token = $2
+	`, state.lockKey, state.sessionToken, cleanReason)
+	if err != nil {
+		log.Printf("db session lock disconnect reason update failed: %v", err)
+	}
+}
+
+func recordDBSessionRiskForConn(conn *websocket.Conn, reason string, delta int) {
+	if sessionLockDB == nil || conn == nil {
+		return
+	}
+
+	state, ok := getSessionLockState(conn)
+	if !ok || state.lockKey == "" || state.sessionToken == "" {
+		return
+	}
+
+	cleanReason := strings.TrimSpace(reason)
+	if cleanReason == "" && delta <= 0 {
+		return
+	}
+	if len(cleanReason) > 120 {
+		cleanReason = cleanReason[:120]
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), sessionLockDBTimeout)
+	defer cancel()
+
+	if cleanReason == "" {
+		_, err := sessionLockDB.ExecContext(ctx, `
+			UPDATE public.active_session_locks
+			SET risk_score = GREATEST(risk_score + $3, 0), updated_at = now()
+			WHERE lock_key = $1 AND session_token = $2
+		`, state.lockKey, state.sessionToken, delta)
+		if err != nil {
+			log.Printf("db session lock risk update failed: %v", err)
+		}
+		return
+	}
+
+	reasonJSON, err := json.Marshal([]string{cleanReason})
+	if err != nil {
+		log.Printf("db session lock risk reason marshal failed: %v", err)
+		return
+	}
+
+	_, err = sessionLockDB.ExecContext(ctx, `
+		UPDATE public.active_session_locks
+		SET risk_score = GREATEST(risk_score + $3, 0),
+		    risk_reasons = CASE
+				WHEN risk_reasons ? $4 THEN risk_reasons
+				ELSE risk_reasons || $5::jsonb
+		    END,
+		    updated_at = now()
+		WHERE lock_key = $1 AND session_token = $2
+	`, state.lockKey, state.sessionToken, delta, cleanReason, reasonJSON)
+	if err != nil {
+		log.Printf("db session lock risk reason update failed: %v", err)
 	}
 }
 

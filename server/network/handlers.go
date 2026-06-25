@@ -1511,6 +1511,7 @@ func handleClientSecurityAlert(conn *websocket.Conn, payload []byte) {
 	}
 
 	log.Printf("security alert from player=%d reason=%d (%s)", player.ID, reason, securityAlertReasonName(reason))
+	markDBSessionLockDisconnectReasonForConn(conn, "security_alert:"+securityAlertReasonName(reason))
 	if enforceClientSecurityAlertKick {
 		game.TriggerKickEvent(player, game.KICK_REASON_SCRIPTING)
 	}

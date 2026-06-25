@@ -96,16 +96,19 @@ func Start() {
 
 	InitializeNonSkinColors()
 	loadSkins()
-	ResetBotSocialMatchData()
-	if err := initBotDB(); err != nil {
-		log.Printf("Bot DB unavailable, running with in-memory only: %v", err)
-	} else {
-		log.Println("Bot DB connected successfully")
-	}
 
 	Status = Running
 	log.Println("Game is running")
-	go startBotController()
+
+	if getConfiguredBotCount() > 0 {
+		ResetBotSocialMatchData()
+		if err := initBotDB(); err != nil {
+			log.Printf("Bot DB unavailable, running with in-memory only: %v", err)
+		} else {
+			log.Println("Bot DB connected successfully")
+		}
+		go startBotController()
+	}
 }
 
 func startRegenerationLoop() {

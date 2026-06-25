@@ -599,7 +599,7 @@ export default class InputManager {
                 return;
             }
         }
-        if (this.core.uiManager?.isGameplayInputBlocked?.()) return;
+        if (this.core.uiManager?.isGameplayInputBlocked?.() && !this.core.uiManager?.isPrePlaySpawnSelectionActive?.()) return;
         this.invokeMouseDownHandlers(this.core.eventManager.mousePosition, event.button);
     }
 

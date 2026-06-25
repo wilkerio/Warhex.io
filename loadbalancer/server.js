@@ -47,7 +47,9 @@ const config = {
     serverCwd: (process.env.SERVER_CWD || '').trim(),
     autoSpawnServers: String(process.env.AUTO_SPAWN_SERVERS || 'false').toLowerCase() === 'true',
     allowedOrigins: parseCsv(process.env.CORS_ALLOWED_ORIGINS),
-    initialPorts: parsePorts(process.env.SERVER_PORTS, [9090, 9091])
+    initialPorts: parsePorts(process.env.SERVER_PORTS, [9090, 9091]),
+    ffaPorts: parsePorts(process.env.FFA_SERVER_PORTS, []),
+    overdrivePorts: parsePorts(process.env.OVERDRIVE_SERVER_PORTS, [])
 };
 
 const defaultAllowedOrigins = [
@@ -87,13 +89,64 @@ app.use(cors({
     }
 }));
 
-const servers = [];
+const GAME_MODES = {
+    FFA: 'ffa',
+    OVERDRIVE: 'overdrive'
+};
+
+const serversByMode = {
+    [GAME_MODES.FFA]: [],
+    [GAME_MODES.OVERDRIVE]: []
+};
 const serverProcesses = [];
 
-function portToPathSegment(port) {
-    const basePort = config.serverPortStart;
-    const pathIndex = port - basePort + 1;
-    return `ffa${pathIndex}`;
+function normalizeGameMode(value) {
+    return String(value || '').trim().toLowerCase() === GAME_MODES.FFA
+        ? GAME_MODES.FFA
+        : GAME_MODES.OVERDRIVE;
+}
+
+function uniquePorts(ports) {
+    return [...new Set((ports || []).filter((port) => Number.isInteger(port) && port > 0))];
+}
+
+function resolveModePortPools() {
+    const explicitFfaPorts = uniquePorts(config.ffaPorts);
+    const explicitOverdrivePorts = uniquePorts(config.overdrivePorts);
+    if (explicitFfaPorts.length > 0 || explicitOverdrivePorts.length > 0) {
+        const ffaPorts = explicitFfaPorts;
+        const overdrivePorts = explicitOverdrivePorts.filter((port) => !ffaPorts.includes(port));
+        return {
+            [GAME_MODES.FFA]: ffaPorts,
+            [GAME_MODES.OVERDRIVE]: overdrivePorts
+        };
+    }
+
+    const fallbackPorts = uniquePorts(config.initialPorts).slice(0, config.maxServerCount);
+    if (fallbackPorts.length <= 1) {
+        return {
+            [GAME_MODES.FFA]: fallbackPorts.slice(0, 1),
+            [GAME_MODES.OVERDRIVE]: fallbackPorts.slice(1)
+        };
+    }
+
+    const splitIndex = Math.ceil(fallbackPorts.length / 2);
+    return {
+        [GAME_MODES.FFA]: fallbackPorts.slice(0, splitIndex),
+        [GAME_MODES.OVERDRIVE]: fallbackPorts.slice(splitIndex)
+    };
+}
+
+const modePortPools = resolveModePortPools();
+
+function portToPathSegment(mode, port) {
+    const normalizedMode = normalizeGameMode(mode);
+    const portList = modePortPools[normalizedMode] || [];
+    const pathIndex = portList.indexOf(port);
+    if (pathIndex < 0) {
+        return `${normalizedMode}1`;
+    }
+    return `${normalizedMode}${pathIndex + 1}`;
 }
 
 function getRequestedOrigin(req) {
@@ -133,9 +186,9 @@ const getPlayerCount = async (port) => {
         if (response.status === 200) {
             return Number(response.data.player_count || 0);
         }
-        return 0;
+        return null;
     } catch (error) {
-        return 0;
+        return null;
     }
 };
 
@@ -163,7 +216,6 @@ const startServer = (port) => {
             console.log(`Server on port ${port} exited with code ${code}`);
         });
 
-        servers.push({ port, playerCount: 0 });
         serverProcesses.push(serverProcess);
         console.log(`Started server on port ${port}`);
         resolve();
@@ -171,29 +223,39 @@ const startServer = (port) => {
 };
 
 const ensureServersConfigured = () => {
-    if (servers.length > 0) return;
+    const hasConfiguredServers = Object.values(serversByMode).some((pool) => pool.length > 0);
+    if (hasConfiguredServers) return;
 
-    const uniquePorts = [...new Set(config.initialPorts)].slice(0, config.maxServerCount);
-    uniquePorts.forEach((port) => {
-        servers.push({ port, playerCount: 0 });
+    Object.entries(modePortPools).forEach(([mode, ports]) => {
+        ports.forEach((port) => {
+            serversByMode[mode].push({ port, playerCount: 0, mode });
+        });
     });
 };
 
 app.get('/get-server', async (req, res) => {
-    if (servers.length === 0) {
+    const requestedMode = normalizeGameMode(req.query.mode);
+    const modeServers = serversByMode[requestedMode] || [];
+
+    if (modeServers.length === 0) {
         return res.status(503).json({ error: 'No game servers configured' });
     }
 
     const serverPlayerCounts = await Promise.all(
-        servers.map(async (server) => ({
+        modeServers.map(async (server) => ({
             server,
             playerCount: await getPlayerCount(server.port)
         }))
     );
+    const availableServers = serverPlayerCounts.filter((entry) => Number.isFinite(entry.playerCount));
 
-    let selectedServer = serverPlayerCounts[0] || null;
+    if (availableServers.length === 0) {
+        return res.status(503).json({ error: `No reachable ${requestedMode} servers` });
+    }
 
-    for (const candidate of serverPlayerCounts) {
+    let selectedServer = availableServers[0] || null;
+
+    for (const candidate of availableServers) {
         if (!selectedServer) {
             selectedServer = candidate;
             continue;
@@ -217,19 +279,21 @@ app.get('/get-server', async (req, res) => {
     }
 
     return res.json({
-        server_address: getPublicServerAddress(req, portToPathSegment(selectedServer.server.port))
+        mode: requestedMode,
+        server_address: getPublicServerAddress(req, portToPathSegment(requestedMode, selectedServer.server.port))
     });
 });
 
 app.listen(config.defaultPort, async () => {
     console.log(`Directory server listening on port ${config.defaultPort}`);
+    ensureServersConfigured();
 
     if (config.autoSpawnServers) {
         try {
-            const portsToSpawn = [];
-            for (let i = 0; i < config.maxServerCount; i++) {
-                portsToSpawn.push(config.serverPortStart + i);
-            }
+            const portsToSpawn = uniquePorts([
+                ...modePortPools[GAME_MODES.FFA],
+                ...modePortPools[GAME_MODES.OVERDRIVE]
+            ]);
 
             await Promise.all(portsToSpawn.map((port) => startServer(port)));
             console.log(`Auto-started ${portsToSpawn.length} game servers.`);
@@ -240,8 +304,8 @@ app.listen(config.defaultPort, async () => {
         }
     }
 
-    ensureServersConfigured();
-    console.log(`Using preconfigured server ports: ${servers.map((s) => s.port).join(', ')}`);
+    console.log(`Using preconfigured FFA ports: ${modePortPools[GAME_MODES.FFA].join(', ') || 'none'}`);
+    console.log(`Using preconfigured Overdrive ports: ${modePortPools[GAME_MODES.OVERDRIVE].join(', ') || 'none'}`);
 });
 
 process.on('exit', () => {

@@ -1,0 +1,44 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#140A2A"/>
+      <stop offset="1" stop-color="#070812"/>
+    </linearGradient>
+    <radialGradient id="core" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(32 32) rotate(90) scale(12)">
+      <stop stop-color="#FFDA7A"/>
+      <stop offset="0.34" stop-color="#FF5A3B"/>
+      <stop offset="0.78" stop-color="#D01B55"/>
+      <stop offset="1" stop-color="#8E163E"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="18" y1="16" x2="48" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF4274"/>
+      <stop offset="0.33" stop-color="#C14BFF"/>
+      <stop offset="0.67" stop-color="#5F7CFF"/>
+      <stop offset="1" stop-color="#33E1FF"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="
+        1 0 0 0 0
+        0 0.7 0 0 0
+        0 0 1 0 0
+        0 0 0 1 0" result="tint"/>
+      <feMerge>
+        <feMergeNode in="tint"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" />
+    </filter>
+  </defs>
+
+  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#bg)" stroke="#6F57FF" stroke-opacity="0.42"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="15" stroke="#FFFFFF" stroke-opacity="0.05" fill="none"/>
+
+  <circle cx="32" cy="32" r="19" stroke="url(#ring)" stroke-width="6.5" filter="url(#glow)"/>
+  <circle cx="32" cy="32" r="11.5" fill="url(#core)" filter="url(#glow)"/>
+  <circle cx="27.5" cy="27" r="3.2" fill="#FFFFFF" fill-opacity="0.65"/>
+
+  <circle cx="32" cy="32" r="24" fill="#A946FF" opacity="0.12" filter="url(#softGlow)"/>
+</svg>

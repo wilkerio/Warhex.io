@@ -376,6 +376,13 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	network.WsEndpoint(w, r, userData)
 }
 
+func registerGameModeRoutes(mux *http.ServeMux, prefix string, aliasCount int) {
+	mux.HandleFunc(fmt.Sprintf("/%s", prefix), wsEndpoint)
+	for i := 1; i <= aliasCount; i++ {
+		mux.HandleFunc(fmt.Sprintf("/%s%d", prefix, i), wsEndpoint)
+	}
+}
+
 func main() {
 	loaded := loadEnvFromCandidates([]string{
 		".env.local",
@@ -421,10 +428,17 @@ func main() {
 		}()
 	}
 
+	routeAliasCount := 16
+	if rawAliasCount := strings.TrimSpace(os.Getenv("GAME_ROUTE_ALIAS_COUNT")); rawAliasCount != "" {
+		if parsedAliasCount, err := strconv.Atoi(rawAliasCount); err == nil && parsedAliasCount > 0 {
+			routeAliasCount = parsedAliasCount
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", wsEndpoint)
-	mux.HandleFunc("/ffa1", wsEndpoint)
-	mux.HandleFunc("/ffa2", wsEndpoint)
+	registerGameModeRoutes(mux, "ffa", routeAliasCount)
+	registerGameModeRoutes(mux, "overdrive", routeAliasCount)
 	mux.HandleFunc("/playercount", playerCountHandler)
 	mux.HandleFunc("/reboot", serverRebootHandler)
 

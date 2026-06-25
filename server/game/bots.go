@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultBotCount  = 5
+	defaultBotCount  = 0
 	maxBotCount      = 32
 	botNameReuseTTL  = 15 * time.Minute
 	minBotPersistTTL = 70 * time.Second

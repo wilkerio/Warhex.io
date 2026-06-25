@@ -756,7 +756,7 @@ export class BuildingManager {
                         this.core.networkManager.sendX1ConcedeRound(enemy.id);
                     } : null;
 
-                    const onChallengeX1 = () => {
+                    const onChallengeX1 = this.core?.uiManager?.shouldAllowX1?.() ? () => {
                         if (this.core.unitManager.hasSelectedUnits()) {
                             this.core.uiManager.addChatMessage(
                                 "System",
@@ -807,7 +807,7 @@ export class BuildingManager {
                             this.lastX1ChallengeSentAt = Date.now();
                             this.core.networkManager.sendX1Challenge(enemy.id, selectedMode);
                         });
-                    };
+                    } : null;
 
                     this.core.uiManager.showEnemyCoreActions(
                         enemy.name || "Player",

@@ -1361,10 +1361,26 @@ export default class NetworkManager {
     // Handle network errors
     handleNetworkError (error) {
         console.error("Network error:", error);
-        this.core.uiManager.showConnectingOverlay(true);
+        const isTerminalServerUnavailable = Boolean(
+            error
+            && typeof error === "object"
+            && error.kind === "server_unavailable"
+            && error.retryable === false
+        );
+        this.core.uiManager.showConnectingOverlay(!isTerminalServerUnavailable);
         this.core.uiManager.showMenuUIElements(true);
         this.core.uiManager.showGameUIElements(false);
         this.core.camera.enableControls(false);
+        if (isTerminalServerUnavailable) {
+            const selectedMode = this.core?.uiManager?.resolveTopMenuVariant?.() || "overdrive";
+            const modeLabel = selectedMode === "ffa" ? "FFA" : "OVERDRIVE";
+            this.core.uiManager.showMenuDialog(
+                "Server Unavailable",
+                `No ${modeLabel} server is available right now.`,
+                "This mode is currently offline or still starting.",
+                "Try again in a few seconds, or switch to the other mode if needed."
+            );
+        }
     }
 
     // Handle network close
@@ -3257,13 +3273,24 @@ export default class NetworkManager {
     }
 
     sendX1Challenge(targetPlayerID, duelMode = X1DuelModes.CURRENT_BASE) {
+        if (!this.core?.uiManager?.shouldAllowX1?.()) {
+            this.core?.uiManager?.addChatMessage?.("System", "X1 is disabled in FFA mode.", "#ffcc66");
+            return false;
+        }
         const message = Message.createSendX1ChallengeMessage(targetPlayerID, this.normalizeX1DuelMode(duelMode));
         this.sendMessage(message);
+        return true;
     }
 
     sendX1ChallengeResponse(challengerPlayerID, accepted, duelMode = X1DuelModes.CURRENT_BASE) {
+        if (!this.core?.uiManager?.shouldAllowX1?.()) {
+            const message = Message.createX1ChallengeResponseMessage(challengerPlayerID, false, X1DuelModes.CURRENT_BASE);
+            this.sendMessage(message);
+            return false;
+        }
         const message = Message.createX1ChallengeResponseMessage(challengerPlayerID, accepted, this.normalizeX1DuelMode(duelMode));
         this.sendMessage(message);
+        return true;
     }
 
     sendX1ConcedeRound(targetPlayerID) {
@@ -3293,6 +3320,11 @@ export default class NetworkManager {
 
     handleX1ChallengeReceived(payload) {
         const { challengerID, challengerName, challengerMode } = payload;
+        if (!this.core?.uiManager?.shouldAllowX1?.()) {
+            this.sendX1ChallengeResponse(challengerID, false, X1DuelModes.CURRENT_BASE);
+            this.core?.uiManager?.addChatMessage?.("System", `Blocked X1 challenge from ${challengerName || "Player"} because FFA mode is active.`, "#ffcc66");
+            return;
+        }
         this.core.uiManager.showX1ChallengePrompt(
             challengerName,
             this.normalizeX1DuelMode(challengerMode),

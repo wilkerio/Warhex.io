@@ -109,6 +109,7 @@ export default class UIManager {
         this.tutorialLastStepKey = "";
         this.tutorialStepCompletion = {};
         this.tutorialActionMarks = {};
+        this.selectedMenuMode = "overdrive";
         
         // Skin navigation properties
         this.currentSkinIndex = 0;
@@ -119,6 +120,7 @@ export default class UIManager {
         this.applyPlatformRestrictions();
         this.ensureSoldierSelectionCounter();
         this.embedPlayControlsIntoAccountCard();
+        this.initializeMenuModeSelector();
         this.loadHudConfig();
         this.initializeSkinsFromCache(); // First: load from localStorage cache
         this.loadSupabaseSkins(); // Then: fetch fresh from Supabase (updates cache)
@@ -133,6 +135,7 @@ export default class UIManager {
         this.addSkinCircleClickListener(); // New: click on circle to open library
         this.addSkinLibraryButtonListener();
         this.addMenuShortcutLinks();
+        this.addLegalLinksToggleListener();
         this.addLegalDialogListeners();
         this.addSettingsPanelListener();
         this.initializeCustomizationSettingsUI();
@@ -171,6 +174,173 @@ export default class UIManager {
         if (lang === "pt") return pt;
         if (lang === "es") return es;
         return en;
+    }
+
+    normalizeMenuMode (mode) {
+        const normalized = String(mode || "").trim().toLowerCase();
+        return normalized === "ffa" ? "ffa" : "overdrive";
+    }
+
+    rebuildTopMenuButtons () {
+        const existing = document.getElementById("autobuild-menu-container");
+        if (existing?.parentNode) {
+            existing.parentNode.removeChild(existing);
+        }
+        this._autoBuildShowActions = null;
+        this._autoBuildShowMenu = null;
+        this._pinAutoBuildMenuOpen = false;
+        this.addAutoBuildMenuButtons();
+    }
+
+    resolveTopMenuVariant () {
+        const storedMode = this.normalizeMenuMode(
+            localStorage.getItem("menuSelectedMode")
+            || document.getElementById("selected-mode")?.value
+            || this.selectedMenuMode
+        );
+        if (storedMode === "ffa" || storedMode === "overdrive") {
+            return storedMode;
+        }
+
+        const explicitVariant = String(window.__WARHEX_TOP_MENU_MODE__ || "")
+            .trim()
+            .toLowerCase();
+        if (explicitVariant === "ffa" || explicitVariant === "overdrive") {
+            return explicitVariant;
+        }
+
+        const hints = [
+            window.location?.pathname,
+            window.location?.search,
+            window.__WARHEX_WS_URL__,
+            window.__WARHEX_LOAD_BALANCER_URL__,
+            window.WARHEX_CONFIG?.loadBalancerUrl
+        ]
+            .map((value) => String(value || "").trim().toLowerCase())
+            .filter(Boolean);
+
+        if (hints.some((value) => /(?:^|\/)overdrive(?:\d+)?(?:$|[/?#&_-])/.test(value))) {
+            return "overdrive";
+        }
+
+        if (hints.some((value) => /(?:^|\/)ffa(?:\d+)?(?:$|[/?#&_-])/.test(value) || /(?:^|[?&_-])mode=ffa(?:$|[&#_-])/.test(value))) {
+            return "ffa";
+        }
+
+        return "overdrive";
+    }
+
+    shouldUseCompactFfaTopMenu () {
+        return this.resolveTopMenuVariant() === "ffa";
+    }
+
+    shouldAllowX1 () {
+        return this.resolveTopMenuVariant() !== "ffa";
+    }
+
+    getMenuModeMeta () {
+        return {
+            ffa: {
+                title: "FFA",
+                description: this.t("menu.mode.ffa.desc")
+            },
+            overdrive: {
+                title: "OVERDRIVE",
+                description: this.t("menu.mode.overdrive.desc")
+            }
+        };
+    }
+
+    setMenuModeSelection (mode, { persist = true } = {}) {
+        const normalizedMode = this.normalizeMenuMode(mode);
+        const modeMeta = this.getMenuModeMeta();
+        const selectedModeInput = document.getElementById("selected-mode");
+        const modeSelectButton = document.getElementById("mode-select-button");
+        const modeOptions = Array.from(document.querySelectorAll(".mode-option"));
+
+        this.selectedMenuMode = normalizedMode;
+
+        if (selectedModeInput) {
+            selectedModeInput.value = normalizedMode;
+        }
+
+        if (modeSelectButton) {
+            modeSelectButton.textContent = `${this.t("menu.currentMode")}: ${modeMeta[normalizedMode]?.title || "OVERDRIVE"}`;
+        }
+
+        modeOptions.forEach((option) => {
+            const isActive = this.normalizeMenuMode(option.dataset.mode) === normalizedMode;
+            option.classList.toggle("active", isActive);
+            option.setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
+
+        const playButton = document.getElementById("play-button");
+        if (playButton) {
+            playButton.dataset.menuMode = normalizedMode;
+        }
+
+        if (persist) {
+            localStorage.setItem("menuSelectedMode", normalizedMode);
+        }
+
+        this.rebuildTopMenuButtons();
+    }
+
+    updateMenuModeSelectorLabels () {
+        const modeMeta = this.getMenuModeMeta();
+        const modeOptions = Array.from(document.querySelectorAll(".mode-option"));
+
+        modeOptions.forEach((option) => {
+            const mode = this.normalizeMenuMode(option.dataset.mode);
+            const title = option.querySelector("strong");
+            const description = option.querySelector("span");
+
+            if (title) title.textContent = modeMeta[mode]?.title || mode.toUpperCase();
+            if (description) description.textContent = modeMeta[mode]?.description || "";
+        });
+
+        this.setMenuModeSelection(this.selectedMenuMode, { persist: false });
+    }
+
+    initializeMenuModeSelector () {
+        const modeSelectButton = document.getElementById("mode-select-button");
+        const modeDropdown = document.getElementById("mode-dropdown");
+        const selectedModeInput = document.getElementById("selected-mode");
+        const modeOptions = Array.from(document.querySelectorAll(".mode-option"));
+
+        if (!modeSelectButton || !modeDropdown || !selectedModeInput || modeOptions.length === 0) return;
+
+        const initialMode = this.resolveTopMenuVariant();
+        this.selectedMenuMode = initialMode;
+
+        if (!modeSelectButton.dataset.boundModeSelector) {
+            modeSelectButton.dataset.boundModeSelector = "1";
+            modeSelectButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                modeDropdown.hidden = !modeDropdown.hidden;
+            });
+        }
+
+        modeOptions.forEach((option) => {
+            if (option.dataset.boundModeOption === "1") return;
+            option.dataset.boundModeOption = "1";
+            option.addEventListener("click", () => {
+                this.setMenuModeSelection(option.dataset.mode);
+                modeDropdown.hidden = true;
+            });
+        });
+
+        if (!document.body.dataset.boundMenuModeOutsideClick) {
+            document.body.dataset.boundMenuModeOutsideClick = "1";
+            document.addEventListener("click", (event) => {
+                const target = event.target;
+                if (!(target instanceof Node)) return;
+                if (modeSelectButton.contains(target) || modeDropdown.contains(target)) return;
+                modeDropdown.hidden = true;
+            });
+        }
+
+        this.updateMenuModeSelectorLabels();
     }
 
     isLogoutLikeLabel (value = "") {
@@ -335,6 +505,7 @@ export default class UIManager {
         setText("#shop-button", "menu.shop");
         setText("#skin-name-display", "menu.default");
         setText("#skin-use-button", "menu.use");
+        this.updateMenuModeSelectorLabels();
         setText("#skin-library-dialog h1", "menu.yourSkins");
         setText("#privacy-open-button", "legal.privacyPolicy");
         setText("#terms-open-button", "legal.termsOfUse");
@@ -3230,22 +3401,17 @@ export default class UIManager {
     embedPlayControlsIntoAccountCard () {
         const playerInputContainer = document.querySelector(".player-input-container");
         const accountContainer = document.getElementById("account-container");
-        const topPlayerSettings = document.querySelector(".player-settings");
         const discordShopLinks = document.getElementById("discord-shop-links");
 
         if (!playerInputContainer || !accountContainer) return;
         if (playerInputContainer.dataset.embeddedIntoAccount === "1") return;
 
-        // Place the name + play row at the top of the lower account card.
+        // Keep the name + play row anchored at the top of the account card.
         accountContainer.insertBefore(playerInputContainer, discordShopLinks || accountContainer.firstChild);
         playerInputContainer.dataset.embeddedIntoAccount = "1";
-        playerInputContainer.classList.add("embedded-in-account");
-        accountContainer.classList.add("compact-account-center");
 
-        // Hide the old top wrapper/card that would otherwise stay empty.
-        if (topPlayerSettings) {
-            topPlayerSettings.style.display = "none";
-        }
+        const topPlayerSettings = document.querySelector(".player-settings");
+        if (topPlayerSettings) topPlayerSettings.style.display = "none";
     }
 
     addLoginDialogButtonListener () {
@@ -5886,6 +6052,7 @@ export default class UIManager {
         const gameContainer = this.DOM?.game?.container;
         if (!gameContainer) return;
         if (document.getElementById("autobuild-menu-container")) return;
+        const useCompactFfaTopMenu = this.shouldUseCompactFfaTopMenu();
 
         const container = document.createElement("div");
         container.id = "autobuild-menu-container";
@@ -5894,8 +6061,10 @@ export default class UIManager {
         container.style.left = "50%";
         container.style.transform = "translateX(-50%)";
         container.style.display = "none";
-        container.style.width = "min(560px, calc(100vw - 32px))";
-        container.style.height = "46px";
+        container.style.width = useCompactFfaTopMenu
+            ? "min(220px, calc(100vw - 32px))"
+            : "min(560px, calc(100vw - 32px))";
+        container.style.height = useCompactFfaTopMenu ? "34px" : "46px";
         container.style.zIndex = "30";
         container.style.pointerEvents = "auto";
         container.style.filter = "drop-shadow(0 5px 10px rgba(0, 0, 0, 0.24))";
@@ -5941,8 +6110,10 @@ export default class UIManager {
         actionsPanel.style.transform = "translateX(-50%)";
         actionsPanel.style.top = "0";
         actionsPanel.style.width = "100%";
-        actionsPanel.style.maxWidth = "min(560px, calc(100vw - 32px))";
-        actionsPanel.style.height = "44px";
+        actionsPanel.style.maxWidth = useCompactFfaTopMenu
+            ? "min(220px, calc(100vw - 32px))"
+            : "min(560px, calc(100vw - 32px))";
+        actionsPanel.style.height = useCompactFfaTopMenu ? "30px" : "44px";
         actionsPanel.style.display = "none";
         actionsPanel.style.padding = "3px";
         actionsPanel.style.boxSizing = "border-box";
@@ -5952,8 +6123,10 @@ export default class UIManager {
         actionsPanel.style.boxShadow = "0 6px 18px rgba(180, 160, 255, 0.16)";
         actionsPanel.style.backdropFilter = "blur(8px)";
         actionsPanel.style.gap = "3px";
-        actionsPanel.style.gridTemplateColumns = "repeat(6, minmax(0, 1fr))";
-        actionsPanel.style.gridAutoRows = "18px";
+        actionsPanel.style.gridTemplateColumns = useCompactFfaTopMenu
+            ? "repeat(2, minmax(0, 1fr))"
+            : "repeat(6, minmax(0, 1fr))";
+        actionsPanel.style.gridAutoRows = useCompactFfaTopMenu ? "24px" : "18px";
         actionsPanel.style.alignItems = "stretch";
 
         const createActionButton = (label, onClick) => {
@@ -6050,20 +6223,24 @@ export default class UIManager {
         const themeBtn = createActionButton(this.t("game.theme").replace(":", ""), () => {
             this.tutorialActionMarks.themeAt = Date.now();
             this.positionSettingsPanelForTopMenu(themeBtn);
-            this._pinAutoBuildMenuOpen = true;
-            if (typeof this._autoBuildShowActions === "function") {
-                this._autoBuildShowActions();
+            this._pinAutoBuildMenuOpen = false;
+            if (typeof this._autoBuildShowMenu === "function") {
+                this._autoBuildShowMenu();
             }
             this.showGameSettingsButton(false);
             this.showGameSettingsPanel(true);
         });
-        themeBtn.style.height = "20px";
+        themeBtn.style.height = useCompactFfaTopMenu ? "24px" : "20px";
         themeBtn.id = "top-theme-btn";
-        themeBtn.style.gridColumn = "3 / span 2";
+        themeBtn.style.gridColumn = useCompactFfaTopMenu ? "auto" : "3 / span 2";
         themeBtn.style.background = "rgba(24, 12, 48, 0.62)";
         themeBtn.style.borderColor = "rgba(180, 160, 255, 0.34)";
         themeBtn.style.color = "#b4a0ff";
-        themeBtn.style.fontSize = "9px";
+        themeBtn.style.fontSize = useCompactFfaTopMenu ? "10px" : "9px";
+        if (useCompactFfaTopMenu) {
+            topDiscordBtn.style.height = "24px";
+            topDiscordBtn.style.fontSize = "10px";
+        }
 
         const showActions = () => {
             this.tutorialActionMarks.topMenuAt = Date.now();
@@ -6111,13 +6288,10 @@ export default class UIManager {
         this._autoBuildShowActions = showActions;
         this._autoBuildShowMenu = showMenu;
 
-        actionsPanel.appendChild(autogensBtn);
-        actionsPanel.appendChild(externatkBtn);
-        actionsPanel.appendChild(defendBtn);
-        actionsPanel.appendChild(saveBaseBtn);
-        actionsPanel.appendChild(loadBaseBtn);
-        actionsPanel.appendChild(topDiscordBtn);
-        actionsPanel.appendChild(themeBtn);
+        const topMenuButtons = useCompactFfaTopMenu
+            ? [themeBtn, topDiscordBtn]
+            : [autogensBtn, externatkBtn, defendBtn, saveBaseBtn, loadBaseBtn, topDiscordBtn, themeBtn];
+        topMenuButtons.forEach((button) => actionsPanel.appendChild(button));
         container.appendChild(pullTab);
         container.appendChild(actionsPanel);
         gameContainer.appendChild(container);
@@ -6461,14 +6635,14 @@ export default class UIManager {
                 console.warn("Pre-play skin prompt failed, starting directly:", error);
                 confirmed = true;
             }
-            if (!confirmed) {
-                this.core?.setGameplayActive?.(false);
-                return;
-            }
-            this.core?.musicManager?.handleUserGestureStart?.();
-            await this.startGameWithSelectedSkin();
-        });
-    }
+        if (!confirmed) {
+            this.core?.setGameplayActive?.(false);
+            return;
+        }
+        this.core?.musicManager?.handleUserGestureStart?.();
+        await this.startGameWithSelectedSkin();
+    });
+}
 
     async startGameWithSelectedSkin () {
         // Always start each match with Group Troops OFF in UI.
@@ -7088,6 +7262,18 @@ export default class UIManager {
                 pointerText: tt("Pronto para jogar", "Ready to play", "Listo para jugar")
             }
         ];
+        if (this.shouldUseCompactFfaTopMenu()) {
+            const compactTopMenuBlockedSteps = new Set(["defend", "save_base", "load_base", "autogens", "externatk"]);
+            this.tutorialSteps = this.tutorialSteps.filter((step) => !compactTopMenuBlockedSteps.has(step?.key));
+            const topMenuStep = this.tutorialSteps.find((step) => step?.key === "top_menu");
+            if (topMenuStep) {
+                topMenuStep.content = tt(
+                    "No topo do FFA voce acessa apenas atalhos rapidos de Tema e Discord.",
+                    "At the top of FFA you only get quick shortcuts for Theme and Discord.",
+                    "En la parte superior de FFA solo tienes accesos rapidos a Tema y Discord."
+                );
+            }
+        }
         this.tutorialIndex = 0;
         this.tutorialLastStepKey = "";
         this.tutorialStepCompletion = {};
@@ -7810,6 +7996,30 @@ export default class UIManager {
         bindDiscordLink("discord-open-button");
     }
 
+    addLegalLinksToggleListener () {
+        const legalLinksCorner = document.getElementById("legal-links-corner");
+        const legalToggleButton = document.getElementById("legal-toggle-button");
+        if (!legalLinksCorner || !legalToggleButton) return;
+
+        if (!legalToggleButton.dataset.boundLegalToggleButton) {
+            legalToggleButton.dataset.boundLegalToggleButton = "1";
+            legalToggleButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                legalLinksCorner.classList.toggle("is-open");
+            });
+        }
+
+        if (!document.body.dataset.boundLegalLinksOutsideClick) {
+            document.body.dataset.boundLegalLinksOutsideClick = "1";
+            document.addEventListener("click", (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) return;
+                if (legalLinksCorner.contains(target)) return;
+                legalLinksCorner.classList.remove("is-open");
+            });
+        }
+    }
+
     addLegalDialogListeners () {
         const legal = this.DOM?.legal;
         if (!legal) return;
@@ -8042,6 +8252,16 @@ export default class UIManager {
             });
         }
 
+        ["mousedown", "pointerdown", "touchstart", "click"].forEach((eventName) => {
+            this.DOM.settings.themeSelect.addEventListener(eventName, (event) => {
+                event.stopPropagation();
+            });
+        });
+
+        this.DOM.settings.themeSelect.addEventListener("focus", () => {
+            this.positionSettingsPanelForTopMenu(this.DOM.settings.themeSelect);
+        });
+
         this.DOM.settings.themeSelect.addEventListener("change", (event) => {
             this.core.themeManager.applyTheme(event.target.value);
             this.closeSettingsAfterChoice();
@@ -8129,6 +8349,9 @@ export default class UIManager {
         const legalLinks = document.getElementById("legal-links-corner");
         if (legalLinks) {
             legalLinks.style.display = show ? "flex" : "none";
+            if (!show) {
+                legalLinks.classList.remove("is-open");
+            }
         }
     }
 
@@ -8213,7 +8436,7 @@ export default class UIManager {
             this.showMenuSecondaryPanels(false);
             return;
         }
-        this.showMenuSecondaryPanels(!this.hideMenuSecondaryPanels);
+        this.showMenuSecondaryPanels(true);
     }
 
     showGameUIElements (show) {

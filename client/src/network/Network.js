@@ -17,6 +17,10 @@ export default class Network {
         this.worker = null;
         this.retryDelay = 3000;
         this.retryTimer = null;
+        this.hasConnectedOnce = false;
+        this.initialConnectFailures = 0;
+        this.maxInitialConnectRetries = 4;
+        this.initialFailureTerminal = false;
         this._initWorker();
     }
 
@@ -66,14 +70,16 @@ export default class Network {
                     break;
                 case 'disconnected':
                     this.onDisconnect(data);
-                    this.retryConnect();
+                    if (this.handleConnectionFailure({ kind: 'disconnected', message: 'Connection closed before game sync.' })) {
+                        this.retryConnect();
+                    }
                     break;
                 case 'message':
                     this.onMessage(data);
                     break;
                 case 'error':
                     this.onError(data);
-                    if (!data || data.kind !== 'send') {
+                    if (this.handleConnectionFailure(data)) {
                         this.retryConnect();
                     }
                     break;
@@ -88,8 +94,45 @@ export default class Network {
         return url.trim().replace(/\/+$/, '');
     }
 
+    normalizeGameMode(mode) {
+        return String(mode || '').trim().toLowerCase() === 'ffa' ? 'ffa' : 'overdrive';
+    }
+
+    getSelectedGameMode() {
+        const modeCandidates = [
+            localStorage.getItem('menuSelectedMode'),
+            document.getElementById('selected-mode')?.value,
+            document.getElementById('play-button')?.dataset?.menuMode,
+            window.__WARHEX_TOP_MENU_MODE__
+        ];
+
+        for (const candidate of modeCandidates) {
+            if (candidate == null || String(candidate).trim() === '') {
+                continue;
+            }
+            const normalized = this.normalizeGameMode(candidate);
+            if (normalized === 'ffa' || normalized === 'overdrive') {
+                return normalized;
+            }
+        }
+
+        return 'overdrive';
+    }
+
+    getDefaultPathForMode(mode = this.getSelectedGameMode()) {
+        return `/${this.normalizeGameMode(mode)}1`;
+    }
+
+    createConnectionError(kind, message, extra = {}) {
+        return {
+            kind,
+            message,
+            ...extra
+        };
+    }
+
     buildDirectGameAddress() {
-        return `${window.location.host}/ffa1`;
+        return `${window.location.host}${this.getDefaultPathForMode()}`;
     }
 
     toWebSocketUrl(address) {
@@ -121,8 +164,8 @@ export default class Network {
         }
 
         const trimmed = address.trim();
-        const pathMatch = trimmed.match(/(\/ffa\d+)$/i);
-        const pathSuffix = pathMatch ? pathMatch[1] : '/ffa1';
+        const pathMatch = trimmed.match(/(\/(?:ffa|overdrive)\d+)$/i);
+        const pathSuffix = pathMatch ? pathMatch[1] : this.getDefaultPathForMode();
 
         if (window.location.protocol !== 'https:') {
             return trimmed;
@@ -136,24 +179,59 @@ export default class Network {
         return trimmed;
     }
 
+    async requestServerAddressFromLoadBalancer() {
+        if (!this.loadBalancerAddress) {
+            return null;
+        }
+
+        const requestUrl = new URL(`${this.loadBalancerAddress}/get-server`);
+        const mode = this.getSelectedGameMode();
+        requestUrl.searchParams.set('mode', mode);
+
+        try {
+            const response = await fetch(requestUrl.toString(), { method: 'GET' });
+            if (!response.ok) {
+                let errorMessage = `No ${mode} server is available right now.`;
+                try {
+                    const data = await response.json();
+                    if (typeof data?.error === 'string' && data.error.trim()) {
+                        errorMessage = data.error.trim();
+                    }
+                } catch (error) {}
+
+                throw this.createConnectionError('server_unavailable', errorMessage, {
+                    retryable: false,
+                    status: response.status,
+                    mode
+                });
+            }
+
+            const data = await response.json();
+            if (data && typeof data.server_address === 'string' && data.server_address.trim()) {
+                return this.normalizeResolvedServerAddress(data.server_address);
+            }
+        } catch (error) {
+            if (error && typeof error === 'object' && error.kind) {
+                throw error;
+            }
+            if (this.isDev) {
+                return null;
+            }
+            console.error('Failed to fetch server from load balancer:', error);
+        }
+
+        return null;
+    }
+
     async resolveProductionAddress() {
         const forcedWs = (window.__WARHEX_WS_URL__ || '').trim();
         if (forcedWs) {
             return forcedWs;
         }
 
-        if (this.loadBalancerAddress) {
-            try {
-                const response = await fetch(`${this.loadBalancerAddress}/get-server`, { method: 'GET' });
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && typeof data.server_address === 'string' && data.server_address.trim()) {
-                        return this.normalizeResolvedServerAddress(data.server_address);
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to fetch server from load balancer:', error);
-            }
+        const loadBalancedAddress = await this.requestServerAddressFromLoadBalancer();
+        if (loadBalancedAddress) {
+            return loadBalancedAddress;
         }
 
         const fallback = (window.__WARHEX_GAME_WS_HOST__ || '').trim();
@@ -164,32 +242,88 @@ export default class Network {
         return this.normalizeResolvedServerAddress(this.buildDirectGameAddress());
     }
 
-    async connect() {
-        if (this.isDev) {
-            const forcedWs = (window.__WARHEX_WS_URL__ || '').trim();
-            if (forcedWs) {
-                const wsUrl = this.toWebSocketUrl(forcedWs);
-                if (wsUrl) {
-                    this.serverAddress = wsUrl;
-                    this.worker.postMessage({ type: 'connect', data: wsUrl });
-                    return;
-                }
-            }
+    handleConnectionFailure(data = {}) {
+        if (data?.kind === 'send') {
+            return false;
+        }
+        if (data?.retryable === false) {
+            this.initialFailureTerminal = true;
+            return false;
+        }
+        if (this.initialFailureTerminal) {
+            return false;
+        }
+        if (this.hasConnectedOnce) {
+            return true;
+        }
 
-            const localHost = (window.location.hostname || '127.0.0.1').trim();
-            const localPort = String(window.__WARHEX_DEV_WS_PORT__ || '9090').trim();
-            const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-            this.serverAddress = `${localHost}:${localPort}`;
-            this.worker.postMessage({ type: 'connect', data: `${scheme}://${this.serverAddress}` });
+        this.initialConnectFailures += 1;
+        if (this.initialConnectFailures >= this.maxInitialConnectRetries) {
+            this.initialFailureTerminal = true;
+            this.onError(this.createConnectionError(
+                'server_unavailable',
+                data?.message || 'No server is available for the selected mode right now.',
+                {
+                    retryable: false,
+                    attempts: this.initialConnectFailures,
+                    mode: this.getSelectedGameMode()
+                }
+            ));
+            return false;
+        }
+
+        return true;
+    }
+
+    async connect() {
+        let address = null;
+        try {
+            if (this.isDev) {
+                const forcedWs = (window.__WARHEX_WS_URL__ || '').trim();
+                if (forcedWs) {
+                    address = forcedWs;
+                } else {
+                    const loadBalancedAddress = await this.requestServerAddressFromLoadBalancer();
+                    if (loadBalancedAddress) {
+                        address = loadBalancedAddress;
+                    } else {
+                        const localHost = (window.location.hostname || '127.0.0.1').trim();
+                        const selectedMode = this.getSelectedGameMode();
+                        const configuredLocalPorts = window.__WARHEX_DEV_WS_PORTS__;
+                        const modeLocalPort = configuredLocalPorts && typeof configuredLocalPorts === 'object'
+                            ? configuredLocalPorts[selectedMode]
+                            : null;
+                        const localPort = String(
+                            modeLocalPort
+                            || window.__WARHEX_DEV_WS_PORT__
+                            || (selectedMode === 'ffa' ? '9090' : '9091')
+                        ).trim();
+                        const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                        address = `${scheme}://${localHost}:${localPort}`;
+                    }
+                }
+            } else {
+                address = await this.resolveProductionAddress();
+            }
+        } catch (error) {
+            const connectionError = error && typeof error === 'object' && error.kind
+                ? error
+                : this.createConnectionError('connection_resolution_failed', 'Could not resolve a server address.', { retryable: true });
+            this.onError(connectionError);
+            if (this.handleConnectionFailure(connectionError)) {
+                this.retryConnect();
+            }
             return;
         }
 
-        const address = await this.resolveProductionAddress();
         const wsUrl = this.toWebSocketUrl(address);
 
         if (!wsUrl) {
-            this.onError('No server address available.');
-            this.retryConnect();
+            const connectionError = this.createConnectionError('connection_resolution_failed', 'No server address available.', { retryable: true });
+            this.onError(connectionError);
+            if (this.handleConnectionFailure(connectionError)) {
+                this.retryConnect();
+            }
             return;
         }
 
@@ -209,6 +343,9 @@ export default class Network {
     }
 
     onConnect(data) {
+        this.hasConnectedOnce = true;
+        this.initialConnectFailures = 0;
+        this.initialFailureTerminal = false;
         if (this.retryTimer) {
             clearTimeout(this.retryTimer);
             this.retryTimer = null;

@@ -104,6 +104,7 @@
         content="Play Warhex.io in your browser and fight for map control in a fast multiplayer strategy game.">
     <meta name="twitter:image" content="https://warhex.io/assets/android-chrome-512x512.png">
     <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="icon" type="image/svg+xml" href="assets/favicon-orb.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
     <link rel="manifest" href="assets/site.webmanifest">
@@ -445,86 +446,121 @@
         </div>
         <div id="global-leaderboard" class="leaderboard"></div>
 
-        <div id="game-title">
-            <h1 class="title">Warhex<span>.io</span></h1>
-        </div>
+        <div class="warhex-menu-wrap">
+            <div id="game-title">
+                <h1 class="warhex-logo">Warhex<span>.io</span></h1>
+            </div>
 
-        <div class="menu-content-container">
-            <div class="menu-content">
-                <div class="player-settings">
-                    <div class="menu-card">
-                        <div class="player-input-container">
-                            <input type="text" class="player-name-input" id="player-name" placeholder="Player Name"
-                                maxlength="20">
-                            <div id="logged-in-nickname" style="display: none;"></div>
-                            <button class="play-button" id="play-button">Play</button>
-                            <button class="tutorial-button" id="tutorial-button">Tutorial</button>
+            <div class="menu-card">
+                <div id="account-container">
+                    <div class="player-input-container" data-embedded-into-account="1">
+                        <input
+                            type="text"
+                            class="player-name-input"
+                            id="player-name"
+                            placeholder="Player Name"
+                            maxlength="20"
+                        >
+                        <div id="logged-in-nickname" style="display: none;"></div>
+
+                        <div class="mode-selector-container">
+                            <button class="mode-select-button" id="mode-select-button" type="button">
+                                Current mode: OVERDRIVE
+                            </button>
+
+                            <div class="mode-dropdown" id="mode-dropdown" hidden>
+                                <button class="mode-option" data-mode="ffa" type="button">
+                                    <strong>FFA</strong>
+                                    <span>Free for all</span>
+                                </button>
+
+                                <button class="mode-option active" data-mode="overdrive" type="button">
+                                    <strong>OVERDRIVE</strong>
+                                    <span>Mode with special advantages</span>
+                                </button>
+                            </div>
+
+                            <input type="hidden" id="selected-mode" value="overdrive">
+                        </div>
+
+                        <button class="play-button" id="play-button" type="button">Play</button>
+                        <button class="tutorial-button" id="tutorial-button" type="button">Tutorial</button>
+                    </div>
+
+                    <div id="discord-shop-links">
+                        <button id="discord-button" style="display: none;">Discord</button>
+                        <button id="shop-button" style="display: none;">Shop</button>
+                    </div>
+
+                    <div id="skin-selector-wrapper">
+                        <div id="skin-selector">
+                            <button id="skin-carousel-prev-menu" class="skin-nav-btn">&#10094;</button>
+                            <div id="skin-preview-circle" class="skin-circle">
+                                <img id="current-skin-img" src="" alt="Skin" style="display: none;">
+                                <p id="skin-name-display">Default</p>
+                            </div>
+                            <button id="skin-carousel-next-menu" class="skin-nav-btn">&#10095;</button>
+                        </div>
+                        <button id="skin-use-button" class="skin-use-btn" disabled style="display: none;">Equipped</button>
+                    </div>
+
+                    <div class="progress-container" id="level-progression" style="display: none;">
+                        <div class="progress-icon">1</div>
+                        <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--progress: 0%;"></div>
+                        <div class="progress-text">0 / 50 XP</div>
+                    </div>
+
+                    <h1 id="account-handle">@quest</h1>
+
+                    <div id="stats-container" style="display: none;">
+                        <div>
+                            <p>Highscore:</p>
+                            <p>0</p>
+                        </div>
+                        <div>
+                            <p>Playtime:</p>
+                            <p>0m</p>
+                        </div>
+                        <div>
+                            <p>XP:</p>
+                            <p>0 / 50</p>
+                        </div>
+                        <div>
+                            <p>Total Kills:</p>
+                            <p>0</p>
                         </div>
                     </div>
-                </div>
-                <div class="menu-card">
-                    <div id="account-container">
-                        <div id="discord-shop-links">
-                            <button id="discord-button">Discord</button>
-                            <button id="shop-button">Shop</button>
-                        </div>
-                        <div id="skin-selector-wrapper" style="margin-top: 12px;">
-                            <div id="skin-selector" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                                <button id="skin-carousel-prev-menu" class="skin-nav-btn">&#10094;</button>
-                                <div id="skin-preview-circle" class="skin-circle">
-                                    <img id="current-skin-img" src="" alt="Skin" style="display: none;">
-                                    <p id="skin-name-display">Default</p>
-                                </div>
-                                <button id="skin-carousel-next-menu" class="skin-nav-btn">&#10095;</button>
-                            </div>
-                            <button id="skin-use-button" class="skin-use-btn">Use</button>
-                        </div>
 
-                        <div class="progress-container" id="level-progression">
-                            <div class="progress-icon">1</div>
-                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--progress: 0%;"></div>
-                            <div class="progress-text">0 / 50 XP</div>
-                        </div>
-                        <h1 id="account-handle">@guest</h1>
-                        <hr>
-                        <div id="stats-container">
-                            <div>
-                                <p>Highscore:</p>
-                                <p>0</p>
-                            </div>
-                            <div>
-                                <p>Playtime:</p>
-                                <p>0h 0m</p>
-                            </div>
-                            <div>
-                                <p>Total Kills:</p>
-                                <p>0</p>
-                            </div>
-                        </div>
-                        <hr>
-                        <div class="account-buttons">
-                            <button id="account-button">Login</button>
-                            <button id="signup-button">Sign Up</button>
-                        </div>
+                    <div class="account-buttons">
+                        <button id="my-profile-button" type="button" style="display: none;">My Profile</button>
+                        <button id="account-button">Login</button>
+                        <button id="signup-button">Sign Up</button>
                     </div>
                 </div>
             </div>
         </div>
 
         <div id="legal-links-corner">
-            <div id="language-control">
-                <label id="language-label" for="language-select">Language</label>
-                <select id="language-select" aria-label="Language">
-                    <option value="en">English</option>
-                    <option value="pt">Portuguese</option>
-                    <option value="es">Spanish</option>
-                </select>
+            <div id="legal-main-bar">
+                <div id="language-control">
+                    <label id="language-label" for="language-select">Language</label>
+                    <select id="language-select" aria-label="Language">
+                        <option value="en">English</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="es">Spanish</option>
+                    </select>
+                </div>
+
+                <button id="legal-toggle-button" type="button" aria-label="Open menu">❯</button>
             </div>
-            <button id="discord-open-button" class="legal-link-button">Discord</button>
-            <button id="changelog-open-button" class="legal-link-button">Changelog</button>
-            <button id="privacy-open-button" class="legal-link-button">Privacy Policy</button>
-            <button id="terms-open-button" class="legal-link-button">Terms of Use</button>
-            <button id="about-open-button" class="legal-link-button">About</button>
+
+            <div id="legal-links-panel">
+                <button id="discord-open-button" class="legal-link-button">Discord</button>
+                <button id="changelog-open-button" class="legal-link-button">Changelog</button>
+                <button id="privacy-open-button" class="legal-link-button">Privacy Policy</button>
+                <button id="terms-open-button" class="legal-link-button">Terms of Use</button>
+                <button id="about-open-button" class="legal-link-button">About</button>
+            </div>
         </div>
 
     </div>

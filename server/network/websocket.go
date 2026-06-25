@@ -7,6 +7,8 @@ import (
 	"server/game"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/time/rate"
@@ -21,7 +23,79 @@ var (
 		WriteBufferSize: 16192,
 	}
 	wsConnectionLimiter = initWsConnectionLimiter()
+	connectionAttemptLimiter = initConnectionAttemptLimiter()
 )
+
+type connectionAttemptLimiterConfig struct {
+	maxAttempts int
+	window      time.Duration
+}
+
+type connectionAttemptState struct {
+	windowStart time.Time
+	count       int
+}
+
+var connectionAttemptMutex sync.Mutex
+var connectionAttemptByIP = make(map[string]*connectionAttemptState)
+
+func initConnectionAttemptLimiter() connectionAttemptLimiterConfig {
+	rawAttempts := strings.TrimSpace(os.Getenv("WS_CONNECT_ATTEMPTS_PER_WINDOW"))
+	if rawAttempts == "" {
+		return connectionAttemptLimiterConfig{}
+	}
+
+	attempts, err := strconv.Atoi(rawAttempts)
+	if err != nil || attempts <= 0 {
+		log.Printf("invalid WS_CONNECT_ATTEMPTS_PER_WINDOW=%q, keeping unlimited", rawAttempts)
+		return connectionAttemptLimiterConfig{}
+	}
+
+	rawWindow := strings.TrimSpace(os.Getenv("WS_CONNECT_ATTEMPT_WINDOW_SECONDS"))
+	windowSeconds := 10
+	if rawWindow != "" {
+		if parsedWindow, parseErr := strconv.Atoi(rawWindow); parseErr == nil && parsedWindow > 0 {
+			windowSeconds = parsedWindow
+		}
+	}
+
+	return connectionAttemptLimiterConfig{
+		maxAttempts: attempts,
+		window:      time.Duration(windowSeconds) * time.Second,
+	}
+}
+
+func allowConnectionAttemptForIP(clientIP string) bool {
+	if connectionAttemptLimiter.maxAttempts <= 0 {
+		return true
+	}
+	window := connectionAttemptLimiter.window
+	if window <= 0 {
+		window = 10 * time.Second
+	}
+
+	clientIP = strings.TrimSpace(clientIP)
+	if clientIP == "" {
+		return true
+	}
+
+	now := time.Now()
+	connectionAttemptMutex.Lock()
+	defer connectionAttemptMutex.Unlock()
+
+	state, exists := connectionAttemptByIP[clientIP]
+	if !exists || now.Sub(state.windowStart) >= window {
+		connectionAttemptByIP[clientIP] = &connectionAttemptState{windowStart: now, count: 1}
+		return true
+	}
+
+	if state.count >= connectionAttemptLimiter.maxAttempts {
+		return false
+	}
+
+	state.count++
+	return true
+}
 
 func initWsConnectionLimiter() *rate.Limiter {
 	// Default is unlimited. Set WS_CONNECT_LIMIT_PER_SEC>0 to enforce a cap.
@@ -286,6 +360,11 @@ func WsEndpoint(w http.ResponseWriter, r *http.Request, userData UserData) {
 	if wsConnectionLimiter != nil && !wsConnectionLimiter.Allow() {
 		log.Println("Rate limit exceeded for", r.RemoteAddr)
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+	if !allowConnectionAttemptForIP(userData.ClientIP) {
+		log.Printf("WS handshake attempt limit exceeded for %s", userData.ClientIP)
+		http.Error(w, "Connection attempts limited", http.StatusTooManyRequests)
 		return
 	}
 

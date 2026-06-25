@@ -37,5 +37,18 @@ func (a *AvailableIDs) returnID(id ID) {
 	a.Lock()
 	defer a.Unlock()
 
-	a.IDs = append(a.IDs, id)
+	insertAt := len(a.IDs)
+	for i, availableID := range a.IDs {
+		if id < availableID {
+			insertAt = i
+			break
+		}
+		if id == availableID {
+			return
+		}
+	}
+
+	a.IDs = append(a.IDs, 0)
+	copy(a.IDs[insertAt+1:], a.IDs[insertAt:])
+	a.IDs[insertAt] = id
 }

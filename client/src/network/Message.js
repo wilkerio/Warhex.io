@@ -61,8 +61,6 @@ export default class Message {
         fingerprintBytes[2] = (fingerprint >> 8) & 0xFF;
         fingerprintBytes[3] = fingerprint & 0xFF; // Least significant byte
 
-        // Calculate the total payload size:
-        // name + 1 byte skin + 1 byte preferred color + 4 bytes fingerprint
         const payload = new Uint8Array(nameBytes.length + 1 + 1 + fingerprintBytes.length);
 
         // Copy the name bytes starting from the first byte
