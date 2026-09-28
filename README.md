@@ -1,151 +1,174 @@
-# Warhex.io
+<div align="center">
 
-Real-time multiplayer game engineering project focused on browser gameplay, networking and distributed game services.
+# WARHEX.IO
 
-## Overview
+### Real-time multiplayer · Networking · Distributed game services
 
-Warhex.io is organized as a multi-service multiplayer game stack:
+<p>
+  <img src="https://img.shields.io/badge/Go-1.22+-111827?style=for-the-badge&logo=go&logoColor=00ADD8" />
+  <img src="https://img.shields.io/badge/WebSocket-Real--time-111827?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Node.js-Services-111827?style=for-the-badge&logo=node.js&logoColor=5FA04E" />
+  <img src="https://img.shields.io/badge/Supabase-Data-111827?style=for-the-badge&logo=supabase&logoColor=3ECF8E" />
+</p>
 
-- browser client
-- real-time Go game server
-- authentication service
-- server discovery / load balancing
-- persistent data integration
-- production-oriented reverse proxy configuration
+**A full-stack real-time game system spanning browser client, game servers, authentication and service distribution.**
 
-The repository brings together real-time networking, game state, browser workers, authentication and service orchestration in one codebase.
+</div>
 
-## Architecture
+---
 
+## ⚡ What this project demonstrates
+
+| Area | Implementation |
+|---|---|
+| **Real-time** | WebSocket client/server communication |
+| **Game server** | Go-based server and game-state components |
+| **Client** | JavaScript + Webpack + browser workers |
+| **Authentication** | Node.js + Express + Discord + Firebase Admin |
+| **Distribution** | Server discovery and load-balancing services |
+| **Infrastructure** | Nginx / reverse-proxy configuration |
+
+---
+
+## 🧩 Architecture
+
+~~~text
+                         ┌─────────────────┐
+                         │  Browser Client  │
+                         └────────┬────────┘
+                                  │
+                           WebSocket / API
+                                  │
+                                  ▼
+                    ┌──────────────────────────┐
+                    │ Discovery / Load Balancer│
+                    └────────────┬─────────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    ▼            ▼            ▼
+               Game Server   Game Server   Game Server
+                    │            │            │
+                    └────────────┼────────────┘
+                                 │
+                         Game state / data
+
+        ┌──────────────────────┐
+        │ Authentication Service│
+        └──────────┬───────────┘
+                   ├── Discord
+                   └── Firebase Admin
 ~~~
-Browser Client
-     │
-     ├── WebSocket / real-time communication
-     │
-     ▼
-Server Discovery / Load Balancer
-     │
-     ├── Game Server 1
-     ├── Game Server 2
-     └── Game Server N
-     
-Authentication Service
-     │
-     ├── Discord integration
-     └── Firebase Admin
 
-Game Server
-     │
-     ├── Game state
-     ├── Units / entities
-     ├── Resources
-     ├── Capacity / population
-     └── Network workers
-~~~
+The repository separates the browser client from the real-time server and supporting services, allowing the system to be deployed as multiple cooperating components.
 
-## Key engineering areas
+---
 
-### Real-time gameplay
+## 🎮 Real-time gameplay
 
-The server is implemented in Go and uses WebSocket communication for real-time client/server interaction.
+The Go server contains dedicated components for gameplay state including:
 
-### Game state
+- health
+- resources
+- capacity
+- population
+- entities
+- networking workers
 
-The server contains dedicated components for gameplay state such as health, resources, capacity, population and entities.
+The client contains a dedicated networking layer and Web Worker support for browser-side network processing.
 
-### Client networking
+---
 
-The browser client includes a dedicated networking layer and Web Worker support for handling network-related work.
+## 🔐 Authentication & services
 
-### Authentication
+The authentication service is a Node.js application built around:
 
-The authentication service is a Node.js application using Express, Discord integration and Firebase Admin.
-
-### Service distribution
-
-The project includes server discovery and load-balancing components for routing players across game-server instances.
-
-## Technology
-
-**Game server**
-- Go
-- Gorilla WebSocket
-- PostgreSQL driver
-- golang.org/x/time
-
-**Client**
-- JavaScript
-- Webpack
-- SWC
-- Web Workers
-- Supabase JavaScript client
-
-**Authentication**
-- Node.js
 - Express
 - Discord.js
 - Firebase Admin
 - Axios
 
-**Infrastructure**
-- Nginx
-- Load balancing
-- Multiple game-server instances
+The repository also includes discovery/load-balancing services for distributing players across game-server instances.
 
-## Repository structure
+---
 
-~~~
+## 🛠️ Stack
+
+**Game server**  
+Go · Gorilla WebSocket · PostgreSQL driver · x/time
+
+**Client**  
+JavaScript · Webpack · SWC · Web Workers · Supabase JS
+
+**Services**  
+Node.js · Express · Discord.js · Firebase Admin
+
+**Infrastructure**  
+Nginx · Load balancing · Multi-server deployment
+
+---
+
+## 📁 Repository
+
+~~~text
 Warhex.io/
-├── server/          # Go real-time game server
+├── server/          # Real-time Go game server
 ├── client/          # Browser client
 ├── auth-server/     # Authentication service
-├── loadbalancer/    # Server discovery / traffic distribution
+├── loadbalancer/    # Server discovery / distribution
 └── nginx_default    # Reverse proxy configuration
 ~~~
 
-## Local development
+---
+
+## 🚀 Development
 
 ### Game server
 
-~~~
+~~~bash
 cd server
 go run ./...
 ~~~
 
 ### Client
 
-~~~
+~~~bash
 cd client
 npm install
 npm run build
 ~~~
 
-The client also provides dedicated build modes for its obfuscation pipeline.
+The client also contains dedicated build modes for its obfuscation pipeline.
 
-### Authentication service
+### Authentication
 
-~~~
+~~~bash
 cd auth-server
 npm install
 npm start
 ~~~
 
-Environment configuration is required for the authentication integrations.
+Environment configuration is required for authentication integrations.
 
-## Engineering focus
+---
 
+## 🧠 Engineering model
+
+~~~text
+REAL-TIME SYSTEMS
+       ↓
+NETWORKING
+       ↓
+GAME STATE
+       ↓
+DISTRIBUTED SERVICES
+       ↓
+AUTHENTICATION
+       ↓
+DEPLOYMENT
 ~~~
-real-time systems
-      ↓
-networking
-      ↓
-game state
-      ↓
-distributed services
-      ↓
-authentication
-      ↓
-deployment
-~~~
 
-This project represents hands-on work across the lifecycle of a real-time web application: client, server, networking, authentication and service infrastructure.
+<div align="center">
+
+**Client → Server → Services → Infrastructure**
+
+</div>
